@@ -609,7 +609,16 @@ describe("durable ID uniqueness", () => {
       chain: otherBindingChain,
       binding: { ...bindingInput, deviceId: "device-b" },
     });
-    const otherAccount = createRealm({ stores, clock, relay, chain: otherAccountChain });
+    const otherAccount = createRealm({
+      stores,
+      clock,
+      relay,
+      chain: otherAccountChain,
+      binding: {
+        ...bindingInput,
+        account: { ...bindingInput.account, accountIndex: "1" },
+      },
+    });
     const connections = await Promise.all([
       first.oaath.connect(),
       otherBinding.oaath.connect(),

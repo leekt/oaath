@@ -10,6 +10,30 @@ it when the request settles. `expiresAt` is in Unix milliseconds; the code is
 non-secret display metadata and grants no authority. Wallet approvals do not
 call this callback.
 
+Pending service approvals are encrypted in the configured stores before
+`onPending` runs. After reload, call `connection.resumePendingPermission()` to
+observe that same request and finish an available approval. It returns `null`
+when none is retained; otherwise it returns the request ID, comparison code,
+expiry, status, and an active `grant` when recovery succeeds. Status is
+`pending`, `approved`, `rejected`, `expired`, `withdrawn`, or `unavailable`.
+Two tabs share the same durable redemption claim and cannot consume or claim
+the approval twice. Custom context stores must implement atomic
+`compareAndSwapPending`; the bundled memory, IndexedDB, and testing SQLite
+adapters implement it.
+
+`requestPermission({ signal, ... })`, connection `close()`, and realm `close()`
+stop waiting while preserving the pending request. A later resume makes one
+observation; it does not start another request. Use
+`connection.withdrawPendingPermission()` to withdraw a still-pending request.
+An already-approved result remains approved; withdrawal neither revokes it nor
+redeems its code. Local forgetting deletes the encrypted journal and its key.
+
+If the creation reply was lost, the retained status is `unavailable` with a null
+request ID. If a one-time consume or claim reply was lost, the result is
+`approved` with `grant: null` and `recovery: "uncertain"`. Neither case retries
+the uncertain effect or silently creates a replacement request. Memory stores
+retain recovery state only for their lifetime; browser reload requires IndexedDB.
+
 Service and wallet approvals share one optional `session` setting (`OaathSession`):
 `session?: { kind?: "ecdsa" | "webauthn", custody?: "browser" | "application-backend" | "oaath-hosted", ... }`.
 Omitted, the realm generates an ECDSA session key in the custody the deployment

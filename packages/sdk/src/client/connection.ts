@@ -80,6 +80,11 @@ import {
   type OaathOwnerRevocationCapability,
 } from "./grant-handle.js";
 
+import {
+  createPendingAuthorizationJournal,
+  type PendingSnapshot,
+} from "./pending-authorization.js";
+
 const MAX_PERMISSIONS = 16;
 const MAX_EXPIRES_IN = 86_400;
 const MAX_OPERATION_COUNT = 2 ** 32 - 1;
@@ -119,7 +124,12 @@ export interface OaathIssuerCapability {
  */
 export interface OaathAuthorizationCapability {
   readonly authorize: (
-    request: Readonly<{ requestId: string; redirectUri: string; expiresAt: number }>,
+    request: Readonly<{
+      requestId: string;
+      redirectUri: string;
+      expiresAt: number;
+      signal?: AbortSignal;
+    }>,
   ) => Promise<unknown>;
 }
 
@@ -135,6 +145,8 @@ export interface OaathPermissionInput {
 }
 
 export interface OaathRequestPermissionInput {
+  /** Stops waiting without withdrawing the retained owner request. */
+  readonly signal?: AbortSignal;
   /**
    * Issuer mode only: display this code while waiting for the owner, then clear
    * it when requestPermission settles. Compare it with the phone; it is not authority.
@@ -163,7 +175,23 @@ export interface OaathRequestPermissionInput {
       }>;
 }
 
+export interface OaathPendingPermissionResult {
+  /** Null only when request creation was interrupted before its acknowledgement. */
+  readonly requestId: string | null;
+  readonly matchCode: string | null;
+  readonly expiresAt: number;
+  readonly status: "pending" | "rejected" | "expired" | "withdrawn" | "approved" | "unavailable";
+  /** Only a verified, durably applied approval produces a Grant. */
+  readonly grant: Readonly<OaathGrantHandle> | null;
+  /** An uncertain one-time effect cannot be retried or treated as authority. */
+  readonly recovery: "ready" | "uncertain" | null;
+}
+
 export interface OaathConnection {
+  /** Observe/resume the retained request once, without creating another request. */
+  readonly resumePendingPermission: () => Promise<Readonly<OaathPendingPermissionResult> | null>;
+  /** Withdraw only if still pending; an already issued approval remains approved. */
+  readonly withdrawPendingPermission: () => Promise<Readonly<OaathPendingPermissionResult> | null>;
   readonly binding: Readonly<OaathBinding>;
   readonly requestPermission: (input: unknown) => Promise<Readonly<OaathGrantHandle>>;
   /** The realm's persisted authority/operation handle, or `null` when there is none. */
@@ -339,6 +367,8 @@ function policyFromInput(
 export function createConnection(
   input: Readonly<CreateConnectionInput>,
 ): Readonly<OaathConnection> {
+  const cancellation = new AbortController();
+  const pending = createPendingAuthorizationJournal(input);
   let closed = false;
   let closeRequested = false;
   let closing: Promise<void> | null = null;
@@ -382,10 +412,58 @@ export function createConnection(
     }
   }
 
+  function checkSignal(signal: AbortSignal): void {
+    if (!signal.aborted) return;
+    assertUsable();
+    clientFail(
+      "oaath_client_decision_unavailable",
+      "authorization wait was stopped",
+      "authorization_aborted",
+    );
+  }
+
+  async function abortable<Value>(
+    work: Promise<Value>,
+    signal: AbortSignal = cancellation.signal,
+  ): Promise<Value> {
+    const failure = () =>
+      new OaathClientError(
+        closeRequested
+          ? "oaath_client_closed"
+          : signedOut
+            ? "oaath_client_signed_out"
+            : "oaath_client_decision_unavailable",
+        "authorization wait was stopped",
+        "authorization_aborted",
+      );
+    if (signal.aborted) {
+      void work.catch(() => undefined);
+      throw failure();
+    }
+    return new Promise((resolve, reject) => {
+      const abort = () => {
+        signal.removeEventListener("abort", abort);
+        reject(failure());
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      work.then(
+        (value) => {
+          signal.removeEventListener("abort", abort);
+          resolve(value);
+        },
+        (error) => {
+          signal.removeEventListener("abort", abort);
+          reject(error);
+        },
+      );
+    });
+  }
+
   async function call(
     method: "GET" | "POST",
     path: string,
     body?: unknown,
+    signal: AbortSignal = cancellation.signal,
   ): Promise<Record<string, unknown>> {
     if (input.authority.kind !== "issuer")
       return clientFail("oaath_client_internal", "local approval has no issuer transport");
@@ -394,18 +472,22 @@ export function createConnection(
     const request = new Request(`${input.authority.issuer.url}${path}`, {
       method,
       headers,
+      signal,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     let response: Response;
     try {
-      response = await input.authority.issuer.fetch(request);
-    } catch {
+      checkSignal(signal);
+      response = await abortable(input.authority.issuer.fetch(request), signal);
+    } catch (error) {
+      if (error instanceof OaathClientError) throw error;
       return clientFail("oaath_client_issuer_unavailable", "the issuer could not be reached");
     }
     let payload: unknown;
     try {
-      payload = await response.json();
-    } catch {
+      payload = await abortable(response.json(), signal);
+    } catch (error) {
+      if (error instanceof OaathClientError) throw error;
       return clientFail("oaath_client_issuer_unavailable", "the issuer response is unreadable");
     }
     const record = captureRecord(payload, "issuer response", new WeakSet(), (message) =>
@@ -505,41 +587,281 @@ export function createConnection(
     }
   }
 
+  function pendingResult(
+    snapshot: Readonly<PendingSnapshot>,
+    status: OaathPendingPermissionResult["status"],
+    grant: Readonly<OaathGrantHandle> | null = null,
+  ): Readonly<OaathPendingPermissionResult> {
+    const { value } = snapshot;
+    return Object.freeze({
+      requestId: value.phase === "creating" ? null : value.request.requestId,
+      matchCode: value.matchCode,
+      expiresAt: value.expiresAt,
+      status,
+      grant,
+      recovery: grant
+        ? "ready"
+        : status === "approved" || status === "unavailable"
+          ? "uncertain"
+          : null,
+    });
+  }
+
+  async function pendingStatus(
+    snapshot: Readonly<PendingSnapshot>,
+  ): Promise<OaathPendingPermissionResult["status"]> {
+    if (snapshot.value.phase === "creating") return "unavailable";
+    const { request } = snapshot.value;
+    const state = await call("POST", "/authorization/resume", { requestId: request.requestId });
+    try {
+      if (
+        state.requestId !== request.requestId ||
+        state.redirectUri !== input.binding.redirectUri ||
+        typeof state.requestedScope !== "string" ||
+        JSON.stringify(
+          parsePermissionRequest({
+            ...JSON.parse(state.requestedScope),
+            requestId: request.requestId,
+          }),
+        ) !== JSON.stringify(request)
+      )
+        throw new Error();
+      if (state.decision !== null) {
+        const decision = exactClientRecord(
+          state.decision,
+          ["outcome", "decidedAt"],
+          "pending decision",
+          new WeakSet(),
+        );
+        if (
+          decision.outcome !== "approved" &&
+          decision.outcome !== "rejected" &&
+          decision.outcome !== "withdrawn"
+        )
+          throw new Error();
+        return decision.outcome;
+      }
+      if (typeof state.expired !== "boolean") throw new Error();
+      return state.expired ? "expired" : "pending";
+    } catch {
+      return clientFail(
+        "oaath_client_state_conflict",
+        "pending authorization does not match the issuer",
+        "pending_authorization_mismatch",
+      );
+    }
+  }
+
+  async function redeem(
+    snapshot: Readonly<PendingSnapshot>,
+    code: string | null,
+    signal = cancellation.signal,
+  ): Promise<Readonly<PendingSnapshot>> {
+    let current = snapshot;
+    const requestId = current.value.request.requestId;
+    if (current.value.phase === "pending") {
+      if (code === null) return clientFail("oaath_client_internal", "a released code is required");
+      checkSignal(signal);
+      current = await pending.write(current, { ...current.value, phase: "consuming" });
+      const consumed = await call(
+        "POST",
+        "/authorization/codes/consume",
+        { code, codeVerifier: current.value.verifier, redirectUri: input.binding.redirectUri },
+        signal,
+      );
+      if (text(consumed, "requestId") !== requestId)
+        return clientFail("oaath_client_state_conflict", "code named another request");
+      current = await pending.write(current, {
+        ...current.value,
+        phase: "claimable",
+        artifactId: text(consumed, "artifactId"),
+      });
+    }
+    if (current.value.phase === "claimable") {
+      checkSignal(signal);
+      current = await pending.write(current, { ...current.value, phase: "claiming" });
+      const claimed = await call(
+        "POST",
+        `/authorization/artifacts/${encodeURIComponent(current.value.artifactId!)}/claim`,
+        undefined,
+        signal,
+      );
+      if (text(claimed, "requestId") !== requestId)
+        return clientFail("oaath_client_state_conflict", "artifact named another request");
+      current = await pending.write(current, {
+        ...current.value,
+        phase: "claimed",
+        artifact: text(claimed, "artifact"),
+      });
+    }
+    return current;
+  }
+
+  async function finishPending(
+    snapshot: Readonly<PendingSnapshot>,
+  ): Promise<Readonly<OaathGrantHandle>> {
+    if (snapshot.value.phase !== "claimed" && snapshot.value.phase !== "settled")
+      return clientFail(
+        "oaath_client_decision_unavailable",
+        "one-time authorization redemption is uncertain",
+        "authorization_redemption_uncertain",
+      );
+    const grant = await applyArtifact(
+      snapshot.value.request,
+      JSON.parse(snapshot.value.artifact!),
+      true,
+    );
+    if (snapshot.value.phase !== "settled") {
+      await pending
+        .write(snapshot, { ...snapshot.value, phase: "settled" })
+        .catch((error: unknown) => {
+          if (
+            !(error instanceof OaathClientError) ||
+            error.source !== "pending_authorization_conflict"
+          )
+            throw error;
+        });
+    }
+    return grant;
+  }
+
+  async function resumePendingPermissionWork(): Promise<Readonly<OaathPendingPermissionResult> | null> {
+    assertUsable();
+    if (input.authority.kind !== "issuer") return null;
+    let snapshot = await pending.read();
+    if (snapshot === null) return null;
+    const status = await pendingStatus(snapshot);
+    if (status !== "approved") return pendingResult(snapshot, status);
+    const context = await input.contexts.read(input.binding.bindingId);
+    if (context && parseClientContext(context).grantId === snapshot.value.request.requestId) {
+      const grant = await resumeWork();
+      if (grant) return pendingResult(snapshot, status, grant);
+    }
+    if (snapshot.value.phase === "consuming" || snapshot.value.phase === "claiming")
+      return pendingResult(snapshot, status);
+    try {
+      let code: string | null = null;
+      if (snapshot.value.phase === "pending") {
+        const released = await call(
+          "GET",
+          `/authorization/requests/${encodeURIComponent(snapshot.value.request.requestId)}/code`,
+        );
+        if (released.outcome !== "approved")
+          return clientFail(
+            "oaath_client_state_conflict",
+            "approval pickup contradicted its decision",
+          );
+        code = text(released, "code");
+      }
+      snapshot = await redeem(snapshot, code);
+      return pendingResult(snapshot, "approved", await finishPending(snapshot));
+    } catch (error) {
+      if (
+        error instanceof OaathClientError &&
+        (error.source === "pending_authorization_conflict" || error.source === "relay_expired")
+      )
+        return pendingResult(snapshot, "approved");
+      throw error;
+    }
+  }
+
+  async function withdrawPendingPermissionWork(): Promise<Readonly<OaathPendingPermissionResult> | null> {
+    assertUsable();
+    if (input.authority.kind !== "issuer") return null;
+    const snapshot = await pending.read();
+    if (snapshot === null) return null;
+    if (snapshot.value.phase === "creating") return pendingResult(snapshot, "unavailable");
+    const response = await call(
+      "POST",
+      `/authorization/requests/${encodeURIComponent(snapshot.value.request.requestId)}/withdraw`,
+      {},
+    );
+    if (
+      response.requestId !== snapshot.value.request.requestId ||
+      !["withdrawn", "approved", "rejected", "expired"].includes(String(response.outcome))
+    )
+      return clientFail("oaath_client_issuer_unavailable", "withdrawal response is invalid");
+    return pendingResult(snapshot, response.outcome as OaathPendingPermissionResult["status"]);
+  }
+
   async function authorizeAtIssuer(
     scope: PermissionScope,
     onPending: OaathRequestPermissionInput["onPending"],
-  ): Promise<{
-    request: Readonly<PermissionRequest>;
-    artifact: unknown;
-  }> {
+    signal: AbortSignal,
+  ): Promise<Readonly<PendingSnapshot>> {
     if (input.authority.kind !== "issuer")
       return clientFail("oaath_client_internal", "local approval has no issuer transport");
-    const verifier = newCodeVerifier();
-    const created = await call("POST", "/authorization/requests", {
+    const previous = await pending.read();
+    if (previous !== null && previous.value.phase !== "settled") {
+      const status = await pendingStatus(previous);
+      if (status !== "withdrawn" && status !== "rejected" && status !== "expired")
+        return clientFail(
+          "oaath_client_state_conflict",
+          "resume or withdraw the retained permission request first",
+          "authorization_pending",
+        );
+    }
+    checkSignal(signal);
+    let snapshot = await pending.write(previous, {
+      phase: "creating",
+      request: parsePermissionRequest({ ...scope, requestId: crypto.randomUUID() }),
       redirectUri: input.binding.redirectUri,
-      codeChallenge: deriveCodeChallenge(verifier, (message) =>
-        clientFail("oaath_client_internal", message),
-      ),
-      requestedScope: JSON.stringify(scope),
+      verifier: newCodeVerifier(),
+      matchCode: null,
+      expiresAt: scope.expiresAt * 1_000,
+      artifactId: null,
+      artifact: null,
     });
+    const created = await call(
+      "POST",
+      "/authorization/requests",
+      {
+        redirectUri: input.binding.redirectUri,
+        codeChallenge: deriveCodeChallenge(snapshot.value.verifier),
+        requestedScope: JSON.stringify(scope),
+      },
+      signal,
+    );
     const requestId = text(created, "requestId");
-    const matchCode = created.matchCode;
-    if (typeof matchCode !== "string" || !/^[A-Za-z0-9_-]{8}$/u.test(matchCode)) {
-      return clientFail("oaath_client_issuer_unavailable", "the issuer match code is invalid");
-    }
-    const relayExpiresAt = created.expiresAt;
-    if (typeof relayExpiresAt !== "number" || !Number.isSafeInteger(relayExpiresAt)) {
-      return clientFail("oaath_client_issuer_unavailable", "the issuer expiry is invalid");
-    }
-
+    if (
+      typeof created.matchCode !== "string" ||
+      !/^[A-Za-z0-9_-]{8}$/u.test(created.matchCode) ||
+      typeof created.expiresAt !== "number" ||
+      !Number.isSafeInteger(created.expiresAt)
+    )
+      return clientFail("oaath_client_issuer_unavailable", "authorization metadata is invalid");
+    snapshot = await pending.write(snapshot, {
+      ...snapshot.value,
+      phase: "pending",
+      request: parsePermissionRequest({ ...scope, requestId }),
+      matchCode: created.matchCode,
+      expiresAt: created.expiresAt,
+    });
     let authorized: unknown;
     try {
-      await onPending?.(Object.freeze({ requestId, matchCode, expiresAt: relayExpiresAt }));
-      authorized = await input.authority.authorization.authorize({
-        requestId,
-        redirectUri: input.binding.redirectUri,
-        expiresAt: relayExpiresAt,
-      });
+      checkSignal(signal);
+      await abortable(
+        Promise.resolve(
+          onPending?.(
+            Object.freeze({
+              requestId,
+              matchCode: created.matchCode,
+              expiresAt: created.expiresAt,
+            }),
+          ),
+        ),
+        signal,
+      );
+      checkSignal(signal);
+      authorized = await abortable(
+        input.authority.authorization.authorize({
+          requestId,
+          redirectUri: input.binding.redirectUri,
+          expiresAt: created.expiresAt,
+          signal,
+        }),
+        signal,
+      );
     } catch (error) {
       if (error instanceof OaathClientError) throw error;
       return clientFail(
@@ -547,15 +869,6 @@ export function createConnection(
         "the owner decision could not be obtained",
       );
     }
-    const request = (() => {
-      try {
-        // The reviewed scope plus the issuer's id is exactly the request whose
-        // hash the owner's decision must bind.
-        return parsePermissionRequest({ ...scope, requestId });
-      } catch (error) {
-        return mapClientFailure(error, "the permission request is invalid");
-      }
-    })();
     const code = text(
       exactClientRecord(
         authorized,
@@ -566,36 +879,7 @@ export function createConnection(
       ),
       "code",
     );
-
-    const consumed = await call("POST", "/authorization/codes/consume", {
-      code,
-      codeVerifier: verifier,
-      redirectUri: input.binding.redirectUri,
-    });
-    if (text(consumed, "requestId") !== requestId) {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "the issuer released a code for another request",
-        "authorization_request_mismatch",
-      );
-    }
-    const claimed = await call(
-      "POST",
-      `/authorization/artifacts/${encodeURIComponent(text(consumed, "artifactId"))}/claim`,
-    );
-    if (text(claimed, "requestId") !== requestId) {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "the issuer released an artifact for another request",
-        "authorization_request_mismatch",
-      );
-    }
-
-    try {
-      return { request, artifact: JSON.parse(text(claimed, "artifact")) as unknown };
-    } catch (error) {
-      return mapClientFailure(error, "the owner decision artifact is invalid");
-    }
+    return redeem(snapshot, code, signal);
   }
 
   async function requestPermissionWork(value: unknown): Promise<Readonly<OaathGrantHandle>> {
@@ -611,6 +895,7 @@ export function createConnection(
         "expiresIn",
         "perChainOperationLimit",
         ...(Object.hasOwn(record, "onPending") ? ["onPending"] : []),
+        ...(Object.hasOwn(record, "signal") ? ["signal"] : []),
       ],
       "requestPermission input",
       fail,
@@ -622,6 +907,12 @@ export function createConnection(
             record.onPending,
             "onPending",
           );
+    if (record.signal !== undefined && !(record.signal instanceof AbortSignal))
+      return fail("signal must be an AbortSignal");
+    const signal =
+      record.signal === undefined
+        ? cancellation.signal
+        : AbortSignal.any([cancellation.signal, record.signal]);
     if (record.chainScope !== "all") {
       return clientFail("oaath_client_input_invalid", "chainScope must be all in 0.1.0");
     }
@@ -661,9 +952,17 @@ export function createConnection(
         );
       }
     } else {
-      ({ request, artifact } = await authorizeAtIssuer(scope, onPending));
+      return finishPending(await authorizeAtIssuer(scope, onPending, signal));
     }
+    return applyArtifact(request, artifact);
+  }
 
+  async function applyArtifact(
+    request: Readonly<PermissionRequest>,
+    artifact: unknown,
+    recover = false,
+  ): Promise<Readonly<OaathGrantHandle>> {
+    assertUsable();
     let decision: Readonly<PermissionDecision>;
     let installApproval: Readonly<KernelGrantApproval> | null = null;
     try {
@@ -750,7 +1049,26 @@ export function createConnection(
     } catch (error) {
       return mapClientFailure(error, "the Grant could not be activated");
     }
-    const stored = await persistGrant(active, null);
+    let stored: GrantStoreRecord;
+    try {
+      stored = await persistGrant(active, null);
+    } catch (error) {
+      if (
+        !recover ||
+        !(error instanceof OaathClientError) ||
+        error.source !== "grant_store_conflict"
+      )
+        throw error;
+      const existing = await input.grants.get(active.identity.grantId);
+      if (
+        !existing ||
+        existing.value.state !== "active" ||
+        !sameGrantIdentity(existing.value.identity, active.identity) ||
+        existing.value.approval.capabilityHash !== decision.capabilityHash
+      )
+        throw error;
+      stored = existing;
+    }
     await writeContext(request, approvedPolicy, installApproval);
     return handle(stored, request, approvedPolicy, installApproval);
   }
@@ -852,6 +1170,7 @@ export function createConnection(
   async function signOut(): Promise<void> {
     if (closed) clientFail("oaath_client_closed", "connection is closed");
     signedOut = true;
+    cancellation.abort();
     if (input.authority.kind !== "issuer" || !input.authority.issuer.signOut) return;
     try {
       await input.authority.issuer.signOut();
@@ -872,10 +1191,13 @@ export function createConnection(
     binding: input.binding,
     requestPermission,
     resume,
+    resumePendingPermission: () => withHandleProducer(resumePendingPermissionWork),
+    withdrawPendingPermission: () => withHandleProducer(withdrawPendingPermissionWork),
     signOut,
     async close(): Promise<void> {
       if (closed) return;
       closeRequested = true;
+      cancellation.abort();
       const active =
         closing ??
         (async () => {

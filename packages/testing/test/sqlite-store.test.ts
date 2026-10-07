@@ -15,7 +15,11 @@ import {
 } from "@oaath/protocol";
 import { OaathStoreError, type OperationStore } from "@oaath/sdk/advanced";
 import { afterEach, describe, expect, it } from "vitest";
-import { createSqliteGrantStore, createSqliteOperationStore } from "../src/index.js";
+import {
+  createSqliteContextStore,
+  createSqliteGrantStore,
+  createSqliteOperationStore,
+} from "../src/index.js";
 
 const grantIdentity: GrantIdentity = {
   grantId: "durable-grant",
@@ -61,6 +65,45 @@ afterEach(async () => {
       .splice(0)
       .map((directory) => rm(directory, { recursive: true, force: true })),
   );
+});
+
+it("retains one pending-authorization revision across independent SQLite connections", async () => {
+  const path = await databasePath();
+  const first = createSqliteContextStore(path);
+  const second = createSqliteContextStore(path);
+  const bindingId = `0x${"ab".repeat(32)}` as const;
+  const next = {
+    version: "oaath.pending-authorization/v1" as const,
+    bindingId,
+    storeRevision: 1,
+    keyId: "pending-envelope-test",
+    iv: "0x00" as const,
+    ciphertext: "0x00" as const,
+  };
+  try {
+    const input = { bindingId, expectedStoreRevision: null, next };
+    expect(
+      await Promise.all([first.compareAndSwapPending(input), second.compareAndSwapPending(input)]),
+    ).toEqual([true, false]);
+    expect(await second.read(bindingId)).toEqual(next);
+    expect(
+      await second.compareAndSwapPending({
+        ...input,
+        expectedStoreRevision: 1,
+        next: { ...next, storeRevision: 2 },
+      }),
+    ).toBe(true);
+    expect(await first.compareAndSwapPending(input)).toBe(false);
+  } finally {
+    await first.close();
+    await second.close();
+  }
+  const recreated = createSqliteContextStore(path);
+  try {
+    expect(await recreated.read(bindingId)).toEqual({ ...next, storeRevision: 2 });
+  } finally {
+    await recreated.close();
+  }
 });
 
 function requestedGrant(): Grant {

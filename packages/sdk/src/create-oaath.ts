@@ -419,6 +419,8 @@ function composeInjectedRealm(
       close: async () => undefined,
     }),
     context: Object.freeze({
+      compareAndSwapPending: (value: Parameters<OaathContextStore["compareAndSwapPending"]>[0]) =>
+        stores.context.compareAndSwapPending(value),
       read: (bindingId: Parameters<OaathContextStore["read"]>[0]) => stores.context.read(bindingId),
       write: (value: Parameters<OaathContextStore["write"]>[0]) => stores.context.write(value),
       clear: (bindingId: Parameters<OaathContextStore["clear"]>[0]) =>

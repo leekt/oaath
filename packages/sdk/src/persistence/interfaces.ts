@@ -598,7 +598,26 @@ export interface OaathClientContext {
   readonly updatedAt: number;
 }
 
+/** Encrypted SDK authorization journal; the client owns its payload codec. */
+export interface OaathPendingAuthorizationEnvelope {
+  readonly version: "oaath.pending-authorization/v1";
+  readonly bindingId: string;
+  readonly storeRevision: number;
+  readonly keyId: string;
+  readonly iv: `0x${string}`;
+  readonly ciphertext: `0x${string}`;
+}
+export interface OaathPendingAuthorizationWrite {
+  readonly bindingId: string;
+  readonly expectedStoreRevision: number | null;
+  readonly next: Readonly<OaathPendingAuthorizationEnvelope>;
+}
+
 export interface OaathContextStore {
+  /** Atomic pending-journal transition, true only after a winning commit. */
+  readonly compareAndSwapPending: (
+    input: Readonly<OaathPendingAuthorizationWrite>,
+  ) => Promise<boolean>;
   readonly read: (bindingId: string) => Promise<unknown>;
   readonly write: (context: Readonly<OaathClientContext>) => Promise<unknown>;
   readonly clear: (bindingId: string) => Promise<unknown>;

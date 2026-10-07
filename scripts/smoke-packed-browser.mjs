@@ -449,7 +449,7 @@ let stores = durableStores();
 let signOuts = 0;
 let invalidations = 0;
 
-function createRealm(chains = [chain]) {
+function createRealm(chains = [chain], ownerAuthorization = authorization, realmStores = stores) {
   return createOAAth({
     binding: {
       issuer: ISSUER_URL,
@@ -479,7 +479,7 @@ function createRealm(chains = [chain]) {
         signOuts += 1;
       },
     },
-    authorization,
+    authorization: ownerAuthorization,
     invalidation: {
       invalidateCapability: async (request) => {
         invalidations += 1;
@@ -489,7 +489,7 @@ function createRealm(chains = [chain]) {
         };
       },
     },
-    stores,
+    stores: realmStores,
     chains,
     signing: {
       owner: kernelKey({ credential: ownerCredential, sign: async () => fail("application cannot sign as owner") }),
@@ -499,6 +499,34 @@ function createRealm(chains = [chain]) {
     now,
   });
 }
+
+// Recreate every SDK store before owner approval, then redeem the original request.
+const pendingFactory = new IDBFactory();
+let pendingDatabase = await openIndexedDbStores({ factory: pendingFactory });
+const pendingRealm = createRealm([chain], { authorize: () => new Promise(() => {}) }, pendingDatabase.stores);
+const pendingConnection = await pendingRealm.connect();
+let pendingReady;
+const pendingMetadata = new Promise(resolve => { pendingReady = resolve; });
+const pendingWork = pendingConnection.requestPermission({
+  onPending: pendingReady, chainScope: "all",
+  permissions: [{ calls: [{ target: TARGET, selectors: ["0xa9059cbb"], valueLimit: "0" }] }],
+  expiresIn: EXPIRES_IN, perChainOperationLimit: 10,
+}).catch(error => error.code);
+const pending = await pendingMetadata;
+await pendingRealm.close();
+if (await pendingWork !== "oaath_client_closed") fail("closing did not abort pending authorization");
+await pendingDatabase.close();
+pendingDatabase = await openIndexedDbStores({ factory: pendingFactory });
+const recoveredRealm = createRealm([chain], authorization, pendingDatabase.stores);
+const recoveredConnection = await recoveredRealm.connect();
+const beforeApproval = await recoveredConnection.resumePendingPermission();
+if (beforeApproval.requestId !== pending.requestId || beforeApproval.status !== "pending") fail("pending request lost on reload");
+await authorization.authorize({ requestId: pending.requestId });
+const afterApproval = await recoveredConnection.resumePendingPermission();
+if (afterApproval.requestId !== pending.requestId || afterApproval.grant?.state !== "active") fail("original pending approval not recovered");
+await recoveredRealm.close();
+await pendingDatabase.close();
+ownerRequests.length = 0;
 
 const oaath = createRealm();
 const connection = await oaath.connect();
@@ -1044,7 +1072,15 @@ export function relay(permissionApprovals: OwnerPhonePermissionApprovals): Relay
 
 const EXPECTED_SURFACES = {
   oaath: ["binding", "close", "connect", "disconnect"],
-  connection: ["binding", "close", "requestPermission", "resume", "signOut"],
+  connection: [
+    "binding",
+    "close",
+    "requestPermission",
+    "resume",
+    "resumePendingPermission",
+    "signOut",
+    "withdrawPendingPermission",
+  ],
   grant: [
     "account",
     "close",

@@ -14,7 +14,9 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
 import type { OaathGrantHandle } from "../client/grant-handle.js";
+import { forgetPendingAuthorization } from "../client/pending-authorization.js";
 import type {
   OaathCleanupEffectName,
   OaathContextStore,
@@ -52,8 +54,12 @@ export function forgetLocalEffect(input: {
   readonly keyIds: readonly string[];
 }): OaathCleanupEffect {
   return effect("forgetLocal", async () => {
-    for (const keyId of input.keyIds) await input.keys.delete(keyId);
-    await input.contexts.clear(input.bindingId);
+    const failures: unknown[] = [];
+    await forgetPendingAuthorization(input).catch((error: unknown) => failures.push(error));
+    for (const keyId of input.keyIds)
+      await input.keys.delete(keyId).catch((error: unknown) => failures.push(error));
+    await input.contexts.clear(input.bindingId).catch((error: unknown) => failures.push(error));
+    if (failures.length > 0) throw failures[0];
   });
 }
 
