@@ -3,7 +3,7 @@ import { createConsumer } from "./packed-consumer.mjs";
 const consumer = await createConsumer({
   label: "local-anvil",
   packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing"],
-  dependencies: { "@types/node": "22.13.0", viem: "2.55.8" },
+  dependencies: { "@types/node": "22.13.0" },
   types: ["node"],
   skipLibCheck: true,
   files: {
@@ -13,8 +13,10 @@ import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { createUserOperationObserver } from "@oaath/sdk/advanced";
 import { createCetaneChainPorts, classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/cetane";
 import { kernelDeployment, NONCE_ALIGNMENT_PERMISSION_ID, verifyKernelPermissionNonceAlignmentCalls } from "@oaath/sdk/kernel";
-import { createPublicClient, decodeEventLog, getAddress, getCreate2Address, http } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { createPublicClient, http } from "cetane";
+import { decodeEventLog, getAddress, getCreate2Address, keccak256 } from "cetane/utils";
+import { entryPointAbi } from "@oaath/protocol";
+assert.throws(() => import.meta.resolve("viem"), { code: "ERR_MODULE_NOT_FOUND" });
 await assert.rejects(createLocalAnvilFixture({ chainIds: [] }), /local_fixture_chains_invalid/);
 const providerCause = { code: -32500, message: "AA25 invalid account nonce" };
 const classified = classifyUserOperationError({ stage: "send", error: providerCause });
@@ -55,10 +57,10 @@ try {
   const deployed = await first.execution();
   assert.equal(deployed.outcome, "success");
   assert.deepEqual(deployed.calls, deploymentCalls);
-  const reader = createPublicClient({ transport: http(fixture.rpcUrl(421614), { retryCount: 0 }) });
-  assert.equal(await reader.getCode({ address: getCreate2Address({ from: factory, salt, bytecode: initCode }) }), "0x6000");
+  const reader = createPublicClient({ chain: { id: 421614, name: "Anvil", nativeAA: false }, transport: http(fixture.rpcUrl(421614)) });
+  assert.equal(await reader.getCode({ address: getCreate2Address({ from: factory, salt, bytecodeHash: keccak256(initCode) }) }), "0x6000");
   const receipt = await reader.getTransactionReceipt({ hash: deployed.transactionHash });
-  const event = receipt.logs.map(log => { try { return decodeEventLog({ abi: entryPoint07Abi, ...log }); } catch { return null; } }).find(log => log?.eventName === "UserOperationEvent" && log.args.userOpHash === first.id);
+  const event = receipt.logs.map(log => { try { return decodeEventLog({ abi: entryPointAbi, ...log }); } catch { return null; } }).find(log => log?.eventName === "UserOperationEvent" && log.args.userOpHash === first.id);
   assert.ok(event);
   const reference = { chainId: 421614, entryPoint: kernelDeployment({ chainId: 421614 }).entryPoint.address, account: event.args.sender.toLowerCase(), nonce: event.args.nonce.toString(), userOperationHash: first.id };
   const ports = () => createCetaneChainPorts({ 421614: {

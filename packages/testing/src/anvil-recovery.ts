@@ -1,9 +1,9 @@
 import { createOAAth, type Oaath } from "@oaath/sdk";
 import type { OaathChainCapability } from "@oaath/sdk/advanced";
-import { createKernelReads, kernelDeployment, kernelKey } from "@oaath/sdk/kernel";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
+import { kernelDeployment, kernelKey } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
-import { createPublicClient, http } from "viem";
 import { LOCAL_ISSUER, LOCAL_REDIRECT, localClientBinding } from "./anvil-binding.js";
 import { createLocalAnvilObservation } from "./anvil-observation.mjs";
 import { openLocalClientStores } from "./anvil-stores.js";
@@ -109,10 +109,9 @@ export async function openLocalAnvilRecoveryClient(
   const storage = await openLocalClientStores(new IDBFactory(), stateDirectory);
   try {
     const chains: OaathChainCapability[] = recovery.chains.map((chain) => {
-      const reader = createPublicClient({
-        transport: http(chain.rpcUrl, { retryCount: 0, timeout: 5000 }),
-      });
-      const reads = createKernelReads(reader);
+      const reads = createCetaneChainPorts({
+        [chain.chainId]: { publicRpcUrls: [chain.rpcUrl] },
+      })[0]!.reads;
       return {
         chainId: chain.chainId,
         reads: {

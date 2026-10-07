@@ -18,16 +18,12 @@ import { spawn, spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { encodeHandleOps } from "@oaath/sdk/advanced";
-import { createKernelReads, kernelDeployment } from "@oaath/sdk/kernel";
-import {
-  concat,
-  createPublicClient,
-  createWalletClient,
-  getCreate2Address,
-  http,
-  parseEther,
-} from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
+import { kernelDeployment } from "@oaath/sdk/kernel";
+import { createPublicClient, createWalletClient, http } from "cetane";
+import { privateKeyToAccount } from "cetane/accounts";
+import { createExecution } from "cetane/execution/evm";
+import { concatHex, getCreate2Address, keccak256 } from "cetane/utils";
 import runtime from "../../contracts/artifacts/KernelV4Runtime.json" with { type: "json" };
 import validity from "../../contracts/artifacts/OaathKernelV4ValidityPolicy.json" with {
   type: "json",
@@ -67,7 +63,7 @@ async function reservePort() {
  * feature rather than a deployment: the pinned raw P-256 validator staticcalls
  * the RIP-7212 / EIP-7951 precompile at 0x100, which Prague does not carry and
  * Osaka does. The phone demo asks for `osaka`; everything else keeps Prague.
- * @returns {Promise<{ chainId: number, url: string, processId: number | undefined, client: import("viem").PublicClient, rpc: (method: string, params?: unknown[]) => Promise<any>, stop: () => void }>}
+ * @returns {Promise<{ chainId: number, url: string, processId: number | undefined, client: ReturnType<typeof createPublicClient>, rpc: (method: string, params?: unknown[]) => Promise<any>, stop: () => void }>}
  */
 export async function startAnvil(chainId, hardfork = "prague") {
   const port = await reservePort();
@@ -103,12 +99,15 @@ export async function startAnvil(chainId, hardfork = "prague") {
     { stdio: "ignore" },
   );
   child.once("error", () => {});
-  /** @type {import("viem").PublicClient} */
-  const client = createPublicClient({ transport: http(url, { retryCount: 0 }) });
+  /** @type {ReturnType<typeof createPublicClient>} */
+  const client = createPublicClient({
+    chain: { id: chainId, name: "Anvil", nativeAA: false },
+    transport: http(url),
+  });
   for (let attempt = 0; ; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`Anvil exited before chain ${chainId} was ready`);
     try {
-      if ((await client.getChainId()) === chainId) break;
+      if ((await client.getChainId({ refresh: true })) === chainId) break;
     } catch {
       if (attempt >= 200) {
         child.kill("SIGTERM");
@@ -141,29 +140,30 @@ export async function startAnvil(chainId, hardfork = "prague") {
  * policy and signer modules, and one ECDSA validator, and returns the funded
  * submitter every direct `EntryPoint.handleOps` submission uses.
  * @returns {Promise<{
- *   submitter: import("viem/accounts").PrivateKeyAccount,
- *   wallet: import("viem").WalletClient,
- *   validator: import("viem").Address,
+ *   submitter: ReturnType<typeof privateKeyToAccount>,
+ *   wallet: ReturnType<typeof createWalletClient>,
+ *   validator: import("cetane").Address,
  *   reads: import("@oaath/sdk/kernel").KernelReads,
- *   fund: (address: import("viem").Address, value: bigint) => Promise<void>,
- *   sendSigned: (prepared: import("@oaath/sdk/kernel").PreparedUserOperation, signature: import("viem").Hex, onTransactionHash?: (hash: import("viem").Hex) => void) => Promise<{ status: string, transactionHash: import("viem").Hex, userOperationHash: import("viem").Hex, evidence: object }>
+ *   fund: (address: import("cetane").Address, value: bigint) => Promise<void>,
+ *   sendSigned: (prepared: import("@oaath/sdk/kernel").PreparedUserOperation, signature: import("cetane").Hex, onTransactionHash?: (hash: import("cetane").Hex) => void) => Promise<{ status: string, transactionHash: import("cetane").Hex, userOperationHash: import("cetane").Hex, evidence: object }>
  * }>}
  */
 export async function deployKernelStack(chain, { p256 = false } = {}) {
   const deployer = kernelDeployment({ chainId: chain.chainId }).create2Deployer;
   const submitter = privateKeyToAccount(`0x${"c0ffee".padEnd(64, "0")}`);
-  /** @type {import("viem").WalletClient} */
+  /** @type {ReturnType<typeof createWalletClient>} */
   const wallet = createWalletClient({
-    account: submitter,
-    transport: http(chain.url, { retryCount: 0 }),
+    chain: { id: chain.chainId, name: "Anvil", nativeAA: false, execution: createExecution() },
+    account: { address: submitter.address },
+    signer: submitter,
+    transport: http(chain.url),
   });
   const setBalance = async (address, value) =>
     chain.rpc("anvil_setBalance", [address, `0x${value.toString(16)}`]);
-  await setBalance(submitter.address, parseEther("1000"));
+  await setBalance(submitter.address, 1000n * 10n ** 18n);
 
   const deploy = async (deploymentInput) => {
     const hash = await wallet.sendTransaction({
-      chain: null,
       to: deployer,
       data: deploymentInput,
       gas: 10_000_000n,
@@ -191,19 +191,19 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
   ]) {
     await deploy(module.deploymentInput);
   }
-  /** @type {import("viem").Address} */
+  /** @type {import("cetane").Address} */
   const validator = getCreate2Address({
     from: deployer,
     salt: VALIDATOR_SALT,
-    bytecode: fixture.ecdsaValidator.bytecode,
+    bytecodeHash: keccak256(fixture.ecdsaValidator.bytecode),
   }).toLowerCase();
-  await deploy(concat([VALIDATOR_SALT, fixture.ecdsaValidator.bytecode]));
+  await deploy(concatHex([VALIDATOR_SALT, fixture.ecdsaValidator.bytecode]));
 
   return {
     submitter,
     wallet,
     validator,
-    reads: createKernelReads(chain.client),
+    reads: createCetaneChainPorts({ [chain.chainId]: { publicRpcUrls: [chain.url] } })[0].reads,
     fund: async (address, value) => setBalance(address, value),
     /**
      * Submits one prepared operation and the signature produced for it through
@@ -214,7 +214,6 @@ export async function deployKernelStack(chain, { p256 = false } = {}) {
     sendSigned: async (prepared, signature, onTransactionHash = () => {}) => {
       const call = encodeHandleOps({ prepared, signature, beneficiary: submitter.address });
       const hash = await wallet.sendTransaction({
-        chain: null,
         to: call.entryPoint,
         data: call.data,
         gas: 8_000_000n,

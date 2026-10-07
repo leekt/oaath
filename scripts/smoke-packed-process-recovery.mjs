@@ -1,33 +1,39 @@
 import { scrubLiveProviderEnvironment } from "./live-provider-environment.mjs";
 import { createConsumer } from "./packed-consumer.mjs";
 
-// Producer must die before SDK observation; only normal SDK store writes survive.
+// Producer must die after broadcast, before acknowledgement or SDK observation; only normal SDK store writes survive.
 const files = {
   "producer.mjs": `
 import assert from "node:assert/strict";
+assert.throws(() => import.meta.resolve("viem"), { code: "ERR_MODULE_NOT_FOUND" });
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { createSqliteOperationStore } from "@oaath/testing";
 import { join } from "node:path";
 let fixture;
 try {
-  fixture = await createLocalAnvilFixture({ stateDirectory: process.argv[2] });
+  const calls = [{ target: "0x4444444444444444444444444444444444444444", data: "0x12345678", value: "1" }];
+  fixture = await createLocalAnvilFixture({ stateDirectory: process.argv[2], submission: (open) => async (request) => {
+    const session = await open(request);
+    return { ...session, async send() {
+      await session.send();
+      const store = createSqliteOperationStore(join(process.argv[2], "client.sqlite"));
+      try {
+        const record = await store.get({ grantId: request.prepared.grantId, chainId: request.prepared.chainId, kind: "execution" });
+        assert.equal(record.value.state, "submission_attempted");
+      } finally { await store.close(); }
+      assert.equal(fixture.approvalCount, 1);
+      assert.equal(fixture.submissionCount, 1);
+      process.send({ type: "broadcast", grantId: request.prepared.grantId, operationId: request.prepared.userOperationHash, calls });
+      // Hold the reply until the parent kills this process. The SDK never acknowledges it.
+      await new Promise(() => {});
+    } };
+  } });
   process.send({ type: "environment", recovery: fixture.recovery, processIds: fixture.processIds });
   const oaath = await fixture.openClient();
   const connection = await oaath.connect();
-  const calls = [{ target: "0x4444444444444444444444444444444444444444", data: "0x12345678", value: "1" }];
   const grant = await connection.requestPermission({ chainScope: "all", expiresIn: 1800, perChainOperationLimit: 4, permissions: [{ calls: [{ target: calls[0].target, selectors: [calls[0].data], valueLimit: "1" }] }] });
-  const { grantId } = await grant.reviewCalls({ chain: fixture.chainIds[0], calls });
-  const operation = await grant.sendCalls({ chain: fixture.chainIds[0], calls });
-  const store = createSqliteOperationStore(join(process.argv[2], "client.sqlite"));
-  try {
-    const record = await store.get({ grantId, chainId: fixture.chainIds[0], kind: "execution" });
-    assert.equal(record.value.state, "submitted");
-  } finally { await store.close(); }
-  assert.equal(fixture.approvalCount, 1);
-  assert.equal(fixture.submissionCount, 1);
-  process.send({ type: "submitted", grantId, operationId: operation.id, calls });
-  // The parent kills this process. Do not close the client, observe or finalize.
-  setInterval(() => {}, 1000);
+  await grant.sendCalls({ chain: fixture.chainIds[0], calls });
+  throw new Error("broadcast reply unexpectedly reached the SDK");
 } catch {
   if (fixture) await fixture.close().catch(() => undefined);
   process.send({ type: "failed" });
@@ -36,6 +42,7 @@ try {
 `,
   "recover.mjs": `
 import assert from "node:assert/strict";
+assert.throws(() => import.meta.resolve("viem"), { code: "ERR_MODULE_NOT_FOUND" });
 import { openLocalAnvilRecoveryClient } from "@oaath/testing/anvil";
 let oaath;
 let stage = "open";
@@ -55,7 +62,7 @@ process.once("message", async ({ recovery, stateDirectory, reference, unreadable
       assert.equal(operation.outcome.status, "pending");
       assert.equal(operation.outcome.reason, "provider_unavailable");
       stage = "unreadable_state";
-      assert.equal(operation.outcome.state, "submitted");
+      assert.equal(operation.outcome.state, "submission_attempted");
     } else {
       const evidence = await operation.execution();
       assert.equal(evidence.outcome, "success");
@@ -80,6 +87,7 @@ process.once("message", async ({ recovery, stateDirectory, reference, unreadable
 `,
   "index.mjs": `
 import assert from "node:assert/strict";
+assert.throws(() => import.meta.resolve("viem"), { code: "ERR_MODULE_NOT_FOUND" });
 import { fork } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -135,7 +143,7 @@ async function nonce(recovery) {
 }
 try {
   producer = fork("producer.mjs", [stateDirectory], { stdio: ["ignore","ignore","ignore","ipc"] });
-  const submitted = message(producer, "submitted");
+  const submitted = message(producer, "broadcast");
   void submitted.catch(() => undefined);
   const environment = await message(producer, "environment");
   processIds = environment.processIds;
@@ -163,7 +171,7 @@ try {
   assert.equal(await nonce(environment.recovery), before);
   await recover(environment.recovery, reference, false);
   assert.equal(await nonce(environment.recovery), before);
-  process.stdout.write("SDK process recovery: unreadable evidence stays unresolved; same operation, exact calls, zero resubmission\\n");
+  process.stdout.write("SDK process recovery after lost broadcast reply: unreadable evidence stays unresolved; same operation, exact calls, zero resubmission\\n");
 } finally {
   await Promise.all([stopped(producer), stopped(recovered)]);
   if (rpcProxy) await new Promise(resolve => rpcProxy.close(resolve));
@@ -187,7 +195,7 @@ try {
   consumer = await createConsumer({
     label: "process-recovery",
     packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing"],
-    dependencies: { "@types/node": "22.13.0", viem: "2.55.8" },
+    dependencies: { "@types/node": "22.13.0" },
     types: ["node"],
     skipLibCheck: true,
     files,

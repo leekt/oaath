@@ -1,10 +1,10 @@
-/** Existing Kernel account fixture over the public owner client and viem ports. */
+/** Existing Kernel account fixture over the public owner client and Cetane ports. */
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { p256 } from "@noble/curves/nist.js";
-import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import { entryPointAbi, OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
 import {
   createOAAth,
   type OaathApprovalWallet,
@@ -14,25 +14,18 @@ import {
 } from "@oaath/sdk";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import { type KeyProfile, kernelDeployment, kernelKey } from "@oaath/sdk/kernel";
+import { createWalletClient, type Hex, http } from "cetane";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
+import { getSigningHash, type Operation, toPackedUserOperation } from "cetane/execution/erc4337";
+import { createExecution } from "cetane/execution/evm";
 import {
   bytesToHex,
-  createWalletClient,
-  custom,
   encodeErrorResult,
   encodeFunctionData,
-  type Hex,
+  hashTypedData,
   hexToBytes,
-  http,
-  parseEther,
   toHex,
-} from "viem";
-import {
-  entryPoint07Abi,
-  getUserOperationHash,
-  toPackedUserOperation,
-  type UserOperation,
-} from "viem/account-abstraction";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+} from "cetane/utils";
 import { readLocalOperationReceipt } from "./anvil-observation.mjs";
 import { deployKernelStack, startAnvil } from "./anvil-process.mjs";
 import { deployLocalV4OwnerAccount } from "./anvil-v4-owner.js";
@@ -133,23 +126,24 @@ export async function createLocalOwnerAnvilFixture(
             ownerKey ?? kernelKey({ account: owner, validator: deployment33.ecdsaValidator }),
           )
         : await deployLocalV33Account(chain, stack, owner.address);
-    await stack.fund(address, parseEther("10"));
-    await stack.fund(owner.address, parseEther("10"));
+    await stack.fund(address, 10n ** 19n);
+    await stack.fund(owner.address, 10n ** 19n);
     let bundlerSends = 0,
       fallbackSends = 0;
     let sessionEstimates = 0;
     let rpcRequests = 0;
-    let rejected: UserOperation<"0.7"> | undefined;
+    let rejected: Operation | undefined;
     const walletChain = {
       id: chainId,
       name: "Anvil",
-      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-      rpcUrls: { default: { http: [chain.url] } },
+      nativeAA: false as const,
+      execution: createExecution(),
     };
     const localWallet = createWalletClient({
       chain: walletChain,
-      account: owner,
-      transport: http(chain.url, { retryCount: 0 }),
+      account: { address: owner.address },
+      signer: owner,
+      transport: http(chain.url),
     });
     const mine = async () => {
       await chain.rpc("anvil_mine", ["0x3"]);
@@ -158,67 +152,81 @@ export async function createLocalOwnerAnvilFixture(
       if (!rejected || to.toLowerCase() !== deployment.entryPoint.address)
         throw new Error("local_fixture_unreviewed_fallback");
       const expected = encodeFunctionData({
-        abi: entryPoint07Abi,
+        abi: entryPointAbi,
         functionName: "handleOps",
-        args: [[toPackedUserOperation(rejected)], owner.address],
+        args: [[toPackedUserOperation(rejected, deployment.entryPoint.version)], owner.address],
       });
       if (data !== expected) throw new Error("local_fixture_changed_operation");
       fallbackSends++;
-      const hash = await localWallet.sendTransaction({ chain: null, to, data, gas: 8_000_000n });
+      const hash = await localWallet.sendTransaction({ to, data, gas: 8_000_000n });
       await chain.client.waitForTransactionReceipt({ hash });
       await mine();
       return hash;
     }
+    const walletRequest = async ({
+      method,
+      params,
+    }: {
+      method: string;
+      params?: readonly unknown[];
+    }): Promise<unknown> => {
+      if (method === "eth_chainId") return toHex(chainId);
+      if (method === "eth_accounts") return [owner.address];
+      if (method === "personal_sign") {
+        const [digest, signer] = params as [Hex, string];
+        if (signer.toLowerCase() !== owner.address.toLowerCase())
+          throw new Error("local_fixture_owner_changed");
+        signatures++;
+        return owner.signMessage({ message: { raw: digest } });
+      }
+      if (method === "eth_signTypedData_v4") {
+        const [signer, encoded] = params as [string, string];
+        if (signer.toLowerCase() !== owner.address.toLowerCase())
+          throw new Error("local_fixture_owner_changed");
+        signatures++;
+        return owner.sign({ hash: hashTypedData(JSON.parse(encoded)) });
+      }
+      if (method === "eth_sendTransaction") {
+        const [tx] = params as [{ from: Hex; to: Hex; data: Hex; value: Hex; chainId: Hex }];
+        if (
+          tx.from !== owner.address.toLowerCase() ||
+          tx.chainId !== toHex(chainId) ||
+          tx.value !== "0x0"
+        )
+          throw new Error("local_fixture_transaction_changed");
+        return fallback(tx.data, tx.to);
+      }
+      throw new Error("local_fixture_wallet_method_invalid");
+    };
     const wallet: OwnerWallet =
       input.wallet === "browser"
-        ? createWalletClient({
-            chain: walletChain,
-            account: owner.address,
-            transport: custom({
-              request: async ({ method, params }) => {
-                if (method === "eth_chainId") return toHex(chainId);
-                if (method === "eth_accounts") return [owner.address];
-                if (method === "personal_sign") {
-                  const [digest, signer] = params as [Hex, string];
-                  if (signer.toLowerCase() !== owner.address.toLowerCase())
-                    throw new Error("local_fixture_owner_changed");
-                  signatures++;
-                  return owner.signMessage({ message: { raw: digest } });
-                }
-                if (method === "eth_signTypedData_v4") {
-                  const [signer, encoded] = params as [string, string];
-                  if (signer.toLowerCase() !== owner.address.toLowerCase())
-                    throw new Error("local_fixture_owner_changed");
-                  signatures++;
-                  return owner.signTypedData(JSON.parse(encoded));
-                }
-                if (method === "eth_sendTransaction") {
-                  const [tx] = params as [
-                    { from: Hex; to: Hex; data: Hex; value: Hex; chainId: Hex },
-                  ];
-                  if (
-                    tx.from !== owner.address.toLowerCase() ||
-                    tx.chainId !== toHex(chainId) ||
-                    tx.value !== "0x0"
-                  )
-                    throw new Error("local_fixture_transaction_changed");
-                  return fallback(tx.data, tx.to);
-                }
-                throw new Error("local_fixture_wallet_method_invalid");
-              },
-            }),
-          })
+        ? {
+            account: { address: owner.address },
+            request: walletRequest,
+            signMessage: ({ message }) =>
+              walletRequest({ method: "personal_sign", params: [message.raw, owner.address] }),
+            signTypedData: (request) =>
+              walletRequest({
+                method: "eth_signTypedData_v4",
+                params: [
+                  owner.address,
+                  JSON.stringify(request, (_, value) =>
+                    typeof value === "bigint" ? value.toString() : value,
+                  ),
+                ],
+              }),
+          }
         : {
             ...localWallet,
-            async signMessage(request: Parameters<typeof localWallet.signMessage>[0]) {
+            async signMessage(request) {
               signatures++;
-              return localWallet.signMessage(request);
+              return owner.signMessage(request);
             },
-            async signTypedData(request: Parameters<OaathApprovalWallet["signTypedData"]>[0]) {
+            async signTypedData(request) {
               signatures++;
-              return localWallet.signTypedData(request);
+              return owner.sign({ hash: hashTypedData(request) });
             },
-            async sendTransaction(request: Parameters<typeof localWallet.sendTransaction>[0]) {
+            async sendTransaction(request) {
               if (!request.to || !request.data || request.value !== 0n)
                 throw new Error("local_fixture_transaction_invalid");
               return fallback(request.data, request.to);
@@ -249,7 +257,7 @@ export async function createLocalOwnerAnvilFixture(
                 code: -32500,
                 message: "fixture account validation rejection",
                 data: encodeErrorResult({
-                  abi: entryPoint07Abi,
+                  abi: entryPointAbi,
                   errorName: "FailedOpWithRevert",
                   args: [0n, "AA23 reverted", "0x"],
                 }),
@@ -302,7 +310,7 @@ export async function createLocalOwnerAnvilFixture(
               "maxPriorityFeePerGas",
             ].map((key) => [key, BigInt(wire[key])]),
           ),
-        } as UserOperation<"0.7">;
+        } as Operation;
         if (input.bundler === "uncertain") return new Response(null, { status: 503 });
         if (input.bundler === "reject") {
           rejected = operation;
@@ -314,24 +322,26 @@ export async function createLocalOwnerAnvilFixture(
         }
         const hash = await stack.wallet.sendTransaction({
           account: stack.submitter,
-          chain: null,
           to: deployment.entryPoint.address,
           gas: 8_000_000n,
           data: encodeFunctionData({
-            abi: entryPoint07Abi,
+            abi: entryPointAbi,
             functionName: "handleOps",
-            args: [[toPackedUserOperation(operation)], stack.submitter.address],
+            args: [
+              [toPackedUserOperation(operation, deployment.entryPoint.version)],
+              stack.submitter.address,
+            ],
           }),
         });
         if ((await chain.client.waitForTransactionReceipt({ hash })).status !== "success")
           throw new Error("local_fixture_operation_reverted");
         await mine();
-        result = getUserOperationHash({
-          userOperation: operation,
-          entryPointAddress: deployment.entryPoint.address,
-          entryPointVersion: deployment.entryPoint.version,
+        result = getSigningHash(
+          operation,
           chainId,
-        });
+          deployment.entryPoint.address,
+          deployment.entryPoint.version,
+        );
       } else throw new Error("local_fixture_bundler_method_invalid");
       return Response.json({ jsonrpc: "2.0", id, result });
     };
