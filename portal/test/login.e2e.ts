@@ -21,18 +21,25 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { p256 } from "@noble/curves/nist.js";
 import {
   hashOwnerCredentialProfile,
   OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+  parsePermissionRequest,
 } from "@oaath/protocol";
+import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import {
   createKernelRuntime,
   ECDSA_VALIDATOR,
   kernelDeployment,
   kernelKey,
+  materializeKernelPermission,
   ownerOperator,
+  prepareDerivedAccountPermissionApproval,
+  prepareKernelPermissionApproval,
   prepareOwnerOperation,
+  sessionOperator,
   verifyOwnerOperation,
 } from "@oaath/sdk/kernel";
 import { calculateJwkThumbprint, createRemoteJWKSet, type JWK, jwtVerify } from "jose";
@@ -42,6 +49,7 @@ import {
   encodeAbiParameters,
   encodeFunctionData,
   hashTypedData,
+  keccak256,
   parseAbi,
   recoverAddress,
   toHex,
@@ -1481,6 +1489,327 @@ describe("a member's Grant requested with the SDK waits for the root, then insta
     expect(walletSignatures).toBe(signatures + 1);
     await device.close();
   });
+});
+
+/** One JSON call straight to the relay, with an optional session cookie. */
+async function relayCall(path: string, cookie?: string, body?: unknown) {
+  const response = await fetch(`${relayBase}${path}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: {
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(cookie ? { cookie } : {}),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const json = (await response.json()) as Record<string, unknown>;
+  if (!response.ok) throw new Error(`${path}: ${response.status} ${JSON.stringify(json)}`);
+  return { json, cookie: response.headers.get("set-cookie")?.split(";")[0] ?? "" };
+}
+
+/** Registers a signer and signs it in with `prove(challenge)`; answers its id and cookie. */
+async function relaySignIn(
+  profile: unknown,
+  prove: (challenge: { nonce: string; message?: string }) => Promise<string>,
+) {
+  const signerId = String(
+    (await relayCall("/portal/signers", undefined, { profile })).json.signer_id,
+  );
+  const challenge = (
+    await relayCall("/portal/sessions/challenge", undefined, { signer_id: signerId })
+  ).json as { nonce: string; message?: string };
+  const { cookie } = await relayCall("/portal/sessions", undefined, {
+    signer_id: signerId,
+    nonce: challenge.nonce,
+    signature: await prove(challenge),
+  });
+  return { signerId, cookie };
+}
+
+/**
+ * A software passkey: user present and verified, fixed counter, bound to the
+ * issuer's relying party so the relay admits its sign-in. Kernel's WebAuthn
+ * signer checks the challenge and the P-256 signature, not the RP ID.
+ */
+function softwarePasskey() {
+  const secret = p256.utils.randomPrivateKey();
+  const rawId = randomBytes(16);
+  const credential = {
+    version: "oaath.owner-credential-profile/v1",
+    kind: "webauthn",
+    publicKey: toHex(p256.getPublicKey(secret, false)),
+    authenticatorIdHash: keccak256(rawId),
+  } as const;
+  const rpId = new URL(portal).hostname;
+  const rpIdHash = createHash("sha256").update(rpId).digest("hex");
+  const key = kernelKey({
+    kind: "webauthn",
+    credential,
+    credentialId: rawId.toString("base64url"),
+    rpId,
+    origin: portal,
+    authenticate: async (request) => {
+      const clientDataJSON = JSON.stringify({
+        type: "webauthn.get",
+        challenge: request.challenge,
+        origin: portal,
+        crossOrigin: false,
+      });
+      const authenticatorData = `0x${rpIdHash}0500000001` as const;
+      const message = createHash("sha256")
+        .update(Buffer.from(authenticatorData.slice(2), "hex"))
+        .update(createHash("sha256").update(clientDataJSON).digest())
+        .digest();
+      const signature = p256.sign(message, secret, { lowS: true, prehash: false });
+      return {
+        authenticatorData,
+        clientDataJSON,
+        responseTypeLocation: String(clientDataJSON.indexOf('"type":"webauthn.get"')),
+        r: toHex(signature.r, { size: 32 }),
+        s: toHex(signature.s, { size: 32 }),
+      };
+    },
+  });
+  return { credential, key };
+}
+
+describe("a template-granted passkey member's first operation on chain", () => {
+  it.each(["derived", "imported"] as const)(
+    "%s account: the root's one signature through the relay, then the member's first call enables and executes",
+    async (kind) => {
+      const local = await startLocalArbitrumSepolia();
+      rpcUpstream = local.chain.url;
+      const deployment = kernelDeployment({ chainId: 421_614 });
+      const [ports] = createCetaneChainPorts({ 421614: { publicRpcUrls: [local.chain.url] } });
+      if (!ports) throw new Error("no chain reads");
+      const reads = ports.reads;
+
+      // The root: an ECDSA key that signs in with SIWE and owns one account.
+      const rootAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+      const rootProfile = {
+        version: "oaath.owner-credential-profile/v1",
+        kind: "ecdsa",
+        address: rootAccount.address.toLowerCase() as `0x${string}`,
+      } as const;
+      const rootKey = kernelKey({
+        account: { address: rootProfile.address, sign: ({ hash }) => rootAccount.sign({ hash }) },
+        validator: ECDSA_VALIDATOR,
+      });
+      const root = await relaySignIn(rootProfile, async (challenge) =>
+        rootAccount.signMessage({ message: challenge.message ?? "" }),
+      );
+      const owner = createKernelRuntime({
+        deployment,
+        operator: ownerOperator({
+          key: kernelKey({ credential: rootProfile, validator: ECDSA_VALIDATOR }),
+        }),
+        reads,
+      });
+      let account: { account_id: string; address: `0x${string}` };
+      if (kind === "derived") {
+        account = (
+          await relayCall("/portal/accounts", root.cookie, {
+            root_signer_id: root.signerId,
+            creation_key: randomBytes(16).toString("hex"),
+          })
+        ).json as typeof account;
+      } else {
+        // An account deployed outside OAAth, then imported with the root's statement.
+        const existing = await owner.bindAccount({
+          accountIndex: "90",
+          initialPackages: owner.packages,
+        });
+        if (existing.state !== "counterfactual" || !("factoryDeployCalldata" in existing))
+          throw new Error("account already deployed");
+        const hash = await local.stack.wallet.sendTransaction({
+          to: existing.factory,
+          data: existing.factoryDeployCalldata,
+          gas: 3_000_000n,
+        });
+        await local.chain.client.waitForTransactionReceipt({ hash });
+        const address = existing.account.toLowerCase() as `0x${string}`;
+        const issuedAt = Math.floor(Date.now() / 1000) - 5;
+        const fingerprint = `0x${"33".repeat(32)}` as const;
+        const signature = await rootAccount.sign({
+          hash: hashTypedData({
+            domain: { name: "OAAth", version: "1" },
+            types: {
+              AccountImport: [
+                { name: "account", type: "address" },
+                { name: "ownerProfileHash", type: "bytes32" },
+                { name: "inventoryFingerprint", type: "bytes32" },
+                { name: "issuedAt", type: "uint64" },
+                { name: "nonce", type: "string" },
+              ],
+            },
+            primaryType: "AccountImport",
+            message: {
+              account: address,
+              ownerProfileHash: hashOwnerCredentialProfile(rootProfile),
+              inventoryFingerprint: fingerprint,
+              issuedAt: BigInt(issuedAt),
+              nonce: "member-grant-1",
+            },
+          }),
+        });
+        account = (
+          await relayCall("/portal/accounts/import", root.cookie, {
+            root_signer_id: root.signerId,
+            address,
+            inventory_fingerprint: fingerprint,
+            issued_at: issuedAt,
+            nonce: "member-grant-1",
+            signature,
+          })
+        ).json as typeof account;
+      }
+      const target = `0x${"7c".repeat(20)}` as const;
+      const template = (
+        await relayCall(`/portal/accounts/${account.account_id}/policies`, root.cookie, {
+          name: "Member payments",
+          lifetime_seconds: 3_600,
+          policy: {
+            calls: [{ target, selector: "0x12345678", valueLimit: "500" }],
+            perChainOperationLimit: { count: 3, intervalSeconds: null },
+          },
+        })
+      ).json as { template_id: string };
+
+      // The member: a passkey that asks to join, and the root grants it the template.
+      const passkey = softwarePasskey();
+      const member = await relaySignIn(passkey.credential, async (challenge) =>
+        passkey.key.sign(`0x${challenge.nonce}`),
+      );
+      const linkId = String(
+        (
+          await relayCall("/portal/links", member.cookie, {
+            signer_id: member.signerId,
+            account: account.address,
+            label: "Laptop",
+          })
+        ).json.link_id,
+      );
+      const prepared = (
+        await relayCall(`/portal/links/${linkId}/prepare`, root.cookie, {
+          template_id: template.template_id,
+        })
+      ).json as {
+        permission_request: unknown;
+        signing_request: { expectedDigest: `0x${string}` };
+      };
+      const request = parsePermissionRequest(prepared.permission_request);
+      expect(request.operatorCredential).toMatchObject({
+        kind: "webauthn",
+        publicKey: passkey.credential.publicKey,
+      });
+      // The root signs only the install the SDK derives itself.
+      const approval =
+        kind === "derived"
+          ? prepareDerivedAccountPermissionApproval({
+              request,
+              chainId: 421_614,
+              account: account.address,
+            })
+          : await prepareKernelPermissionApproval({ request, chainId: 421_614, reads });
+      expect(approval.signingRequest.expectedDigest).toBe(prepared.signing_request.expectedDigest);
+      const decision = await approval.sign(rootKey, Math.floor(Date.now() / 1000));
+      await relayCall(`/portal/links/${linkId}/approve`, root.cookie, {
+        template_id: template.template_id,
+        artifact: JSON.stringify(decision),
+      });
+
+      // The member reads its grant and spends it: the first covered call
+      // installs the permission in enable mode and executes.
+      const grant = (await relayCall(`/portal/grants/${linkId}`, member.cookie)).json as {
+        status: string;
+        permission_request: unknown;
+        enable: Parameters<typeof materializeKernelPermission>[0]["approval"];
+      };
+      expect(grant.status).toBe("approved");
+      expect(grant.enable.account).toBe(account.address);
+      const granted = parsePermissionRequest(grant.permission_request);
+      const session = createKernelRuntime({
+        deployment,
+        operator: sessionOperator({
+          key: passkey.key,
+          policies: deriveSessionPolicyProfiles(granted.policy),
+        }),
+        reads,
+      });
+      const profile = granted.logicalAccount;
+      const bound =
+        "accountIndex" in profile
+          ? await session.bindAccount({
+              accountIndex: profile.accountIndex,
+              initialPackages: owner.packages,
+            })
+          : await session.bindAccount({ address: account.address });
+      expect("accountIndex" in profile).toBe(kind === "derived");
+      await local.chain.rpc("anvil_setBalance", [account.address, toHex(10n ** 18n)]);
+      const first = await materializeKernelPermission({
+        approval: grant.enable,
+        runtime: session,
+        grantId: linkId,
+        account: bound,
+        nonceKey: "0",
+        sequence: "0",
+        calls: [{ target, value: "500", data: "0x12345678" }],
+        gas: {
+          callGasLimit: "900000",
+          verificationGasLimit: "3000000",
+          preVerificationGas: "150000",
+          maxFeePerGas: "2000000000",
+          maxPriorityFeePerGas: "1000000000",
+        },
+      });
+      const operation = first.prepared.userOperation;
+      expect(operation.factory === null).toBe(kind === "imported");
+      const hash = await local.stack.wallet.sendTransaction({
+        to: deployment.entryPoint.address,
+        gas: 8_000_000n,
+        data: encodeFunctionData({
+          abi: entryPoint07Abi,
+          functionName: "handleOps",
+          args: [
+            [
+              toPackedUserOperation({
+                sender: operation.sender,
+                nonce: BigInt(operation.nonce),
+                callData: operation.callData,
+                callGasLimit: BigInt(operation.callGasLimit),
+                verificationGasLimit: BigInt(operation.verificationGasLimit),
+                preVerificationGas: BigInt(operation.preVerificationGas),
+                maxFeePerGas: BigInt(operation.maxFeePerGas),
+                maxPriorityFeePerGas: BigInt(operation.maxPriorityFeePerGas),
+                ...(operation.factory
+                  ? { factory: operation.factory.address, factoryData: operation.factory.data }
+                  : {}),
+                signature: first.signature,
+              }),
+            ],
+            local.stack.submitter.address,
+          ],
+        }),
+      });
+      const receipt = await local.chain.client.waitForTransactionReceipt({ hash });
+      expect(receipt.status).toBe("success");
+      const event = receipt.logs
+        .map((log) => {
+          try {
+            return decodeEventLog({
+              abi: entryPoint07Abi,
+              topics: log.topics as never,
+              data: log.data,
+            });
+          } catch {
+            return null;
+          }
+        })
+        .find((entry) => entry?.eventName === "UserOperationEvent");
+      expect(event?.eventName === "UserOperationEvent" && event.args.success).toBe(true);
+      expect(await local.chain.rpc("eth_getBalance", [target, "latest"])).toBe("0x1f4");
+    },
+    120_000,
+  );
 });
 
 describe("importing an existing account through the portal's chain-read proxy", () => {
