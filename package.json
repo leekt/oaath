@@ -47,7 +47,8 @@
     "smoke:runtime": "node scripts/smoke-packed-runtime.mjs",
     "smoke:protocol": "node scripts/smoke-packed-protocol.mjs",
     "smoke:cetane": "node scripts/smoke-packed-cetane.mjs",
-    "smoke:session-signer": "node scripts/smoke-packed-session-signer.mjs"
+    "smoke:session-signer": "node scripts/smoke-packed-session-signer.mjs",
+    "smoke:pending-approval": "node scripts/smoke-packed-pending.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",

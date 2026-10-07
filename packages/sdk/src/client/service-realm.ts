@@ -388,8 +388,20 @@ function serviceChainCapability(
   }) as Readonly<OaathChainCapability>;
 }
 
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      reject(new Error("authorization stopped"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+  });
 }
 
 /**
@@ -407,19 +419,25 @@ function pollingAuthorization(
     authorize: async (value: unknown) => {
       const request = exactClientRecord(
         value,
-        ["requestId", "redirectUri", "expiresAt"],
+        ["requestId", "redirectUri", "expiresAt", "signal"],
         "authorization request",
         new WeakSet(),
       );
       const requestId = request.requestId;
       const expiresAt = request.expiresAt;
+      const signal = request.signal;
+      if (!(signal instanceof AbortSignal))
+        return clientFail("oaath_client_input_invalid", "authorization signal is invalid");
       if (typeof requestId !== "string" || typeof expiresAt !== "number") {
         return clientFail("oaath_client_input_invalid", "authorization request is invalid");
       }
       for (;;) {
+        signal.throwIfAborted();
         const state = await fetchJson(
           transport,
-          new Request(`${url}/authorization/requests/${encodeURIComponent(requestId)}/code`),
+          new Request(`${url}/authorization/requests/${encodeURIComponent(requestId)}/code`, {
+            signal,
+          }),
           "authorization code pickup",
         );
         const outcome = (state as { readonly outcome?: unknown } | null)?.outcome;
@@ -442,16 +460,22 @@ function pollingAuthorization(
             "the owner rejected the permission request",
           );
         }
+        if (outcome === "withdrawn")
+          return clientFail(
+            "oaath_client_decision_unavailable",
+            "the creator withdrew this request",
+            "authorization_withdrawn",
+          );
         if (outcome !== "pending") {
           return clientFail("oaath_client_issuer_rejected", "code pickup answered unusably");
         }
-        if (now() >= expiresAt) {
+        if (now() * 1_000 >= expiresAt) {
           return clientFail(
             "oaath_client_decision_unavailable",
             "no owner decision arrived before the request expired",
           );
         }
-        await sleep(POLL_INTERVAL_MS);
+        await sleep(POLL_INTERVAL_MS, signal);
       }
     },
   });

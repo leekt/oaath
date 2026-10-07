@@ -179,7 +179,7 @@ describe("browser golden path", () => {
     await second.oaath.close();
   });
 
-  it("drains a permission handle created while its Connection closes", async () => {
+  it("aborts a claim wait on close and retains its uncertain one-time outcome", async () => {
     const clock = createClock();
     const relay = createRelay(clock);
     let enterClaim!: () => void;
@@ -202,7 +202,9 @@ describe("browser golden path", () => {
       },
     });
     const connection = await realm.oaath.connect();
-    const requesting = connection.requestPermission(permissionInput());
+    const requesting = connection
+      .requestPermission(permissionInput())
+      .catch((error: unknown) => error);
     await claimEntered;
     let closeSettled = false;
     const closing = connection.close().then(() => {
@@ -212,19 +214,20 @@ describe("browser golden path", () => {
     expect(closeSettled).toBe(false);
 
     releaseClaim();
-    const grant = await requesting;
+    expect(await requesting).toMatchObject({ code: "oaath_client_closed" });
     await closing;
-    await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
-      code: "oaath_client_closed",
-    });
 
-    // Closing one Connection does not destroy realm-owned stores for a sibling.
+    // Closing one Connection leaves the journal readable by a sibling.
     const sibling = await realm.oaath.connect();
-    await expect(sibling.resume()).resolves.not.toBeNull();
+    expect(await sibling.resumePendingPermission()).toMatchObject({
+      status: "approved",
+      grant: null,
+      recovery: "uncertain",
+    });
     await realm.oaath.close();
   });
 
-  it("drains a resumed Grant handle created while its Connection closes", async () => {
+  it("refuses to return a resumed Grant after its Connection closes", async () => {
     const memory = createMemoryStores();
     let gateRead = false;
     let readBlocked = false;
@@ -240,6 +243,7 @@ describe("browser golden path", () => {
       stores: {
         ...memory,
         context: {
+          compareAndSwapPending: memory.context.compareAndSwapPending,
           read: async (bindingId: Parameters<typeof memory.context.read>[0]) => {
             const value = await memory.context.read(bindingId);
             if (gateRead && !readBlocked) {
@@ -262,16 +266,12 @@ describe("browser golden path", () => {
 
     const connection = await realm.oaath.connect();
     gateRead = true;
-    const resuming = connection.resume();
+    const resuming = connection.resume().catch((error: unknown) => error);
     await readEntered;
     const closing = connection.close();
     releaseRead();
-    const resumed = await resuming;
-    if (resumed === null) throw new Error("expected the Grant to resume");
+    expect(await resuming).toMatchObject({ code: "oaath_client_closed" });
     await closing;
-    await expect(resumed.sendCalls(sendCallsInput())).rejects.toMatchObject({
-      code: "oaath_client_closed",
-    });
     await realm.oaath.close();
   });
 
@@ -573,7 +573,9 @@ describe("browser golden path", () => {
       "close",
       "requestPermission",
       "resume",
+      "resumePendingPermission",
       "signOut",
+      "withdrawPendingPermission",
     ]);
     expect(Object.keys(grant).sort()).toEqual([
       "account",

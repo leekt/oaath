@@ -24,7 +24,10 @@ const STORE_PORTS: Readonly<
   },
   keys: { label: "key store", methods: ["store", "get", "delete", "close"] },
   cleanup: { label: "cleanup store", methods: ["read", "write", "clear", "close"] },
-  context: { label: "context store", methods: ["read", "write", "clear", "close"] },
+  context: {
+    label: "context store",
+    methods: ["read", "write", "clear", "compareAndSwapPending", "close"],
+  },
 });
 
 export const STORE_NAMES = Object.freeze(Object.keys(STORE_PORTS)) as readonly OaathStoreName[];

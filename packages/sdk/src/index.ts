@@ -25,6 +25,7 @@ export type {
 } from "./client/connected-eoa.js";
 export type {
   OaathConnection,
+  OaathPendingPermissionResult,
   OaathPermissionCallInput,
   OaathPermissionInput,
   OaathRequestPermissionInput,

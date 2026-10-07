@@ -37,6 +37,7 @@ import {
   type OaathClientContext,
   type OaathContextStore,
   type OaathKeyStore,
+  type OaathPendingAuthorizationWrite,
   parseWalletCallBundleKey,
   persistenceFail,
   persistenceId,
@@ -332,7 +333,7 @@ export function createMemoryCleanupStore(): OaathCleanupCheckpointStore {
 }
 
 export function createMemoryContextStore(): OaathContextStore {
-  const contexts = new Map<string, Readonly<OaathClientContext>>();
+  const contexts = new Map<string, unknown>();
   let closed = false;
   return Object.freeze({
     async read(bindingId: string) {
@@ -342,6 +343,18 @@ export function createMemoryContextStore(): OaathContextStore {
     async write(context: Readonly<OaathClientContext>) {
       assertOpen(closed);
       contexts.set(persistenceId(context.bindingId, "memory bindingId"), context);
+    },
+    async compareAndSwapPending(input: Readonly<OaathPendingAuthorizationWrite>) {
+      assertOpen(closed);
+      const key = persistenceId(input.bindingId, "pending bindingId");
+      if (
+        input.next.bindingId !== key ||
+        input.next.storeRevision !== (input.expectedStoreRevision ?? 0) + 1
+      )
+        return false;
+      if (!matchesExpectedRevision(contexts.get(key), input.expectedStoreRevision)) return false;
+      contexts.set(key, Object.freeze({ ...input.next }));
+      return true;
     },
     async clear(bindingId: string) {
       assertOpen(closed);

@@ -19,6 +19,8 @@ export type {
   OaathClientContext,
   OaathContextStore,
   OaathKeyStore,
+  OaathPendingAuthorizationEnvelope,
+  OaathPendingAuthorizationWrite,
   PersistenceErrorCode,
   WalletCallBundleKey,
   WalletCallBundleOperation,

@@ -452,6 +452,29 @@ export function createSqliteContextStore(filePath: string): OaathContextStore {
       async write(context) {
         write.run(context.bindingId, encode(context));
       },
+      async compareAndSwapPending(input) {
+        if (
+          input.next.bindingId !== input.bindingId ||
+          input.next.storeRevision !== (input.expectedStoreRevision ?? 0) + 1
+        )
+          return false;
+        database.exec("BEGIN IMMEDIATE");
+        try {
+          const row = read.get(input.bindingId) as { payload: string } | undefined;
+          const current =
+            row === undefined ? undefined : (decode(row.payload) as { storeRevision?: unknown });
+          const matches =
+            current === undefined
+              ? input.expectedStoreRevision === null
+              : current !== null && current.storeRevision === input.expectedStoreRevision;
+          if (matches) write.run(input.bindingId, encode(input.next));
+          database.exec("COMMIT");
+          return matches;
+        } catch (error) {
+          database.exec("ROLLBACK");
+          throw error;
+        }
+      },
       async clear(bindingId) {
         clear.run(bindingId);
       },
