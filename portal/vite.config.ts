@@ -10,5 +10,7 @@ export default defineConfig({
     name: "@oaath/portal",
     include: ["test/**/*.test.ts"],
     testTimeout: 60_000,
+    // Chrome cold starts on shared CI runners exceed the 10 s hook default.
+    hookTimeout: 60_000,
   },
 });
