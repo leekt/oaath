@@ -8,6 +8,7 @@
  *   credential-free CORS, because dapps call it from their own origins.
  * - `/portal/*`: the portal's private API; same-origin only. Its session
  *   cookie (`Path=/portal`) is forwarded both ways.
+ * - `/rpc/421614`: same-origin, budgeted, read-only chain reads (`rpc.ts`).
  *
  * Only an allow-list of request headers reaches the relay, so client-supplied
  * forwarding headers (`x-forwarded-*`, `forwarded`, `cf-*`) never do, and
@@ -17,11 +18,13 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { proxyRpc, type RpcEnv } from "./rpc.js";
+
 interface Fetcher {
   fetch(request: Request): Promise<Response>;
 }
 
-export interface Env {
+export interface Env extends RpcEnv {
   /** Workers static assets (`dist/`). */
   readonly ASSETS: Fetcher;
   /** Workers VPC service: the relay on the VM's loopback. */
@@ -160,6 +163,13 @@ export default {
       if (!reading && request.method !== "POST" && request.method !== "DELETE")
         return failure(405, "Unsupported method");
       return forward(request, url, env, false);
+    }
+
+    if (url.pathname === "/rpc/421614") {
+      const site = request.headers.get("sec-fetch-site");
+      if ((site !== null && site !== "same-origin") || request.headers.get("origin") !== ORIGIN)
+        return failure(403, "Cross-site request refused");
+      return secured(await proxyRpc(request, env), {});
     }
 
     const page =
