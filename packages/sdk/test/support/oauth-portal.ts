@@ -29,6 +29,8 @@ export interface OAuthPortalOptions {
   /** The root's factory-derived account; any address when nothing is executed. */
   readonly account?: `0x${string}`;
   readonly root?: Readonly<{ credential: object; key: Readonly<KeyProfile> }>;
+  /** The id_token `oaath_accounts` claim; defaults to the account, as root. */
+  readonly accounts?: unknown;
 }
 
 function ecdsaRoot() {
@@ -61,6 +63,9 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
     entryPoint: { version: "0.9" },
     ownerCredential: root.credential,
   };
+  const accounts = Object.hasOwn(options, "accounts")
+    ? options.accounts
+    : [{ address: account, role: "root", status: "active" }];
   const { privateKey, publicKey } = await generateKeyPair("ES256");
   const jwks = { keys: [{ ...(await exportJWK(publicKey)), kid: "k1", alg: "ES256" }] };
   const pars = new Map<string, URLSearchParams>();
@@ -74,7 +79,28 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
     const par = pars.get(parId)!;
     if (behaviour === "cancel")
       return { error: "access_denied", state: par.get("state")!, iss: ISSUER };
-    const [detail] = JSON.parse(par.get("authorization_details")!);
+    const signIn = (nonce: string | null) =>
+      new SignJWT({
+        nonce,
+        verified: true,
+        oaath_account: accountProfile,
+        oaath_accounts: accounts,
+        signer: { id: "root-signer", kind: "ecdsa", profile: root.credential },
+      })
+        .setProtectedHeader({ alg: "ES256", kid: "k1" })
+        .setIssuer(ISSUER)
+        .setAudience(CLIENT)
+        .setSubject(account)
+        .setIssuedAt()
+        .setExpirationTime("10m")
+        .sign(privateKey);
+    const details = par.get("authorization_details");
+    // Login only: no grant, just the identity.
+    if (details === null) {
+      token = { id_token: await signIn(par.get("nonce")), token_type: "Bearer", scope: "openid" };
+      return { code: "code-1", state: par.get("state")!, iss: ISSUER };
+    }
+    const [detail] = JSON.parse(details);
     const requestedAt = Math.floor(Date.now() / 1000);
     // The relay's compose.
     const request: Record<string, unknown> = {
@@ -107,19 +133,7 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
       account,
     }).sign(root.key, requestedAt);
     const { installApproval, ...rest } = decision;
-    const idToken = await new SignJWT({
-      nonce: par.get("nonce"),
-      verified: true,
-      oaath_account: accountProfile,
-      signer: { id: "root-signer", kind: "ecdsa", profile: root.credential },
-    })
-      .setProtectedHeader({ alg: "ES256", kid: "k1" })
-      .setIssuer(ISSUER)
-      .setAudience(CLIENT)
-      .setSubject(account)
-      .setIssuedAt()
-      .setExpirationTime("10m")
-      .sign(privateKey);
+    const idToken = await signIn(par.get("nonce"));
     token = {
       id_token: idToken,
       access_token: "access",
