@@ -148,8 +148,6 @@ export {
 export type {
   KernelPermissionRevocationPreparation,
   KernelRecordedRevocation,
-  KernelSigningRequestRevocation,
-  PreparedKernelPermissionRevocation,
   PrepareKernelPermissionRevocationInput,
   RestoreKernelPermissionRevocationInput,
 } from "./kernel/permission/revocation.js";

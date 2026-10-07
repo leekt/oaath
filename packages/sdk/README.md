@@ -738,19 +738,17 @@ ephemeral, does not authorize a retry, and does not release an unresolved lane.
 `@oaath/sdk/kernel` exposes `prepareKernelPermissionApproval` for an owner
 approval of a canonical permission request. It binds the request's account
 using public credentials and configured reads, derives its policy packages
-through `createKernelRuntime`, and returns the Kernel signing request. Where
-the owner key lives is expressed only by who signs: `sign(ownerKey, decidedAt)`
-takes one signature from a key profile, and `complete(artifact, decidedAt)`
-verifies an owner device's P-256 signing artifact. Both return the permission
-decision plus install approval consumed by the browser client. The caller owns
+through `createKernelRuntime`, and returns the Kernel signing request.
+`sign(ownerKey, decidedAt)` takes one signature from a key profile, wherever
+that key lives, and returns the permission decision plus install approval
+consumed by the browser client. The caller owns
 any device transport; the helper does not submit or persist anything. It
 supports an existing Kernel `0.3.3` or `0.4.0` account whose root owner is
 proven onchain, a factory-derived Kernel `0.4.0` account whose single root is
 its ECDSA (through `ECDSA_VALIDATOR`), raw P-256, or WebAuthn owner, and the
 current ECDSA/WebAuthn operator profiles. `reads` must serve
 every supported deployment (`createKernelReads`). Any other request fails with
-`kernel_runtime_unsupported` before signing, as does `complete` for a non-P-256
-owner. Wallet-approved mode prepares its approval through the same owner.
+`kernel_runtime_unsupported` before signing. Wallet-approved mode prepares its approval through the same owner.
 
 Approval preparation derives its install nonce from
 `hashPermissionRequest(request)`, as `kernelPermissionNonce` does: the first 192
@@ -771,23 +769,16 @@ revert because Kernel requires an increase. Installed permissions still need
 uninstall calls. These codecs do not submit, establish finality, or complete
 configured-chain revocation.
 
-`prepareKernelPermissionRevocation` prepares one owner revocation for any
-supported Kernel version; the approval's `version` selects the semantics. For a
-Kernel `0.4.0` approval it prepares one P-256 owner operation from
-the canonical permission `request` and its retained install approval. Supply
-the chain, root operation nonce, gas and the `effect` supported by chain
-evidence: `invalidate-install` or `uninstall-permission`. For either version an
-optional `paymaster` (EntryPoint 0.9 `address`, `verificationGasLimit`,
+`prepareKernelPermissionRevocation` prepares one Kernel `0.3.3` owner
+revocation; a Kernel `0.4.0` approval fails with `kernel_runtime_unsupported`
+and revokes through its grant handle. Supply the chain, root operation nonce and
+gas. An optional `paymaster` (EntryPoint `address`, `verificationGasLimit`,
 `postOpGasLimit`, `data`) sponsors the operation; it defaults to `null`
-(self-funded) and is part of the hashed identity that restore reproduces. Retain its `prepared`
-operation and `signingRequest` before requesting owner consent, and recreate it
-with `restoreKernelPermissionRevocation({ preparation: signingRequest })`. The
-signing request binds the workspace, application, install scope, chain,
-EntryPoint and exact removal calls; it contains no enable signature.
-`sign(ownerKey)` signs with a key profile, and `complete(artifact)` verifies an
-owner device's artifact; both return the signature for that operation.
-Preparation and signing never submit or prove revocation finished. Owner device
-UI and configured-chain orchestration are separate integrations.
+(self-funded) and is part of the hashed identity that restore reproduces.
+Retain the JSON preparation before requesting owner consent and recreate it with
+`restoreKernelPermissionRevocation({ preparation, reads })`. `sign(ownerKey)`
+returns the signature for that operation. Preparation and signing never submit
+or prove revocation finished.
 
 The shared revocation call codecs are owned by `@oaath/protocol` and re-exported
 through `@oaath/sdk/kernel`; invalid input reports `signing_request_invalid`.
