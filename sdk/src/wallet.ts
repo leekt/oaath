@@ -56,9 +56,9 @@ export function createWalletOwner(options: {
 		approve: createOwnerApproval({
 			journal,
 			confirm: async () => true,
-			signTypedData: async (value) => {
+			signTypedData: async (value, review) => {
 				const data = value as {
-					domain: { chainId: number; [key: string]: unknown };
+					domain: { chainId?: number; [key: string]: unknown };
 					types: Record<string, unknown>;
 				};
 				const domainFields = [
@@ -79,7 +79,14 @@ export function createWalletOwner(options: {
 								.map(([name, type]) => ({ name, type })),
 					},
 				};
-				const address = await owner(Number(data.domain.chainId));
+				// Kernel permission enable data can intentionally use a chainless domain.
+				// Wallet network admission belongs to the exact reviewed plan instead.
+				if (
+					data.domain.chainId !== undefined &&
+					Number(data.domain.chainId) !== review.terms.chainId
+				)
+					throw new AutomationError("wallet_chain_mismatch", 0);
+				const address = await owner(review.terms.chainId);
 				const signature = await request({
 					method: "eth_signTypedData_v4",
 					params: [

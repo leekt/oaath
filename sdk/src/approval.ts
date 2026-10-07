@@ -24,7 +24,7 @@ export interface OwnerApprovalOptions {
 	journal: ApprovalJournal;
 	/** Display all terms, custody, separate fees and both setup calls before accepting. */
 	confirm(review: OwnerReview): Promise<boolean>;
-	signTypedData(value: unknown): Promise<string>;
+	signTypedData(value: unknown, review: OwnerReview): Promise<string>;
 	/** Use the existing OAAth owner account sendCalls flow and its durable Operation store. */
 	executeSetup(
 		calls: OwnerReview["setupCalls"],
@@ -41,8 +41,11 @@ export function createOwnerApproval(options: OwnerApprovalOptions) {
 				throw new AutomationError("owner_declined", 0);
 			const evidence = {
 				commitment: key,
-				consentSignature: await options.signTypedData(review.consent),
-				permissionSignature: await options.signTypedData(review.permission),
+				consentSignature: await options.signTypedData(review.consent, review),
+				permissionSignature: await options.signTypedData(
+					review.permission,
+					review,
+				),
 			};
 			const next: ApprovalRecord = {
 				version: "dca.owner-approval/v1",

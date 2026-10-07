@@ -42,18 +42,37 @@ try {
 		commitment: `0x${"cd".repeat(32)}`,
 		terms: { account: fixture.address, chainId: 31337 },
 		consent: data,
-		permission: data,
+		permission: { ...data, domain: { name: data.domain.name, version: "1" } },
 		setupCalls: [
 			{ target: fixture.wallet.account!.address, data: "0x", value: "1" },
 		],
-	} as never;
-	const result = await wallet.approve(review);
+	};
+	const result = await wallet.approve(review as never);
 	assert.ok(result.setupOperation);
 	assert.equal(fixture.bundlerSubmissionCount, 1);
 	assert.equal(typed, 2);
 	await fixture.mine();
-	assert.deepEqual(await wallet.approve(review), result);
+	assert.deepEqual(await wallet.approve(review as never), result);
 	assert.equal(fixture.bundlerSubmissionCount, 1);
+	await assert.rejects(
+		wallet.approve({
+			...review,
+			commitment: `0x${"ef".repeat(32)}`,
+			consent: { ...data, domain: { ...data.domain, chainId: 1 } },
+		} as never),
+		{ code: "wallet_chain_mismatch" },
+	);
+	await assert.rejects(
+		wallet.approve({
+			...review,
+			commitment: `0x${"ab".repeat(32)}`,
+			terms: { ...review.terms, chainId: 1 },
+			consent: { ...data, domain: { name: "Chainless", version: "1" } },
+		} as never),
+		{ code: "wallet_chain_mismatch" },
+	);
+	assert.equal(fixture.bundlerSubmissionCount, 1);
+	assert.equal(typed, 2);
 	console.log(
 		"Packed EIP-1193 wallet adapter signed complete typed data and submitted real Kernel owner setup once; repeat approval reused its journal.",
 	);
