@@ -210,7 +210,8 @@ export async function proxyRpc(request: Request, env: RpcEnv): Promise<Response>
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(forwarded),
-        redirect: "error",
+        // Workers accepts only "follow" or "manual"; a 3xx is not ok and is refused below.
+        redirect: "manual",
         signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
       });
     } catch {
