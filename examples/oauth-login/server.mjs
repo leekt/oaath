@@ -14,6 +14,9 @@ const HERE = fileURLToPath(new URL(".", import.meta.url));
 export async function startOAuthLoginExample({
   issuer,
   clientId = null,
+  // Optional Grant demo: createCetaneChainPorts configuration and a requestPermission input.
+  chains = null,
+  permission = null,
   port = 0,
   host = "localhost",
 }) {
@@ -32,7 +35,10 @@ export async function startOAuthLoginExample({
   const files = new Map([
     ["/", { type: "text/html", body: await readFile(`${HERE}index.html`) }],
     ["/callback", { type: "text/html", body: await readFile(`${HERE}callback.html`) }],
-    ["/config.json", { type: "application/json", body: JSON.stringify({ issuer, clientId }) }],
+    [
+      "/config.json",
+      { type: "application/json", body: JSON.stringify({ issuer, clientId, chains, permission }) },
+    ],
     ...bundles.outputFiles.map((file) => [
       file.path,
       { type: "text/javascript", body: file.contents },

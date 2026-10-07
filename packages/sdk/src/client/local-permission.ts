@@ -111,43 +111,7 @@ export function createLocalPermissionAuthority(input: {
     }).catch((error) => mapClientFailure(error, "local permission signature is invalid"));
   }
   return Object.freeze({
-    invalidation: Object.freeze({
-      async invalidateCapability(
-        request: Readonly<{ grantId: string; capabilityHash: `0x${string}` }>,
-      ) {
-        const record = await input.grants.get(request.grantId);
-        const grant = record?.value;
-        if (
-          !grant ||
-          grant.state !== "revoking" ||
-          grant.approval?.capabilityHash !== request.capabilityHash ||
-          JSON.stringify(grant.identity.application) !==
-            JSON.stringify(input.binding.application) ||
-          JSON.stringify(grant.identity.logicalAccount) !== JSON.stringify(input.binding.account) ||
-          JSON.stringify(grant.identity.operatorCredential) !==
-            JSON.stringify(input.binding.operatorCredential)
-        )
-          return fail();
-        // Local admission is stopped by the durable revoking state, which every
-        // fresh Grant handle reads. This acknowledges that exact state only;
-        // the Grant still requires separate finalized onchain revocation proof.
-        return Object.freeze({
-          evidenceHash: keccak256(
-            stringToHex(
-              JSON.stringify([
-                "@oaath/sdk:local-admission-revocation/v1",
-                input.binding.bindingId,
-                request.grantId,
-                request.capabilityHash,
-                record.storeRevision,
-                grant.revocationStartedAt,
-              ]),
-            ),
-          ),
-          invalidatedAt: Math.max(input.now(), grant.updatedAt),
-        });
-      },
-    }),
+    invalidation: localAdmissionInvalidation(input),
     async approve(request: Readonly<PermissionRequest>) {
       assertActive(request);
       if (pending)
@@ -178,6 +142,55 @@ export function createLocalPermissionAuthority(input: {
     },
     close() {
       closed = true;
+    },
+  });
+}
+
+/**
+ * Local admission invalidation: a fresh Grant handle reads the durable
+ * revoking state and admits nothing more. This acknowledges that exact state;
+ * the Grant still requires separate finalized onchain revocation proof.
+ */
+export function localAdmissionInvalidation(input: {
+  readonly binding: Readonly<OaathBinding>;
+  readonly grants: GrantStore;
+  readonly now: () => number;
+}) {
+  const fail = () => clientFail("oaath_client_state_conflict", "local permission state disagrees");
+  return Object.freeze({
+    async invalidateCapability(
+      request: Readonly<{ grantId: string; capabilityHash: `0x${string}` }>,
+    ) {
+      const record = await input.grants.get(request.grantId);
+      const grant = record?.value;
+      if (
+        !grant ||
+        grant.state !== "revoking" ||
+        grant.approval?.capabilityHash !== request.capabilityHash ||
+        JSON.stringify(grant.identity.application) !== JSON.stringify(input.binding.application) ||
+        JSON.stringify(grant.identity.logicalAccount) !== JSON.stringify(input.binding.account) ||
+        JSON.stringify(grant.identity.operatorCredential) !==
+          JSON.stringify(input.binding.operatorCredential)
+      )
+        return fail();
+      // Local admission is stopped by the durable revoking state, which every
+      // fresh Grant handle reads. This acknowledges that exact state only;
+      // the Grant still requires separate finalized onchain revocation proof.
+      return Object.freeze({
+        evidenceHash: keccak256(
+          stringToHex(
+            JSON.stringify([
+              "@oaath/sdk:local-admission-revocation/v1",
+              input.binding.bindingId,
+              request.grantId,
+              request.capabilityHash,
+              record.storeRevision,
+              grant.revocationStartedAt,
+            ]),
+          ),
+        ),
+        invalidatedAt: Math.max(input.now(), grant.updatedAt),
+      });
     },
   });
 }

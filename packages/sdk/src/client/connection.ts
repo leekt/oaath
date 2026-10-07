@@ -369,6 +369,100 @@ function policyFromInput(
   }
 }
 
+/** One captured `requestPermission` input: the canonical policy and lifetime. */
+export interface CapturedPermissionInput {
+  readonly policy: Readonly<GrantPolicy>;
+  /** Unix seconds. */
+  readonly requestedAt: number;
+  /** Exclusive Grant expiry, Unix seconds. */
+  readonly expiresAt: number;
+  readonly onPending: OaathRequestPermissionInput["onPending"];
+  readonly signal: AbortSignal | undefined;
+}
+
+/**
+ * The one owner of `requestPermission` input: every approval realm builds the
+ * same policy from the same application input.
+ */
+export function capturePermissionInput(
+  value: unknown,
+  requestedAt: number,
+): Readonly<CapturedPermissionInput> {
+  const context: CaptureContext = new WeakSet();
+  const fail = (message: string): never => clientFail("oaath_client_input_invalid", message);
+  const record = captureRecord(value, "requestPermission input", context, fail);
+  exactCapturedRecord(
+    record,
+    [
+      "chainScope",
+      "permissions",
+      "expiresIn",
+      "perChainOperationLimit",
+      ...(Object.hasOwn(record, "onPending") ? ["onPending"] : []),
+      ...(Object.hasOwn(record, "signal") ? ["signal"] : []),
+    ],
+    "requestPermission input",
+    fail,
+  );
+  const onPending =
+    record.onPending === undefined
+      ? undefined
+      : clientCapability<NonNullable<OaathRequestPermissionInput["onPending"]>>(
+          record.onPending,
+          "onPending",
+        );
+  if (record.signal !== undefined && !(record.signal instanceof AbortSignal))
+    return fail("signal must be an AbortSignal");
+  if (record.chainScope !== "all") {
+    return clientFail("oaath_client_input_invalid", "chainScope must be all in 0.1.0");
+  }
+  const expiresAt = requestedAt + safeCount(record.expiresIn, "expiresIn", MAX_EXPIRES_IN);
+  const policy = policyFromInput(
+    record.permissions,
+    requestedAt,
+    expiresAt,
+    operationLimitFromInput(record.perChainOperationLimit, context),
+    context,
+  );
+  return Object.freeze({
+    policy,
+    requestedAt,
+    expiresAt,
+    onPending,
+    signal: record.signal as AbortSignal | undefined,
+  });
+}
+
+/**
+ * Applies an approval an external realm already obtained for exactly this
+ * connection's binding (the OAuth popup), through the same protocol
+ * application, capability binding, and persistence as every other approval.
+ * Internal: the composing realm calls it; applications never do.
+ */
+const approvedAdopters = new WeakMap<
+  object,
+  (request: Readonly<PermissionRequest>, artifact: unknown) => Promise<Readonly<OaathGrantHandle>>
+>();
+
+export function adoptApprovedPermission(
+  connection: Readonly<OaathConnection>,
+  request: Readonly<PermissionRequest>,
+  artifact: unknown,
+): Promise<Readonly<OaathGrantHandle>> {
+  const adopt = approvedAdopters.get(connection);
+  if (!adopt) return clientFail("oaath_client_internal", "the connection adopts no approvals");
+  return adopt(request, artifact);
+}
+
+/** A wrapper connection adopts through the connection it wraps. */
+export function forwardApprovedPermission(
+  wrapper: Readonly<OaathConnection>,
+  inner: Readonly<OaathConnection>,
+): void {
+  const adopt = approvedAdopters.get(inner);
+  if (adopt) approvedAdopters.set(wrapper, adopt);
+}
+
 export function createConnection(
   input: Readonly<CreateConnectionInput>,
 ): Readonly<OaathConnection> {
@@ -889,47 +983,12 @@ export function createConnection(
 
   async function requestPermissionWork(value: unknown): Promise<Readonly<OaathGrantHandle>> {
     assertUsable();
-    const context: CaptureContext = new WeakSet();
-    const fail = (message: string): never => clientFail("oaath_client_input_invalid", message);
-    const record = captureRecord(value, "requestPermission input", context, fail);
-    exactCapturedRecord(
-      record,
-      [
-        "chainScope",
-        "permissions",
-        "expiresIn",
-        "perChainOperationLimit",
-        ...(Object.hasOwn(record, "onPending") ? ["onPending"] : []),
-        ...(Object.hasOwn(record, "signal") ? ["signal"] : []),
-      ],
-      "requestPermission input",
-      fail,
-    );
-    const onPending =
-      record.onPending === undefined
-        ? undefined
-        : clientCapability<NonNullable<OaathRequestPermissionInput["onPending"]>>(
-            record.onPending,
-            "onPending",
-          );
-    if (record.signal !== undefined && !(record.signal instanceof AbortSignal))
-      return fail("signal must be an AbortSignal");
+    const captured = capturePermissionInput(value, input.now());
+    const { onPending, policy, requestedAt, expiresAt } = captured;
     const signal =
-      record.signal === undefined
+      captured.signal === undefined
         ? cancellation.signal
-        : AbortSignal.any([cancellation.signal, record.signal]);
-    if (record.chainScope !== "all") {
-      return clientFail("oaath_client_input_invalid", "chainScope must be all in 0.1.0");
-    }
-    const requestedAt = input.now();
-    const expiresAt = requestedAt + safeCount(record.expiresIn, "expiresIn", MAX_EXPIRES_IN);
-    const policy = policyFromInput(
-      record.permissions,
-      requestedAt,
-      expiresAt,
-      operationLimitFromInput(record.perChainOperationLimit, context),
-      context,
-    );
+        : AbortSignal.any([cancellation.signal, captured.signal]);
     const scope: PermissionScope = Object.freeze({
       version: OAATH_PERMISSION_REQUEST_VERSION,
       context: input.binding.context,
@@ -1192,7 +1251,7 @@ export function createConnection(
     return withHandleProducer(resumeWork);
   }
 
-  return Object.freeze({
+  const connection: Readonly<OaathConnection> = Object.freeze({
     binding: input.binding,
     requestPermission,
     resume,
@@ -1240,6 +1299,27 @@ export function createConnection(
       }
     },
   });
+  approvedAdopters.set(connection, (request, artifact) =>
+    withHandleProducer(() => {
+      // The adopted request must be this binding's, exactly as a locally
+      // composed one would be.
+      if (
+        JSON.stringify(request.context) !== JSON.stringify(input.binding.context) ||
+        JSON.stringify(request.application) !== JSON.stringify(input.binding.application) ||
+        JSON.stringify(request.logicalAccount) !== JSON.stringify(input.binding.account) ||
+        JSON.stringify(request.operatorCredential) !==
+          JSON.stringify(input.binding.operatorCredential) ||
+        !sameSessionSigner(request.sessionSigner, input.sessionSigner)
+      )
+        return clientFail(
+          "oaath_client_state_conflict",
+          "the approved request belongs to another binding",
+          "approved_request_binding_mismatch",
+        );
+      return applyArtifact(request, artifact);
+    }),
+  );
+  return connection;
 }
 
 /** Captures the issuer transport exactly. */

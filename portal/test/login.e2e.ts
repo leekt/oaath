@@ -7,7 +7,9 @@
  * - the real portal Worker module, run in Node in front of the built SPA and
  *   bound to that relay (the Workers VPC binding becomes a loopback fetch);
  * - the examples/oauth-login dapp on another origin, whose page calls the
- *   SDK's `loginWithOAAth` and whose redirect page runs `completeOAAthLogin`;
+ *   SDK's `loginWithOAAth` (and, on a third origin configured with a chain,
+ *   `createOAAth({ approvals: { kind: "oauth" } })` and `requestPermission`) and
+ *   whose redirect page runs `completeOAAthLogin`;
  * - headless Chrome clicking through the SDK's popup.
  *
  * The SDK verifies the id_token; the test verifies it again against
@@ -42,6 +44,8 @@ const servers: Server[] = [];
 const closers: (() => Promise<void>)[] = [];
 let portal: string;
 let dapp: string;
+/** The same example with a chain and a permission: its page requests Grants. */
+let grantDapp: string;
 let relayBase: string;
 /** The production default kid: the id_token key's RFC 7638 thumbprint. */
 let idTokenKid: string;
@@ -174,16 +178,39 @@ async function startPortal() {
   return `http://localhost:${port}`;
 }
 
+/** The SDK Grant's policy target: an ERC-20 the dapp may call transfer on. */
+const GRANT_TARGET = `0x${"ab".repeat(20)}`;
+
 /** The examples/oauth-login dapp, on another origin than the portal. */
-async function startDapp() {
+async function startDapp(grants = false) {
   const { startOAuthLoginExample } = (await import(EXAMPLE)) as {
     startOAuthLoginExample(input: {
       issuer: string;
       host: string;
       port: number;
+      chains?: unknown;
+      permission?: unknown;
     }): Promise<{ url: string; close(): Promise<void> }>;
   };
-  const example = await startOAuthLoginExample({ issuer: portal, host: "127.0.0.1", port: 0 });
+  const example = await startOAuthLoginExample({
+    issuer: portal,
+    host: "127.0.0.1",
+    port: 0,
+    ...(grants
+      ? {
+          // Requesting and resuming a Grant reads no chain: this port is closed.
+          chains: { 421614: { publicRpcUrls: ["http://127.0.0.1:9/"] } },
+          permission: {
+            chainScope: "all",
+            permissions: [
+              { calls: [{ target: GRANT_TARGET, selectors: ["0xa9059cbb"], valueLimit: "0" }] },
+            ],
+            expiresIn: 3600,
+            perChainOperationLimit: 5,
+          },
+        }
+      : {}),
+  });
   closers.push(example.close);
   return example.url;
 }
@@ -232,7 +259,7 @@ async function click(page: Page, selector: string) {
 }
 
 /** Opens the example dapp, ready to log in (its client is registered on load). */
-async function openDapp() {
+async function openDapp(url = dapp, ready = "#login:not([disabled])") {
   const page = await browser.newPage();
   // The dapp's PAR waits until the popup is instrumented; it is delayed, never altered.
   let release = () => {};
@@ -245,8 +272,8 @@ async function openDapp() {
       void instrumented.then(() => request.continue());
     else void request.continue();
   });
-  await page.goto(`${dapp}/`);
-  await page.waitForSelector("#login:not([disabled])");
+  await page.goto(`${url}/`);
+  await page.waitForSelector(ready);
   return { page, release };
 }
 
@@ -258,9 +285,10 @@ async function openDapp() {
 async function startLogin(
   dappPage: Awaited<ReturnType<typeof openDapp>>,
   rewrite?: (callback: URL) => URL,
+  button = "#login",
 ) {
   const opened = browser.waitForTarget((target) => target.opener() === dappPage.page.target());
-  await click(dappPage.page, "#login");
+  await click(dappPage.page, button);
   const popup = await (await opened).page();
   if (!popup) throw new Error("no login popup");
   await popup.setViewport({ width: 390, height: 844 });
@@ -303,6 +331,7 @@ beforeAll(async () => {
   portal = await startPortal();
   relayBase = await startRelay(portal);
   dapp = await startDapp();
+  grantDapp = await startDapp(true);
   const executablePath = await firstExisting([
     process.env.PUPPETEER_EXECUTABLE_PATH,
     process.env.CHROME_PATH,
@@ -609,5 +638,59 @@ describe("dapp grants approved by the account root against the real relay", () =
     expect(redeemed.read.status).toBe("approved");
     await popup.close();
     await dappPage.close();
+  });
+});
+
+describe("dapp Grants requested with the SDK through the portal popup", () => {
+  it("names the SDK's session key, the wallet root signs, and a reload resumes the Grant", async () => {
+    const dappPage = await openDapp(grantDapp, "#grant:not([hidden])");
+    const popup = await startLogin(dappPage, undefined, "#grant");
+    await click(popup, "::-p-text(E2E Wallet)");
+    const account = await popup.waitForSelector("button[aria-label^='Smart account 0x']");
+    const address = /0x[0-9a-f]{40}/u.exec(
+      (await account?.evaluate((node) => node.getAttribute("aria-label"))) ?? "",
+    )?.[0];
+    await account?.click();
+    await popup.waitForSelector("::-p-text(Approve and sign):not([disabled])");
+    const review = await popup.$eval("main", (node) => (node as HTMLElement).innerText);
+    expect(review).toContain(GRANT_TARGET);
+    expect(review).toContain("Arbitrum Sepolia");
+    const signatures = walletSignatures;
+    await click(popup, "::-p-text(Approve and sign)");
+
+    // The SDK verified the relay's request as its own and stored the Grant.
+    expect(await outcome(dappPage.page)).toBe("granted");
+    expect(walletSignatures).toBe(signatures + 1);
+    const granted = await dappPage.page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            oaathGrant: {
+              state: string;
+              binding: { context: { accountId: string }; operatorCredential: { address: string } };
+            };
+          }
+        ).oaathGrant,
+    );
+    expect(granted.state).toBe("active");
+    expect(granted.binding.context.accountId).toBe(address);
+    // The portal reviewed exactly the SDK's own session key as the signer.
+    expect(review).toContain(granted.binding.operatorCredential.address);
+
+    // A reload resumes the same Grant from IndexedDB without the portal.
+    await dappPage.page.reload();
+    expect(await outcome(dappPage.page)).toBe("resumed");
+    expect(
+      await dappPage.page.evaluate(() => (window as unknown as { oaathGrant: unknown }).oaathGrant),
+    ).toEqual(granted);
+    await dappPage.page.close();
+  });
+
+  it("reports access_denied when the user cancels the Grant", async () => {
+    const dappPage = await openDapp(grantDapp, "#grant:not([hidden])");
+    const popup = await startLogin(dappPage, undefined, "#grant");
+    await click(popup, "::-p-text(Cancel and return to the app)");
+    expect(await outcome(dappPage.page)).toBe("oaath_client_access_denied");
+    await dappPage.page.close();
   });
 });
