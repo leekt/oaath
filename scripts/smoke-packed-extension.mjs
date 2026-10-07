@@ -3,21 +3,27 @@
  *
  * The actual example extension is copied into a clean consumer and its worker
  * is bundled against packed @oaath tarballs. Pairing runs the extension's real
- * `chrome.identity.launchWebAuthFlow` against a loopback OAAth issuer whose
- * account root approves at once; the dapp then submits exactly once through a
- * local Anvil chain and its fixture bundler. The test force-closes Chrome's
- * extension service worker, asks the still-open dapp for status, and requires
- * a distinct worker lifetime to recover the same durable ID without another
- * submission.
+ * `chrome.identity.launchWebAuthFlow` against the real Rust relay binary
+ * (memory store, loopback issuer, a test ES256 id_token key). The account root
+ * signs in to the relay and creates its account over the portal API; the
+ * issuer origin's `/authorize` drives the portal decision over HTTP (prepare,
+ * the SDK's offline approval signed by the root, decision) and every other
+ * path is the relay itself. The dapp then submits exactly once through a local
+ * Anvil chain and its fixture bundler. The test force-closes Chrome's extension
+ * service worker, asks the still-open dapp for status, and requires a distinct
+ * worker lifetime to recover the same durable ID without another submission or
+ * another authorization.
  *
- * Evidence limit: the issuer is a loopback stand-in for the portal (it signs
- * with the SDK's own approval preparation); the portal and relay have their own
- * end-to-end proof.
+ * Evidence limit: `/authorize` stands in for the portal SPA's review page; the
+ * portal's own end-to-end test drives that page.
  *
  * @author taek <leekt216@gmail.com>
  */
 
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { assert, createConsumer, run } from "./packed-consumer.mjs";
 
 const EXTENSION_FILES = [
@@ -47,8 +53,10 @@ const extensionFiles = Object.fromEntries(
 );
 
 const SMOKE = String.raw`
+import { spawn } from "node:child_process";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { access } from "node:fs/promises";
+import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import {
@@ -57,8 +65,9 @@ import {
   kernelDeployment,
   kernelKey,
   ownerOperator,
+  prepareDerivedAccountPermissionApproval,
 } from "@oaath/sdk/kernel";
-import { createLocalOAuthIssuer, createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
+import { createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
 import puppeteer from "puppeteer-core";
 import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
 
@@ -71,6 +80,8 @@ const OWNER_ACCOUNT = privateKeyToAccount(generatePrivateKey());
 const TIMEOUT_MS = 20_000;
 const GRANT_LIFETIME_SECONDS = 1_800;
 const RANGE_LIFETIME_SECONDS = 300;
+const REQUEST_URI_PREFIX = "urn:ietf:params:oauth:request_uri:";
+const RELAY_BINARY = process.env.OAATH_RELAY_BINARY ?? "";
 
 function fail(message) {
   throw new Error(message);
@@ -170,9 +181,55 @@ const server = createServer((incoming, outgoing) => {
   );
 });
 
+/** One request to the relay; the portal API answers JSON. */
+async function relayCall(base, method, path, body, cookie) {
+  const response = await fetch(base + path, {
+    method,
+    headers: {
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(cookie ? { cookie } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  if (!response.ok) fail(method + " " + path + " answered " + response.status + " " + text);
+  return { body: JSON.parse(text), headers: response.headers };
+}
+
+async function startRelay(issuer) {
+  if (RELAY_BINARY === "") fail("OAATH_RELAY_BINARY is required");
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const keyPath = join(process.cwd(), "id-token.pem");
+  await writeFile(keyPath, privateKey.export({ type: "pkcs8", format: "pem" }));
+  const probe = createServer();
+  await listen(probe);
+  const port = probe.address().port;
+  await closeServer(probe);
+  const child = spawn(RELAY_BINARY, [], {
+    stdio: ["ignore", "ignore", "inherit"],
+    env: {
+      PATH: process.env.PATH ?? "",
+      RUST_LOG: "warn",
+      OAATH_LISTEN: "127.0.0.1:" + port,
+      OAATH_KMS_KEY: randomBytes(32).toString("hex"),
+      OAATH_ISSUER: issuer,
+      OAATH_ID_TOKEN_KEY: keyPath,
+    },
+  });
+  const base = "http://127.0.0.1:" + port;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      if ((await fetch(base + "/.well-known/openid-configuration")).ok) return { child, base };
+    } catch {}
+    if (attempt > 200 || child.exitCode !== null) fail("the relay did not start");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 let browser = null;
 let chain = null;
-let issuer = null;
+let relay = null;
+let front = null;
 try {
   await import("./build.mjs");
   await listen(server);
@@ -211,14 +268,112 @@ try {
     }),
   });
   expect(funded.ok, "the local account could not be funded");
-  issuer = await createLocalOAuthIssuer({
-    chainId: CHAIN_ID,
-    account: rootAccount,
-    root: {
-      credential,
-      key: kernelKey({ account: OWNER_ACCOUNT, validator: ECDSA_VALIDATOR }),
-    },
+
+  // The issuer origin: /authorize is the portal's review, driven over HTTP;
+  // every other path is the relay itself.
+  const rootKey = kernelKey({ account: OWNER_ACCOUNT, validator: ECDSA_VALIDATOR });
+  const counts = { authorizations: 0, approvals: 0 };
+  let root = null;
+  async function authorize(requestUri) {
+    counts.authorizations += 1;
+    if (!requestUri?.startsWith(REQUEST_URI_PREFIX)) fail("the authorization has no request_uri");
+    const id = requestUri.slice(REQUEST_URI_PREFIX.length);
+    const transaction = (await relayCall(relay.base, "GET", "/portal/transactions/" + id)).body;
+    expect(
+      transaction.authorization_details?.length === 1 &&
+        transaction.authorization_details[0].type === "oaath_grant",
+      "the authorization is not one Grant",
+    );
+    const selection = { signer_id: root.signerId, account_id: root.accountId };
+    const prepared = (
+      await relayCall(
+        relay.base,
+        "POST",
+        "/portal/transactions/" + id + "/prepare",
+        selection,
+        root.cookie,
+      )
+    ).body;
+    // As the portal does: the SDK's own preparation must match the relay's.
+    const approval = prepareDerivedAccountPermissionApproval({
+      request: prepared.permission_request,
+      chainId: CHAIN_ID,
+      account: rootAccount,
+    });
+    expect(
+      approval.signingRequest.expectedDigest === prepared.signing_request.expectedDigest,
+      "the relay's signing request differs from the SDK's",
+    );
+    const decision = await approval.sign(rootKey, Math.floor(Date.now() / 1_000));
+    const decided = (
+      await relayCall(
+        relay.base,
+        "POST",
+        "/portal/transactions/" + id + "/decision",
+        { outcome: "approved", ...selection, artifact: JSON.stringify(decision) },
+        root.cookie,
+      )
+    ).body;
+    counts.approvals += 1;
+    return decided.redirect;
+  }
+  front = createServer(async (incoming, outgoing) => {
+    try {
+      const url = new URL(incoming.url ?? "/", "http://127.0.0.1");
+      if (url.pathname === "/authorize") {
+        const redirect = await authorize(url.searchParams.get("request_uri"));
+        outgoing.writeHead(302, { location: redirect, "cache-control": "no-store" });
+        outgoing.end();
+        return;
+      }
+      const chunks = [];
+      for await (const chunk of incoming) chunks.push(chunk);
+      const upstream = await fetch(relay.base + url.pathname + url.search, {
+        method: incoming.method,
+        headers: incoming.headers["content-type"]
+          ? { "content-type": incoming.headers["content-type"] }
+          : {},
+        body: chunks.length ? Buffer.concat(chunks) : undefined,
+      });
+      outgoing.writeHead(upstream.status, {
+        "content-type": upstream.headers.get("content-type") ?? "application/json",
+        "access-control-allow-origin": "*",
+        "cache-control": "no-store",
+      });
+      outgoing.end(Buffer.from(await upstream.arrayBuffer()));
+    } catch (error) {
+      outgoing.writeHead(500, { "content-type": "text/plain" });
+      outgoing.end(error instanceof Error ? error.message : "front failed");
+    }
   });
+  await listen(front);
+  const issuerUrl = "http://127.0.0.1:" + front.address().port;
+  relay = await startRelay(issuerUrl);
+
+  // The account root signs in (Sign-In with Ethereum) and creates its account.
+  const signerId = (
+    await relayCall(relay.base, "POST", "/portal/signers", { profile: credential })
+  ).body.signer_id;
+  const challenge = (
+    await relayCall(relay.base, "POST", "/portal/sessions/challenge", { signer_id: signerId })
+  ).body;
+  const signedIn = await relayCall(relay.base, "POST", "/portal/sessions", {
+    signer_id: signerId,
+    nonce: challenge.nonce,
+    signature: await OWNER_ACCOUNT.signMessage({ message: challenge.message }),
+  });
+  const cookie = (signedIn.headers.get("set-cookie") ?? "").split(";")[0];
+  const created = (
+    await relayCall(
+      relay.base,
+      "POST",
+      "/portal/accounts",
+      { root_signer_id: signerId, creation_key: randomBytes(16).toString("hex") },
+      cookie,
+    )
+  ).body;
+  expect(created.address === rootAccount, "the relay derived another account");
+  root = { signerId, accountId: created.account_id, cookie };
 
   const executablePath = await chromeExecutable();
   browser = await puppeteer.launch({
@@ -299,7 +454,7 @@ try {
       });
     },
     {
-      issuer: issuer.url,
+      issuer: issuerUrl,
       chain: CHAIN_ID,
       rpcUrl,
       bundlerUrl,
@@ -456,7 +611,8 @@ try {
   }, request);
   expect(duplicate.ok === false && duplicate.code === 5720, "duplicate ID did not return 5720");
   expect(chain.bundlerSubmissionCount === 1, "duplicate ID submitted another operation");
-  expect(issuer.approvalCount === 1, "worker recovery requested owner approval again");
+  expect(counts.approvals === 1, "worker recovery requested owner approval again");
+  expect(counts.authorizations === 1, "the extension authorized more than once");
 
   process.stdout.write(
     "\n" +
@@ -464,7 +620,7 @@ try {
         id: BUNDLE_ID,
         status: status.status,
         submissions: chain.bundlerSubmissionCount,
-        approvals: issuer.approvalCount,
+        approvals: counts.approvals,
         workerRestarted: true,
         duplicateCode: duplicate.code,
         validityAdvertised,
@@ -474,13 +630,26 @@ try {
 } finally {
   await browser?.close().catch(() => undefined);
   await closeServer(server).catch(() => undefined);
-  await issuer?.close().catch(() => undefined);
+  relay?.child.kill();
+  if (front) await closeServer(front).catch(() => undefined);
   await chain?.close().catch(() => undefined);
 }
 `;
 
+/** The relay binary the smoke runs, built here like the portal's end-to-end test. */
+function buildRelay() {
+  const home = process.env.HOME ?? "";
+  const cargo = [process.env.CARGO, home && `${home}/.cargo/bin/cargo`].find(
+    (path) => path && existsSync(path),
+  );
+  const relayDir = fileURLToPath(new URL("../relay", import.meta.url));
+  run(cargo ?? "cargo", ["build", "-q", "-p", "oaath-relay"], { cwd: relayDir });
+  return join(relayDir, "target/debug/oaath-relay");
+}
+
 let consumer;
 try {
+  const relayBinary = buildRelay();
   consumer = await createConsumer({
     label: "chromium-extension",
     packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/testing"],
@@ -496,6 +665,7 @@ try {
   const output = run(process.execPath, ["smoke.mjs"], {
     cwd: consumer.directory,
     timeout: 120_000,
+    env: { ...process.env, OAATH_RELAY_BINARY: relayBinary },
   });
   const reportLine = output
     .trim()
