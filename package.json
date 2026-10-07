@@ -46,7 +46,8 @@
     "smoke:process-recovery": "node scripts/smoke-packed-process-recovery.mjs",
     "smoke:runtime": "node scripts/smoke-packed-runtime.mjs",
     "smoke:protocol": "node scripts/smoke-packed-protocol.mjs",
-    "smoke:cetane": "node scripts/smoke-packed-cetane.mjs"
+    "smoke:cetane": "node scripts/smoke-packed-cetane.mjs",
+    "smoke:session-signer": "node scripts/smoke-packed-session-signer.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",

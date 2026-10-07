@@ -80,9 +80,20 @@ export { REDACTED, redactForLog, redactUrl } from "./security/redact.js";
 export type {
   RelaySessionSignerProvider,
   SessionSignerIdentity,
+  SessionSignerRecoveryRequest,
   SessionSignerSignRequest,
 } from "./session-signer/kms-provider.js";
 export { createKmsSessionSignerProvider } from "./session-signer/kms-provider.js";
+export type {
+  SessionSignerBinding,
+  SessionSignerErrorCode,
+  SessionSignerRegistry,
+} from "./session-signer/registry.js";
+export {
+  createMemorySessionSignerRegistry,
+  OAATH_SESSION_SIGNER_BINDING_VERSION,
+  SessionSignerError,
+} from "./session-signer/registry.js";
 export type { RelayStore, RelayTransaction } from "./store/interface.js";
 export { createMemoryRelayStore } from "./store/memory.js";
 export type {

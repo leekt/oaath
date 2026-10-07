@@ -1,136 +1,182 @@
-/**
- * Reference hosted session-signer provider: one KMS-sealed secp256k1 operator
- * key per authenticated `(clientId, subject, deviceId)` identity, signing one
- * exact 32-byte hash at a time.
- *
- * Custody boundary: the private scalar exists in plaintext only inside this
- * process during key generation and signing; at rest it is exactly one
- * KMS-sealed string. No route, log, or return value ever carries key material
- * — `credential` answers the public operator profile and `sign` answers one
- * 65-byte ECDSA signature.
- *
- * Rotation invariant: one identity maps to one credential for this provider's
- * lifetime. There is no rotation path here — a new key requires a new
- * identity, and therefore a newly approved Grant; nothing can silently swap
- * the public key under an existing approval.
- *
- * Like `createMemoryRelayStore`, the in-memory registry makes this a
- * reference implementation, not a production durability claim: a deployment
- * that must survive restarts persists the sealed entries in its own store.
- *
- * @author taek <leekt216@gmail.com>
+/** One immutable KMS-sealed key per authenticated identity. Registry durability
+ * and KMS configuration are explicit deployment capabilities; recovery and signing
+ * never create or rotate a key. No plaintext scalar is persisted or returned.
  */
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
-import { OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
+import {
+  type EcdsaOperatorCredentialProfile,
+  OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+} from "@oaath/protocol";
 import type { RelayKms } from "../security/kms.js";
+import {
+  captureSignerBinding,
+  captureSignerCredential,
+  captureSignerIdentity,
+  OAATH_SESSION_SIGNER_BINDING_VERSION,
+  type SessionSignerBinding,
+  SessionSignerError,
+  type SessionSignerIdentity,
+  type SessionSignerRegistry,
+  signerIdentityKey,
+  signerRecord,
+  signerText,
+} from "./registry.js";
 
-const HASH = /^0x[0-9a-f]{64}$/u;
-const MAX_IDENTITY_PART = 256;
-
-export interface SessionSignerIdentity {
-  readonly clientId: string;
-  readonly subject: string;
-  readonly deviceId: string;
+export type { SessionSignerIdentity } from "./registry.js";
+export interface SessionSignerRecoveryRequest extends SessionSignerIdentity {
+  readonly expectedCredential: Readonly<EcdsaOperatorCredentialProfile>;
 }
-
-export interface SessionSignerSignRequest extends SessionSignerIdentity {
-  /** The exact 32-byte hash to sign; never a message to interpret. */
+export interface SessionSignerSignRequest extends SessionSignerRecoveryRequest {
+  /** One exact digest, never a message to interpret. */
   readonly hash: `0x${string}`;
 }
-
 export interface RelaySessionSignerProvider {
-  /**
-   * The operator credential for one authenticated identity, creating the key
-   * on first use. Idempotent: the same identity always answers the same
-   * credential.
-   */
-  readonly credential: (request: Readonly<SessionSignerIdentity>) => Promise<unknown>;
-  /** One ECDSA signature over one exact hash, under that identity's key. */
+  /** Explicit first creation. Concurrent/repeated calls return the committed winner. */
+  readonly createCredential: (request: Readonly<SessionSignerIdentity>) => Promise<unknown>;
+  /** Read-only recovery of the exact previously approved credential. */
+  readonly credential: (request: Readonly<SessionSignerRecoveryRequest>) => Promise<unknown>;
   readonly sign: (request: Readonly<SessionSignerSignRequest>) => Promise<unknown>;
 }
-
-function identityKey(request: Readonly<SessionSignerIdentity>): string {
-  for (const part of [request.clientId, request.subject, request.deviceId]) {
-    if (typeof part !== "string" || part.length < 1 || part.length > MAX_IDENTITY_PART) {
-      throw new Error("session signer identity is invalid");
-    }
-  }
-  // JSON array form: no separator inside a part can collide two identities.
-  return JSON.stringify([request.clientId, request.subject, request.deviceId]);
+function credentialOf(scalar: Uint8Array): Readonly<EcdsaOperatorCredentialProfile> {
+  return Object.freeze({
+    version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
+    kind: "ecdsa",
+    address: `0x${bytesToHex(keccak_256(secp256k1.getPublicKey(scalar, false).slice(1)).slice(12))}`,
+  });
 }
-
-function addressOf(privateKey: Uint8Array): `0x${string}` {
-  const publicKey = secp256k1.getPublicKey(privateKey, false);
-  return `0x${bytesToHex(keccak_256(publicKey.slice(1)).slice(12))}`;
-}
-
 export function createKmsSessionSignerProvider(input: {
   readonly kms: RelayKms;
-}): RelaySessionSignerProvider {
-  const kms = input.kms;
-  /** identity -> KMS-sealed private scalar; the only at-rest key form. */
-  const sealed = new Map<string, string>();
-  /** Serializes first-use creation so one identity never mints two keys. */
-  const creating = new Map<string, Promise<string>>();
-
-  async function sealedKeyFor(identity: string): Promise<string> {
-    const existing = sealed.get(identity);
-    if (existing !== undefined) return existing;
-    const pending =
-      creating.get(identity) ??
-      (async () => {
-        const scalar = secp256k1.utils.randomPrivateKey();
-        const reference = String(await kms.encrypt(bytesToHex(scalar)));
-        scalar.fill(0);
-        sealed.set(identity, reference);
-        return reference;
-      })();
-    creating.set(identity, pending);
-    pending.finally(() => creating.delete(identity));
-    return pending;
+  readonly registry: SessionSignerRegistry;
+  readonly providerId: string;
+}) {
+  const options = signerRecord(input, ["kms", "registry", "providerId"]);
+  const providerId = signerText(options.providerId);
+  const captureCapabilities = () => {
+    try {
+      const kms = options.kms as RelayKms;
+      const registry = options.registry as SessionSignerRegistry;
+      return Object.freeze({
+        encrypt: kms.encrypt.bind(kms),
+        decrypt: kms.decrypt.bind(kms),
+        read: registry.read.bind(registry),
+        create: registry.create.bind(registry),
+      });
+    } catch {
+      throw new SessionSignerError("session_signer_input_invalid");
+    }
+  };
+  const capabilities = captureCapabilities();
+  async function open(binding: Readonly<SessionSignerBinding>): Promise<Uint8Array> {
+    let scalar: Uint8Array | undefined;
+    try {
+      const plaintext = await capabilities.decrypt(binding.sealedReference);
+      if (typeof plaintext !== "string" || !/^[0-9a-f]{64}$/u.test(plaintext)) throw new Error();
+      scalar = hexToBytes(plaintext);
+      if (credentialOf(scalar).address !== binding.credential.address) throw new Error();
+      return scalar;
+    } catch {
+      scalar?.fill(0);
+      throw new SessionSignerError("session_signer_custody_unavailable");
+    }
   }
-
+  function bindingFor(value: unknown, identity: Readonly<SessionSignerIdentity>) {
+    if (value === null) throw new SessionSignerError("session_signer_binding_unavailable");
+    const binding = captureSignerBinding(value);
+    if (
+      signerIdentityKey(binding.identity) !== signerIdentityKey(identity) ||
+      binding.providerId !== providerId
+    ) {
+      throw new SessionSignerError("session_signer_binding_mismatch");
+    }
+    return binding;
+  }
+  async function recover(value: unknown, signing: boolean) {
+    const record = signerRecord(value, [
+      "clientId",
+      "subject",
+      "deviceId",
+      "expectedCredential",
+      ...(signing ? ["hash"] : []),
+    ]);
+    const identity = captureSignerIdentity({
+      clientId: record.clientId,
+      subject: record.subject,
+      deviceId: record.deviceId,
+    });
+    const expected = captureSignerCredential(record.expectedCredential);
+    if (signing && (typeof record.hash !== "string" || !/^0x[0-9a-f]{64}$/u.test(record.hash))) {
+      throw new SessionSignerError("session_signer_input_invalid");
+    }
+    let raw: unknown;
+    try {
+      raw = await capabilities.read(signerIdentityKey(identity));
+    } catch {
+      throw new SessionSignerError("session_signer_registry_unavailable");
+    }
+    const binding = bindingFor(raw, identity);
+    if (binding.credential.address !== expected.address)
+      throw new SessionSignerError("session_signer_binding_mismatch");
+    return { binding, hash: record.hash as `0x${string}` };
+  }
   return Object.freeze({
-    async credential(request: Readonly<SessionSignerIdentity>): Promise<unknown> {
-      const identity = identityKey(request);
-      const privateKey = hexToBytes(String(await kms.decrypt(await sealedKeyFor(identity))));
+    async createCredential(
+      request: Readonly<SessionSignerIdentity>,
+    ): Promise<Readonly<EcdsaOperatorCredentialProfile>> {
+      const identity = captureSignerIdentity(request);
+      let raw: unknown;
       try {
-        return Object.freeze({
-          version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
-          kind: "ecdsa" as const,
-          address: addressOf(privateKey),
+        raw = await capabilities.create(signerIdentityKey(identity), async () => {
+          const scalar = secp256k1.utils.randomPrivateKey();
+          try {
+            const credential = credentialOf(scalar);
+            const sealedReference = signerText(
+              await capabilities.encrypt(bytesToHex(scalar)),
+              65_536,
+            );
+            const binding = Object.freeze({
+              version: OAATH_SESSION_SIGNER_BINDING_VERSION,
+              identity,
+              providerId,
+              credential,
+              sealedReference,
+            });
+            const verified = await open(binding);
+            verified.fill(0);
+            return binding;
+          } catch {
+            throw new SessionSignerError("session_signer_custody_unavailable");
+          } finally {
+            scalar.fill(0);
+          }
         });
-      } finally {
-        privateKey.fill(0);
+      } catch (error) {
+        if (error instanceof SessionSignerError) throw error;
+        throw new SessionSignerError("session_signer_registry_unavailable");
       }
+      const binding = bindingFor(raw, identity);
+      const scalar = await open(binding);
+      scalar.fill(0);
+      return binding.credential;
     },
-    async sign(request: Readonly<SessionSignerSignRequest>): Promise<unknown> {
-      const identity = identityKey(request);
-      if (typeof request.hash !== "string" || !HASH.test(request.hash)) {
-        throw new Error("session signer hash must be one exact 32-byte hash");
-      }
-      // Signing never creates a key: an identity that never fetched its
-      // credential holds no approval that could authorize a signature.
-      const reference = sealed.get(identity);
-      if (reference === undefined) {
-        throw new Error("session signer identity holds no credential");
-      }
-      const privateKey = hexToBytes(String(await kms.decrypt(reference)));
+    async credential(request: Readonly<SessionSignerRecoveryRequest>) {
+      const { binding } = await recover(request, false);
+      const scalar = await open(binding);
+      scalar.fill(0);
+      return binding.credential;
+    },
+    async sign(request: Readonly<SessionSignerSignRequest>): Promise<`0x${string}`> {
+      const { binding, hash } = await recover(request, true);
+      const scalar = await open(binding);
       try {
-        const signature = secp256k1.sign(hexToBytes(request.hash.slice(2)), privateKey, {
-          lowS: true,
-        });
-        if (signature.recovery !== 0 && signature.recovery !== 1) {
-          throw new Error("session signer produced an unusable signature");
-        }
-        // 65-byte r ‖ s ‖ v with v in {27, 28}: the exact shape a locally held
-        // viem account produces, so the Kernel-side validation is identical.
+        const signature = secp256k1.sign(hexToBytes(hash.slice(2)), scalar, { lowS: true });
+        if (signature.recovery !== 0 && signature.recovery !== 1)
+          throw new SessionSignerError("session_signer_custody_unavailable");
         return `0x${bytesToHex(signature.toCompactRawBytes())}${(27 + signature.recovery).toString(16)}`;
       } finally {
-        privateKey.fill(0);
+        scalar.fill(0);
       }
     },
-  });
+  }) satisfies RelaySessionSignerProvider;
 }

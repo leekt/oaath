@@ -312,3 +312,32 @@ that gate locally with an explicit opt-in:
 ```sh
 OAATH_REQUIRE_POSTGRES=1 OAATH_POSTGRES_URL=postgres://localhost:5432/postgres bun run test:postgres
 ```
+
+## Hosted session signers
+
+Compose retained custody explicitly with a deployment-owned KMS and PostgreSQL pool:
+
+```ts
+import { createKmsSessionSignerProvider } from "@oaath/server";
+import { createPostgresSessionSignerSchema, createPostgresSessionSignerRegistry } from "@oaath/server/postgres";
+
+await createPostgresSessionSignerSchema(pool); // Once, in a fresh schema.
+const provider = createKmsSessionSignerProvider({
+  providerId: "primary",
+  registry: createPostgresSessionSignerRegistry({ pool }),
+  kms,
+});
+const credential = await provider.createCredential({ clientId, subject, deviceId });
+// Retain this public credential with the approval; recovery and signing never create keys.
+await provider.credential({ clientId, subject, deviceId, expectedCredential: credential });
+await provider.sign({ clientId, subject, deviceId, expectedCredential: credential, hash });
+```
+
+Pass this provider to the relay's `sessionSigner` with the same `providerId`.
+The service SDK retains the creation intent and expected public credential across
+reloads. The immutable `oaath.session-signer-binding/v1` record binds authenticated
+identity, provider, public credential and sealed reference. Concurrent creators
+return one committed winner; a lost creation acknowledgement can be reconciled
+by explicit creation. Missing, unreadable or contradictory custody never rotates
+a key. The deployment owns pool shutdown, KMS configuration and signing admission.
+`createMemorySessionSignerRegistry()` is available for explicitly ephemeral use.

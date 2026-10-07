@@ -58,15 +58,18 @@ describe("package boundary", () => {
       "OAATH_REVOCATION_DECISION_RECORD_VERSION",
       "OAATH_REVOCATION_REQUEST_RECORD_VERSION",
       "OAATH_SERVICE_DIRECTORY_VERSION",
+      "OAATH_SESSION_SIGNER_BINDING_VERSION",
       "OaathRelayError",
       "REDACTED",
       "RELAY_ERROR_STATUS",
+      "SessionSignerError",
       "claimEncryptedArtifact",
       "consumeAuthorizationCode",
       "createAuthorizationRequest",
       "createKmsSessionSignerProvider",
       "createMemoryRelayStore",
       "createMemoryServiceDirectoryStore",
+      "createMemorySessionSignerRegistry",
       "createRelayHandler",
       "createServiceDirectory",
       "fetchAuthorizationRequest",
@@ -93,6 +96,8 @@ describe("package boundary", () => {
       "createPostgresRelayStore",
       "createPostgresServiceDirectorySchema",
       "createPostgresServiceDirectoryStore",
+      "createPostgresSessionSignerRegistry",
+      "createPostgresSessionSignerSchema",
     ]);
   });
 

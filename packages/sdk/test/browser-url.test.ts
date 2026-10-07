@@ -7,7 +7,7 @@
 
 import { p256 } from "@noble/curves/nist.js";
 import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION } from "@oaath/protocol";
-import { createKmsSessionSignerProvider } from "@oaath/server";
+import { createKmsSessionSignerProvider, createMemorySessionSignerRegistry } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
 import { bytesToHex, keccak256 } from "viem";
 import { describe, expect, it } from "vitest";
@@ -113,7 +113,11 @@ describe("URL-only golden path", () => {
       sessionSigner: {
         mode: "oaath_hosted",
         providerId: "kms-primary",
-        provider: createKmsSessionSignerProvider({ kms: relayKms() }),
+        provider: createKmsSessionSignerProvider({
+          providerId: "kms-primary",
+          registry: createMemorySessionSignerRegistry(),
+          kms: relayKms(),
+        }),
       },
     });
     await expect(realm.oaath.connect()).rejects.toMatchObject({
@@ -907,7 +911,11 @@ describe("URL-only golden path", () => {
       sessionSigner: {
         mode: "oaath_hosted",
         providerId: "kms-primary",
-        provider: createKmsSessionSignerProvider({ kms: relayKms() }),
+        provider: createKmsSessionSignerProvider({
+          providerId: "kms-primary",
+          registry: createMemorySessionSignerRegistry(),
+          kms: relayKms(),
+        }),
       },
     });
     const connection = await realm.oaath.connect();
@@ -930,13 +938,117 @@ describe("URL-only golden path", () => {
     await connection.close();
   });
 
+  it("retains hosted custody after provider and client recreation and refuses a lost registry", async () => {
+    const factory = new IDBFactory();
+    const registry = createMemorySessionSignerRegistry();
+    const kms = relayKms();
+    const life = async (retained = registry) =>
+      createUrlRealm({
+        stores: idbStores(await openOaathDatabase({ factory })),
+        sessionSigner: {
+          mode: "oaath_hosted",
+          providerId: "kms-primary",
+          provider: createKmsSessionSignerProvider({
+            providerId: "kms-primary",
+            registry: retained,
+            kms,
+          }),
+        },
+      });
+    const first = await life();
+    await first.oaath.connect();
+    const credential = first.oaath.binding.operatorCredential;
+    const deviceId = first.oaath.binding.subject.deviceId;
+    await first.oaath.close();
+    const second = await life();
+    await second.oaath.connect();
+    expect(second.oaath.binding.operatorCredential).toEqual(credential);
+    expect(second.oaath.binding.subject.deviceId).toBe(deviceId);
+    await second.oaath.close();
+    const lost = await life(createMemorySessionSignerRegistry());
+    await expect(lost.oaath.connect()).rejects.toMatchObject({
+      code: "oaath_client_issuer_rejected",
+    });
+    await lost.oaath.close();
+  });
+
+  it("reconciles a lost hosted creation response and refuses unreadable client continuity", async () => {
+    const factory = new IDBFactory();
+    const registry = createMemorySessionSignerRegistry();
+    const kms = relayKms();
+    let encryptions = 0;
+    const custody = () => ({
+      mode: "oaath_hosted" as const,
+      providerId: "kms-primary",
+      provider: createKmsSessionSignerProvider({
+        providerId: "kms-primary",
+        registry,
+        kms: {
+          ...kms,
+          async encrypt(value: string) {
+            encryptions++;
+            return kms.encrypt(value);
+          },
+        },
+      }),
+    });
+    const upstream = createUrlRealm({ sessionSigner: custody() });
+    const first = createUrlRealm({
+      stores: idbStores(await openOaathDatabase({ factory })),
+      relay: async (request) => {
+        const response = await upstream.relay(request);
+        if (new URL(request.url).pathname === "/session-signers")
+          throw new Error("reply unavailable");
+        return response;
+      },
+    });
+    await expect(first.oaath.connect()).rejects.toMatchObject({
+      code: "oaath_client_issuer_unavailable",
+    });
+    await first.oaath.close();
+    const restored = createUrlRealm({
+      stores: idbStores(await openOaathDatabase({ factory })),
+      sessionSigner: custody(),
+    });
+    await restored.oaath.connect();
+    expect(encryptions).toBe(1);
+    await restored.oaath.close();
+    for (const failure of ["read", "write"] as const) {
+      const database = await openOaathDatabase({ factory: new IDBFactory() });
+      const stores = idbStores(database);
+      const broken = createUrlRealm({
+        stores: {
+          ...stores,
+          context: {
+            ...stores.context,
+            [failure]: async () => {
+              throw new Error("store unavailable");
+            },
+          },
+        },
+        sessionSigner: custody(),
+      });
+      await expect(broken.oaath.connect()).rejects.toMatchObject({
+        code: "oaath_client_capability_invalid",
+      });
+      expect(encryptions).toBe(1);
+      expect(broken.fetched).toEqual(["GET /bootstrap"]);
+      await broken.oaath.close();
+    }
+    await upstream.oaath.close();
+  });
+
   it("fails closed when the declared custody differs from the session custody requirement", async () => {
     const hosted = createUrlRealm({
       session: { custody: "browser" },
       sessionSigner: {
         mode: "oaath_hosted",
         providerId: "kms-primary",
-        provider: createKmsSessionSignerProvider({ kms: relayKms() }),
+        provider: createKmsSessionSignerProvider({
+          providerId: "kms-primary",
+          registry: createMemorySessionSignerRegistry(),
+          kms: relayKms(),
+        }),
       },
     });
     await expect(hosted.oaath.connect()).rejects.toMatchObject({

@@ -18,9 +18,14 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { ServiceBootstrap } from "@oaath/protocol";
+import {
+  type EcdsaOperatorCredentialProfile,
+  parseOperatorCredentialProfile,
+  type ServiceBootstrap,
+} from "@oaath/protocol";
 import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import { requireNonExtractableKey } from "../persistence/interfaces.js";
+import { clientFail, exactClientRecord } from "./errors.js";
 
 export const OAATH_SERVICE_SESSION_VERSION = "oaath.service-session/v2" as const;
 const STORAGE_DOMAIN = "@oaath/sdk:service-session" as const;
@@ -194,4 +199,67 @@ export async function saveServiceSession(
       updatedAt: input.now(),
     }) as never,
   );
+}
+
+const REMOTE_VERSION = "oaath.remote-service-session/v1" as const;
+export interface RemoteServiceSession {
+  readonly deviceId: string;
+  readonly providerId: string;
+  /** Null is a durable creation intent, never an approved credential. */
+  readonly credential: Readonly<EcdsaOperatorCredentialProfile> | null;
+}
+
+/** Remote custody is public continuity evidence; unreadable is never absent. */
+export async function loadRemoteServiceSession(
+  input: Readonly<ServiceSessionInput>,
+): Promise<Readonly<RemoteServiceSession> | null> {
+  try {
+    const bindingId = storageId(input.url, input.origin, input.bootstrap);
+    const raw = await input.stores.context.read(bindingId);
+    if (raw === null || raw === undefined) return null;
+    const record = exactClientRecord(
+      raw,
+      ["version", "bindingId", "deviceId", "providerId", "credential"],
+      "remote service session",
+      new WeakSet(),
+      "oaath_client_capability_invalid",
+    );
+    if (
+      record.version !== REMOTE_VERSION ||
+      record.bindingId !== bindingId ||
+      typeof record.deviceId !== "string" ||
+      !DEVICE_ID.test(record.deviceId) ||
+      typeof record.providerId !== "string" ||
+      record.providerId.length < 1
+    )
+      throw new Error();
+    const credential =
+      record.credential === null ? null : parseOperatorCredentialProfile(record.credential);
+    if (credential !== null && credential.kind !== "ecdsa") throw new Error();
+    return Object.freeze({ deviceId: record.deviceId, providerId: record.providerId, credential });
+  } catch {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "remote session continuity is unavailable",
+    );
+  }
+}
+export async function saveRemoteServiceSession(
+  input: Readonly<ServiceSessionInput>,
+  session: Readonly<RemoteServiceSession>,
+): Promise<void> {
+  try {
+    await input.stores.context.write(
+      Object.freeze({
+        version: REMOTE_VERSION,
+        bindingId: storageId(input.url, input.origin, input.bootstrap),
+        ...session,
+      }) as never,
+    );
+  } catch {
+    return clientFail(
+      "oaath_client_capability_invalid",
+      "remote session continuity could not be saved",
+    );
+  }
 }
