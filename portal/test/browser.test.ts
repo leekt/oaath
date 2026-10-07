@@ -432,10 +432,14 @@ function walletMethods(page: Page) {
   return page.evaluate(() => (window as unknown as { walletMethods: string[] }).walletMethods);
 }
 
-async function openPortal(seed: readonly RememberedSigner[], transaction = "par-1"): Promise<Page> {
+async function openPortal(
+  seed: readonly RememberedSigner[],
+  transaction = "par-1",
+  wallet = true,
+): Promise<Page> {
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 844 });
-  await installWallet(page);
+  if (wallet) await installWallet(page);
   await page.evaluateOnNewDocument((signers: string) => {
     localStorage.setItem("oaath.portal.signers/v1", signers);
   }, JSON.stringify(seed));
@@ -508,7 +512,9 @@ describe("portal in Chrome", () => {
 
   it("adds a passkey signer and signs it in with an assertion over the relay's nonce", async () => {
     calls.length = 0;
-    const page = await openPortal([]);
+    // No wallet is announced, so the empty state is the settled list, not the
+    // frame before EIP-6963 discovery answers.
+    const page = await openPortal([], "par-1", false);
     const session = await page.createCDPSession();
     await session.send("WebAuthn.enable");
     await session.send("WebAuthn.addVirtualAuthenticator", {
