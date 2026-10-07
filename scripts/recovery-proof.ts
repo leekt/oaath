@@ -14,7 +14,10 @@ import {
 } from "./proof-support.js";
 
 const children: ChildProcess[] = [];
-const pool = new Pool({ connectionString: env.DCA_DATABASE_URL, max: 2 });
+const pool = new Pool({
+	connectionString: env.AUTOMATION_DATABASE_URL,
+	max: 2,
+});
 let armed = false,
 	intercepted = false,
 	submissions = 0,
@@ -43,9 +46,9 @@ const proxy = createServer(async (req, res) => {
 	res.writeHead(response.status, { "content-type": "application/json" });
 	res.end(reply);
 });
-await new Promise<void>((r) => proxy.listen(4320, "127.0.0.1", r));
+await new Promise<void>((r) => proxy.listen(4330, "127.0.0.1", r));
 const faultConfig = structuredClone(config);
-faultConfig.chainDescriptors[31337].bundlerUrl = "http://127.0.0.1:4320";
+faultConfig.chainDescriptors[31337].bundlerUrl = "http://127.0.0.1:4330";
 writeFileSync(".local/recovery-config.json", JSON.stringify(faultConfig), {
 	mode: 0o600,
 });
@@ -54,9 +57,11 @@ function start(port: number) {
 		env: {
 			...process.env,
 			...env,
-			DCA_CONFIG: new URL("../.local/recovery-config.json", import.meta.url)
-				.pathname,
-			DCA_RUNTIME_PORT: String(port),
+			AUTOMATION_CONFIG: new URL(
+				"../.local/recovery-config.json",
+				import.meta.url,
+			).pathname,
+			AUTOMATION_RUNTIME_PORT: String(port),
 		},
 		stdio: ["ignore", "ignore", "pipe"],
 	});
@@ -82,7 +87,9 @@ try {
 		"Killed execution process after bundler accepted purchase, before acknowledgement",
 	);
 	const pointer = (
-		await pool.query("SELECT operation FROM dca_runs WHERE plan_id=$1", [p.id])
+		await pool.query("SELECT operation FROM automation_runs WHERE plan_id=$1", [
+			p.id,
+		])
 	).rows[0].operation;
 	assert.ok(pointer.identity.userOperationHash);
 	// Independent processes, fresh pools and the existing caller key. Neither can replace this intent.
@@ -98,7 +105,9 @@ try {
 	assert.equal(after.signer, saved.signer);
 	assert.equal(after.commitment, saved.commitment);
 	const finalPointer = (
-		await pool.query("SELECT operation FROM dca_runs WHERE plan_id=$1", [p.id])
+		await pool.query("SELECT operation FROM automation_runs WHERE plan_id=$1", [
+			p.id,
+		])
 	).rows[0].operation;
 	assert.deepEqual(finalPointer, pointer);
 	console.log(

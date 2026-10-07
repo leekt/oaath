@@ -13,7 +13,10 @@ import {
 	wait,
 } from "./proof-support.js";
 
-const pool = new Pool({ connectionString: env.DCA_DATABASE_URL, max: 2 }),
+const pool = new Pool({
+		connectionString: env.AUTOMATION_DATABASE_URL,
+		max: 2,
+	}),
 	children: ChildProcess[] = [];
 let finalityBlock: any;
 const proxy = createServer(async (req, res) => {
@@ -76,8 +79,10 @@ try {
 			env: {
 				...process.env,
 				...env,
-				DCA_CONFIG: new URL("../.local/boundary-config.json", import.meta.url)
-					.pathname,
+				AUTOMATION_CONFIG: new URL(
+					"../.local/boundary-config.json",
+					import.meta.url,
+				).pathname,
 				FAULT_PLAN: p.id,
 				FAULT_POINT: p.point,
 			},
@@ -94,7 +99,7 @@ try {
 		"Actual processes killed after reservation, after core publication, and after inclusion",
 	);
 	const retained = await pool.query(
-		"SELECT plan_id,operation FROM dca_runs WHERE plan_id=ANY($1)",
+		"SELECT plan_id,operation FROM automation_runs WHERE plan_id=ANY($1)",
 		[plans.map((p) => p.id)],
 	);
 	assert.equal(retained.rowCount, 3);
@@ -116,7 +121,7 @@ try {
 	}, 100);
 	assert.equal((await owner("stats")).submissions, before + 1);
 	const after = await pool.query(
-		"SELECT plan_id,operation FROM dca_runs WHERE plan_id=ANY($1) ORDER BY plan_id",
+		"SELECT plan_id,operation FROM automation_runs WHERE plan_id=ANY($1) ORDER BY plan_id",
 		[plans.map((p) => p.id)],
 	);
 	assert.deepEqual(

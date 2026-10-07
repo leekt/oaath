@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createDca } from "../sdk/dist/index.js";
+import { createAutomation } from "../sdk/dist/index.js";
 
 const e = JSON.parse(readFileSync(".local/environment.json", "utf8"));
 const { id } = JSON.parse(readFileSync(".local/proof-plan.json", "utf8"));
-const dca = createDca({
+const dca = createAutomation({
 	baseUrl: "http://127.0.0.1:4317",
-	token: e.DCA_API_TOKEN,
+	token: e.AUTOMATION_API_TOKEN,
 });
 async function owner(action: string, body: unknown = {}) {
 	const r = await fetch(`http://127.0.0.1:4319/${action}`, {
@@ -29,7 +29,7 @@ try {
 	console.log("Pause and resume passed");
 	const pending = await dca.cancel(id);
 	assert.equal(pending.status, "cancelling");
-	const c = pending.cancellation as { calls: unknown[] };
+	const c = pending.cancellation as { calls: readonly unknown[] };
 	assert.ok(c?.calls?.length);
 	console.log("Cancellation requires explicit owner transaction");
 	const result = await owner("calls", { calls: c.calls });

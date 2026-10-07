@@ -5,10 +5,12 @@ import { gzipSync } from "node:zlib";
 import { dca, env, owner } from "./proof-support.js";
 
 const { id } = JSON.parse(readFileSync(".local/proof-plan.json", "utf8"));
-const { url } = JSON.parse(readFileSync(".local/public-url.json", "utf8"));
+const { url, webUrl } = JSON.parse(
+	readFileSync(".local/public-url.json", "utf8"),
+);
 for (const path of ["/health", "/v1/config"]) {
 	const r = await fetch(url + path, {
-		headers: { authorization: `Bearer ${env.DCA_API_TOKEN}` },
+		headers: { authorization: `Bearer ${env.AUTOMATION_API_TOKEN}` },
 	});
 	assert.equal(r.status, 200);
 }
@@ -17,7 +19,7 @@ assert.equal(
 	(
 		await fetch(`${url}/v1/plans`, {
 			headers: {
-				authorization: `Bearer ${env.DCA_API_TOKEN}`,
+				authorization: `Bearer ${env.AUTOMATION_API_TOKEN}`,
 				origin: "https://unapproved.example",
 			},
 		})
@@ -28,13 +30,13 @@ assert.equal((await fetch(`${url}/.local/environment.json`)).status, 404);
 const cors = await fetch(`${url}/v1/plans`, {
 	method: "OPTIONS",
 	headers: {
-		origin: url,
+		origin: webUrl,
 		"access-control-request-method": "POST",
 		"access-control-request-headers": "authorization,content-type",
 	},
 });
 assert.equal(cors.status, 204);
-assert.equal(cors.headers.get("access-control-allow-origin"), url);
+assert.equal(cors.headers.get("access-control-allow-origin"), webUrl);
 for (let i = 0; i < 20; i++) await dca.get(id);
 const before = await owner("stats");
 const samples: number[] = [];

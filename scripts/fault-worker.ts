@@ -15,7 +15,7 @@ const connect = pool.connect.bind(pool);
 			const text = typeof sql === "string" ? sql : sql.text;
 			if (
 				point === "reservation" &&
-				text.startsWith("UPDATE dca_runs SET operation=") &&
+				text.startsWith("UPDATE automation_runs SET operation=") &&
 				args?.[0] === id
 			)
 				armed = true;
@@ -53,7 +53,7 @@ let row: any;
 for (let n = 0; n < 45; n++) {
 	row = (
 		await pool.query(
-			"UPDATE dca_runs SET generation=generation+1,lease_until=$2 WHERE plan_id=$1 AND slot=0 AND lease_until<=$3 RETURNING *",
+			"UPDATE automation_runs SET generation=generation+1,lease_until=$2 WHERE plan_id=$1 AND slot=0 AND lease_until<=$3 RETURNING *",
 			[id, now() + 60, now()],
 		)
 	).rows[0];

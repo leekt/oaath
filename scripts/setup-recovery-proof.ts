@@ -9,7 +9,7 @@ try {
 		`http://127.0.0.1:4317/v1/plans/${p.id}/authorize`,
 		{
 			method: "POST",
-			headers: { authorization: `Bearer ${env.DCA_API_TOKEN}` },
+			headers: { authorization: `Bearer ${env.AUTOMATION_API_TOKEN}` },
 		},
 	);
 	assert.equal(response.status, 200);
@@ -38,7 +38,7 @@ try {
 	await owner("mine");
 	for (const mode of ["api", "runtime"]) {
 		const child = spawn(
-			mode === "api" ? "./target/release/dca-api" : process.execPath,
+			mode === "api" ? "./target/release/automation-api" : process.execPath,
 			mode === "api" ? [] : ["runtime/src/main.ts"],
 			{ env: { ...process.env, ...env }, stdio: "ignore", detached: true },
 		);
