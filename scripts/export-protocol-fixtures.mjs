@@ -29,14 +29,8 @@ const P = await import(`${root}packages/protocol/src/index.ts`);
 const { hashOwnerCredentialProfile } = await import(
   `${root}packages/protocol/src/identity-profile.ts`
 );
-const { classifyStoredAuthorizationScope } = await import(
-  `${root}packages/server/src/authorization/scope.ts`
-);
-const { verifyKernelV4ReplayableInstallOwnerSigningArtifact } = await import(
-  `${root}packages/server/src/authorization/owner-signing.ts`
-);
-const { parseApprovedPermission } = await import(
-  `${root}packages/server/src/authorization/approved-permission.ts`
+const { classifyStoredAuthorizationScope, parseApprovedPermission } = await import(
+  `${root}packages/protocol/src/internal/relay-reference.ts`
 );
 const { p256 } = await import(`${root}packages/protocol/node_modules/@noble/curves/nist.js`);
 const { keccak_256 } = await import(`${root}packages/protocol/node_modules/@noble/hashes/sha3.js`);
@@ -151,8 +145,6 @@ const EVALUATE = {
     P.parseKernelReplayableInstallOwnerSigningRequest,
   parseOwnerSigningArtifact: P.parseOwnerSigningArtifact,
   serializeOwnerSigningArtifact: P.serializeOwnerSigningArtifact,
-  verifyKernelV4ReplayableInstallOwnerSigningArtifact: (value) =>
-    verifyKernelV4ReplayableInstallOwnerSigningArtifact(value.request, value.artifactPlaintext),
   classifyStoredAuthorizationScope: (value) =>
     classifyStoredAuthorizationScope(value.requestedScope, value.requestId),
   parseVerifyGrantRevisionInput: P.parseVerifyGrantRevisionInput,
@@ -258,7 +250,7 @@ const P256_GENERATOR =
   "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5";
 
 const GOLDEN = JSON.parse(
-  readFileSync(`${root}packages/server/test/fixtures/owner-phone-golden.json`, "utf8"),
+  readFileSync(`${root}scripts/fixtures/owner-signing-golden.json`, "utf8"),
 ).projection;
 
 // --------------------------------------------------------------------- PKCE
@@ -1950,86 +1942,6 @@ for (const fn of ["parseOwnerSigningArtifact", "serializeOwnerSigningArtifact"])
   record(fn, "kind ecdsa", { ...ARTIFACT, kind: "ecdsa" });
   record(fn, "version v2", { ...ARTIFACT, version: "oaath.owner-signing-artifact/v2" });
   shapeCases(fn, "artifact", ARTIFACT);
-}
-
-{
-  const fn = "verifyKernelV4ReplayableInstallOwnerSigningArtifact";
-  const canonical = P.serializeOwnerSigningArtifact(ARTIFACT);
-  const verify = (artifactPlaintext, request = KERNEL_REQUEST) => ({ request, artifactPlaintext });
-  record(fn, "valid", verify(canonical));
-  record(fn, "pretty printed", verify(JSON.stringify(ARTIFACT, null, 2)));
-  record(fn, "trailing space", verify(`${canonical} `));
-  record(fn, "reordered fields", verify(JSON.stringify({ kind: "p256", ...ARTIFACT })));
-  record(
-    fn,
-    "reordered fields 2",
-    verify(JSON.stringify({ signature: ARTIFACT.signature, ...ARTIFACT })),
-  );
-  record(fn, "escaped key", verify(canonical.replace('"kind"', '"\\u006bind"')));
-  record(
-    fn,
-    "other request hash",
-    verify(P.serializeOwnerSigningArtifact({ ...ARTIFACT, requestHash: hex("ab", 32) })),
-  );
-  record(
-    fn,
-    "other key",
-    verify(
-      P.serializeOwnerSigningArtifact({
-        ...ARTIFACT,
-        signature: sign(OTHER_SECRET, KERNEL_REQUEST.expectedDigest),
-      }),
-    ),
-  );
-  record(
-    fn,
-    "other digest",
-    verify(
-      P.serializeOwnerSigningArtifact({
-        ...ARTIFACT,
-        signature: sign(OWNER_SECRET, hex("ab", 32)),
-      }),
-    ),
-  );
-  record(
-    fn,
-    "high s",
-    verify(JSON.stringify({ ...ARTIFACT, signature: compact(SIGNATURE_R, N - SIGNATURE_S) })),
-  );
-  record(fn, "empty", verify(""));
-  record(fn, "control character", verify(`${canonical}\n`));
-  record(fn, "not json", verify("artifact"));
-  record(fn, "over length", verify(`${canonical}${" ".repeat(32_769 - canonical.length)}`));
-  const golden = rehash(set(GOLDEN_KERNEL, ["signer", "ownerCredential"], OWNER_P256));
-  const goldenArtifact = {
-    ...ARTIFACT,
-    requestHash: P.hashOwnerSigningRequest(golden),
-    signature: sign(OWNER_SECRET, golden.expectedDigest),
-  };
-  record(fn, "golden packages", verify(P.serializeOwnerSigningArtifact(goldenArtifact), golden));
-  record(
-    fn,
-    "artifact for another request",
-    verify(P.serializeOwnerSigningArtifact(goldenArtifact)),
-  );
-  const ecdsa = kernelRequest({
-    packages: GOLDEN_PACKAGES,
-    nonce: "7",
-    ownerCredential: OWNER_ECDSA,
-  });
-  record(
-    fn,
-    "ecdsa owner",
-    verify(
-      P.serializeOwnerSigningArtifact({
-        ...ARTIFACT,
-        requestHash: P.hashOwnerSigningRequest(ecdsa),
-      }),
-      ecdsa,
-    ),
-  );
-  record(fn, "invalid request", verify(canonical, { ...KERNEL_REQUEST, purpose: "application" }));
-  record(fn, "mail request", verify(canonical, MAIL_REQUEST));
 }
 
 // --------------------------------------------- stored scope classification

@@ -1,6 +1,6 @@
 /**
  * PKCE S256 challenge derivation shared by applications and relay consumers.
- * Authorization records and one-time consumption belong to @oaath/server.
+ * Authorization records and one-time consumption belong to the Rust relay.
  *
  * @author taek <leekt216@gmail.com>
  */

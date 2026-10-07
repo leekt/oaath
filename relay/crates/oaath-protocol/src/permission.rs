@@ -1,6 +1,6 @@
 //! Permission request and decision wire contracts (`permission-protocol.ts`)
 //! and the relay's approval meaning of a sealed decision
-//! (`packages/server/src/authorization/approved-permission.ts`).
+//! (`packages/protocol/src/internal/relay-reference.ts`).
 
 use alloy_primitives::{B256, U256, keccak256};
 use alloy_sol_types::SolValue;

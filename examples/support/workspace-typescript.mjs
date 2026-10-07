@@ -1,8 +1,8 @@
 /**
  * Lets the examples run from this repository without a build step.
  *
- * The examples import `@oaath/protocol`, `@oaath/sdk`, and `@oaath/server` by
- * their published specifiers, exactly as an adopter does. Inside this workspace
+ * The examples import `@oaath/protocol` and `@oaath/sdk` by their published
+ * specifiers, exactly as an adopter does. Inside this workspace
  * this hook opts into the `oaath-source` condition for TypeScript sources, which Node runs
  * by stripping types — except that the sources import each other with `.js`
  * specifiers, which is what the published build emits. This hook maps that one

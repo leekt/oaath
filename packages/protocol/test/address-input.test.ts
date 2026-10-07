@@ -1,7 +1,6 @@
 import { getAddress } from "viem";
 import { describe, expect, it } from "vitest";
 import {
-  captureServiceAccount,
   createKernelReplayableInstallTypedData,
   createOperation,
   encodeGrantPolicy,
@@ -58,26 +57,6 @@ describe("canonical address inputs", () => {
           },
           preparedAt: 1,
         }),
-    ],
-    [
-      "service account owner validator",
-      (address) =>
-        captureServiceAccount(
-          {
-            version: "oaath.kernel-account-profile/v1",
-            kind: "kernel",
-            accountIndex: "0",
-            kernelVersion: "0.4.0",
-            factoryRoute: "kernel_factory",
-            entryPoint: { version: "0.9" },
-            ownerCredential: owner(lower),
-          },
-          address,
-          new WeakSet(),
-          (message) => {
-            throw new Error(message);
-          },
-        ),
     ],
     [
       "Kernel install account",

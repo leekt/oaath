@@ -1,5 +1,5 @@
 //! Authoritative classification of one immutable stored authorization scope
-//! (`packages/server/src/authorization/scope.ts`).
+//! (`packages/protocol/src/internal/relay-reference.ts`).
 
 use serde_json::{Value, json};
 

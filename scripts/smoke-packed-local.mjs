@@ -2,7 +2,7 @@ import { createConsumer } from "./packed-consumer.mjs";
 
 const consumer = await createConsumer({
   label: "local-anvil",
-  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing"],
+  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/testing"],
   dependencies: { "@types/node": "22.13.0" },
   types: ["node"],
   skipLibCheck: true,

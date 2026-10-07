@@ -4,10 +4,10 @@ IO-free OAAth wire and durable contracts, including the concrete Kernel v4
 signing profiles. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
-The shared contracts cover caller/account bindings, service bootstrap, permission
+The shared contracts cover caller/account bindings, workspace account context, permission
 requests and decisions, grants, operations, and owner signing. `deriveCodeChallenge`
 owns PKCE S256 challenge derivation. Authorization request/code storage, decision
-transactions, code consumption, and HTTP responses belong to `@oaath/server`.
+transactions, code consumption, and HTTP responses belong to the Rust relay.
 
 `KernelAccountProfile` distinguishes derived Kernel v4 accounts from existing
 accounts. The latter use `oaath.kernel-existing-account-profile/v3` with the

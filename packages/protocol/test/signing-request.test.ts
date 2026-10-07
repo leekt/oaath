@@ -16,7 +16,7 @@ const DIGEST = "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957b
 const KERNEL_ENABLE = (
   JSON.parse(
     readFileSync(
-      new URL("../../server/test/fixtures/owner-phone-golden.json", import.meta.url),
+      new URL("../../../scripts/fixtures/owner-signing-golden.json", import.meta.url),
       "utf8",
     ),
   ) as {

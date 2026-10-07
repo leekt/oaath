@@ -6,7 +6,7 @@ import { createConsumer } from "./packed-consumer.mjs";
 
 const consumer = await createConsumer({
   label: "weighted-root",
-  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing"],
+  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/testing"],
   files: {
     "run.mjs": `
 import assert from "node:assert/strict";
