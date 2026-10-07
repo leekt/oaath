@@ -170,9 +170,9 @@ default) or any `kernelKey(...)` signing profile, such as a raw P-256 key
 (`account.owner(kernelKey({ credential, sign }))`). The account stays at its
 existing address. Each send checks its implementation, EntryPoint, root
 validator and current owner. The root validator must expose its owner onchain:
-the reviewed ECDSA validator, or on Kernel `0.4.0` the pinned raw P-256
-validator. A WebAuthn owner key fails with `oaath_client_capability_unsupported`
-(`source: "owner_key_kind_unsupported"`) before it signs. Owner-only execution uses the
+the reviewed ECDSA validator, or on Kernel `0.4.0` the pinned raw P-256 or
+WebAuthn validator. WebAuthn uses the same `kernelKey({ credential, credentialId,
+rpId, origin, authenticate })` profile as a passkey session. Owner-only execution uses the
 bundler route by default. Applications can explicitly estimate a session before
 selecting owner execution, as described below; OAAth never silently changes the
 signer of an operation.
@@ -313,8 +313,16 @@ with `kernel_runtime_deployment_mismatch` before anything is signed. Local accou
 using raw-hash signing can pass `kernelKey({ account, validator })` instead. On
 Kernel 0.4.0, a P-256 `kernelKey({ credential, sign })` also binds an existing
 account whose root validator is the pinned raw P-256 validator, whose stored
-public key is readable onchain. Other root validators, including WebAuthn,
-fail with `kernel_runtime_binding_mismatch`.
+public key is readable onchain. A WebAuthn `kernelKey({ credential, credentialId,
+rpId, origin, authenticate })` binds the reviewed WebAuthn validator at
+`0x6f781fff97b830daa2e11ee0ad6344aff7131ef2`. Binding checks its exact runtime code
+and stored x/y before requesting an assertion. The credential ID, RP ID and origin
+remain local assertion checks; the contract stores only x/y. The module artifact
+is reproduced from `kernel-7579-plugins` commit `a267d794`; availability on a public
+chain is not implied. Other root validators fail with `kernel_runtime_binding_mismatch`.
+After binding, the same key approves `approveKernelPermission`; the owner runtime
+signs revocations prepared with `encodeKernelPermissionUninstallCalls` from
+`@oaath/protocol`, as well as ordinary owner operations.
 `sequence` is the current EntryPoint nonce sequence for this account and key;
 `gas` contains canonical decimal strings. The low-level prepared-operation
 schema calls its context label `grantId`; no Grant is created or needed here.

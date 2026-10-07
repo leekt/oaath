@@ -52,6 +52,8 @@ import {
   exactKernelDeployment,
   KERNEL_P256_VERIFIER,
   KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
+  KERNEL_WEBAUTHN_VALIDATOR,
+  KERNEL_WEBAUTHN_VALIDATOR_RUNTIME_CODE_HASH,
   OAATH_KERNEL_RATE_LIMIT_POLICY,
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
@@ -248,6 +250,20 @@ export function createKernelRuntime(
     if (!isBytes(code) || code === "0x") {
       return runtimeFail(unavailable, "Kernel authority module carries no code on this chain");
     }
+    if (
+      authorityModule === KERNEL_WEBAUTHN_VALIDATOR &&
+      (await observeRuntimeModule(
+        read as KernelReads["read"],
+        deployment.chainId,
+        authorityModule,
+        KERNEL_WEBAUTHN_VALIDATOR_RUNTIME_CODE_HASH,
+      )) !== "present"
+    ) {
+      return runtimeFail(
+        unavailable,
+        "WebAuthn validator code does not match the reviewed artifact",
+      );
+    }
     // The pinned WebAuthn signer verifies through the software P-256 verifier
     // (kernel/key/webauthn.ts never selects the RIP-7212 precompile), so a
     // passkey session is unusable on a chain without that exact verifier.
@@ -333,8 +349,7 @@ export function createKernelRuntime(
    * Binds an existing account at its address. The account's own deployment is
    * detected and must be this runtime's, so a mismatch fails before any key is
    * asked to sign. Root authority is proven from the account's current root
-   * validation; only the reviewed ECDSA validator and the pinned raw P-256
-   * validator expose their owner onchain.
+   * validation and the reviewed validator's stored public key.
    */
   async function bindExistingAccount(address: unknown): Promise<Readonly<KernelAccountDescriptor>> {
     return proveBoundAccount(
@@ -415,12 +430,11 @@ export function createKernelRuntime(
       }
     } else {
       const rootValidator = (descriptor as { readonly rootValidator: `0x${string}` }).rootValidator;
-      // Only validators whose owner is readable onchain can prove root
-      // authority: the reviewed ECDSA validator and, on Kernel 0.4.0, the pinned
-      // raw P-256 validator. Any other root validator fails closed.
+      // Root authority requires a reviewed validator with a readable public key.
       const p256 = !isV33 && authorityModule === pinnedValidatorModule("p256");
+      const webauthn = !isV33 && authorityModule === KERNEL_WEBAUTHN_VALIDATOR;
       if (
-        (authorityModule !== ECDSA_VALIDATOR && !p256) ||
+        (authorityModule !== ECDSA_VALIDATOR && !p256 && !webauthn) ||
         rootValidator !== `0x01${authorityModule.slice(2)}`
       ) {
         return runtimeFail(
@@ -428,12 +442,13 @@ export function createKernelRuntime(
           "Kernel account does not use this root validator",
         );
       }
+      if (webauthn) await proveAuthorityModule();
       let owner: unknown;
       try {
         owner = await (read as KernelReads["read"])(
-          p256
+          p256 || webauthn
             ? {
-                type: "kernel_p256_owner",
+                type: webauthn ? "kernel_webauthn_owner" : "kernel_p256_owner",
                 chainId: deployment.chainId,
                 validator: authorityModule,
                 account: descriptor.account,
@@ -450,7 +465,12 @@ export function createKernelRuntime(
           "Kernel root owner could not be read",
         );
       }
-      if (owner !== operator.key.publicMaterial) {
+      // WebAuthn's contract stores x/y only; the authenticator ID remains a
+      // client-side assertion binding, never an onchain authority claim.
+      const publicMaterial = webauthn
+        ? operator.key.publicMaterial.slice(0, 130)
+        : operator.key.publicMaterial;
+      if (owner !== publicMaterial) {
         return runtimeFail(
           "kernel_runtime_binding_mismatch",
           "Kernel account does not belong to this owner key",

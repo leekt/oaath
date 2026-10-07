@@ -1,5 +1,9 @@
 /** Reviewed alternate implementation: real upgrade, bind and owner operation. */
+
 import runtime from "../packages/contracts/artifacts/KernelV4Runtime.json" with { type: "json" };
+import webauthnValidator from "../packages/contracts/artifacts/KernelWebAuthnValidator.json" with {
+  type: "json",
+};
 import { createConsumer } from "./packed-consumer.mjs";
 
 const consumer = await createConsumer({
@@ -9,13 +13,16 @@ const consumer = await createConsumer({
     "run.mjs": `
 import assert from "node:assert/strict";
 import { createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
-import { createKernelRuntime, kernelDeployment, kernelAccountDeployment, ownerOperator } from "@oaath/sdk/kernel";
+import { createKernelRuntime, kernelDeployment, kernelAccountDeployment, ownerOperator, kernelKey, sessionOperator, approveKernelPermission, materializeKernelPermission, kernelPermissionNonce, readKernelModules } from "@oaath/sdk/kernel";
 import { createPublicClient, createWalletClient, http } from "cetane";
 import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
 import { createExecution } from "cetane/execution/evm";
 import { toPackedUserOperation } from "cetane/execution/erc4337";
-import { encodeFunctionData, getCreate2Address, keccak256, parseAbi } from "cetane/utils";
-import { entryPointAbi } from "@oaath/protocol";
+import { encodeFunctionData, getCreate2Address, keccak256, parseAbi, bytesToHex, hexToBytes, concatHex, toHex, decodeEventLog } from "cetane/utils";
+import { entryPointAbi, OAATH_OWNER_CREDENTIAL_PROFILE_VERSION, encodeKernelPermissionUninstallCalls } from "@oaath/protocol";
+import { p256 } from "@noble/curves/nist.js";
+import { sha256 } from "@noble/hashes/sha256";
+const hashBytes = value => bytesToHex(sha256(value));
 const fixture = await createLocalOwnerAnvilFixture({ chainId: 143, kernelVersion: "0.4.0", owner: "p256" });
 let ports;
 try {
@@ -41,13 +48,20 @@ try {
   async function send(runtime, account, sequence, calls) {
     const prepared = runtime.prepareOperation({ kind: "execution", grantId: "reviewed-implementation-proof", account, nonceKey: "0", sequence, calls, gas });
     const signature = await runtime.signOperation(prepared);
+    return submit(prepared, signature);
+  }
+  async function submit(prepared, signature) {
     const op = prepared.userOperation;
     const packed = toPackedUserOperation({ sender: op.sender, nonce: BigInt(op.nonce), callData: op.callData,
       callGasLimit: BigInt(op.callGasLimit), verificationGasLimit: BigInt(op.verificationGasLimit), preVerificationGas: BigInt(op.preVerificationGas),
       maxFeePerGas: BigInt(op.maxFeePerGas), maxPriorityFeePerGas: BigInt(op.maxPriorityFeePerGas), signature }, "0.9");
     const hash = await wallet.sendTransaction({ to: base.entryPoint.address, gas: 8000000n,
       data: encodeFunctionData({ abi: entryPointAbi, functionName: "handleOps", args: [[packed], payer.address] }) });
-    assert.equal((await reader.waitForTransactionReceipt({ hash })).status, "success");
+    const receipt = await reader.waitForTransactionReceipt({ hash });
+    assert.equal(receipt.status, "success");
+    const event = receipt.logs.map(log => { try { return decodeEventLog({ abi: entryPointAbi, ...log }); } catch { return null; } })
+      .find(event => event?.eventName === "UserOperationEvent" && event.args.userOpHash === prepared.userOperationHash);
+    assert.equal(event?.args.success, true);
   }
   await send(before, original, "0", [{ target: fixture.address, value: "0", data: encodeFunctionData({
     abi: parseAbi(["function upgradeToAndCall(address implementation, bytes data)"]), functionName: "upgradeToAndCall", args: [implementation, "0x"],
@@ -66,7 +80,64 @@ try {
   const target = "0x" + "67".repeat(20);
   await send(after, imported, "1", [{ target, value: "123", data: "0x" }]);
   assert.equal(await reader.getBalance({ address: target }), 123n);
-  console.log("packed Kernel import: reviewed alternate implementation, accepted owner upgrade/execution; unreviewed address and wrong runtime hash refused before signing");
+  // Rotate an existing account through its owner, then recreate its WebAuthn runtime.
+  const module = ${JSON.stringify(webauthnValidator)};
+  const moduleTx = await wallet.sendTransaction({ to: base.create2Deployer, data: module.deploymentInput, gas: 6000000n });
+  assert.equal((await reader.waitForTransactionReceipt({ hash: moduleTx })).status, "success");
+  assert.equal(keccak256(await reader.getCode({ address: module.expectedAddress })), module.runtimeCodeHash);
+  const secret = p256.utils.randomPrivateKey();
+  const publicKey = bytesToHex(p256.getPublicKey(secret, false));
+  const credentialId = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url");
+  const credential = { version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION, kind: "webauthn", publicKey,
+    authenticatorIdHash: keccak256(bytesToHex(Buffer.from(credentialId, "base64url"))) };
+  const rpId = "app.example";
+  const origin = "https://app.example";
+  let assertions = 0;
+  const passkey = kernelKey({ credential, credentialId, rpId, origin, authenticate: async ({ challenge }) => {
+    assertions++;
+    const clientDataJSON = JSON.stringify({ type: "webauthn.get", challenge, origin, crossOrigin: false });
+    const authenticatorData = concatHex([hashBytes(new TextEncoder().encode(rpId)), "0x05", "0x00000001"]);
+    const digest = hashBytes(hexToBytes(concatHex([authenticatorData, hashBytes(new TextEncoder().encode(clientDataJSON))])));
+    const signature = p256.sign(hexToBytes(digest), secret, { lowS: true, prehash: false });
+    return { authenticatorData, clientDataJSON, responseTypeLocation: String(clientDataJSON.indexOf('"type":"webauthn.get"')),
+      r: toHex(signature.r, { size: 32 }), s: toHex(signature.s, { size: 32 }) };
+  } });
+  const webauthn = () => createKernelRuntime({ deployment: profile, operator: ownerOperator({ key: passkey }), reads: ports.reads });
+  const packages = webauthn().packages.map(pkg => ({ ...pkg, moduleType: BigInt(pkg.moduleType) }));
+  await send(after, imported, "2", [{ target: fixture.address, value: "0", data: encodeFunctionData({
+    abi: parseAbi(["function setRoot((uint256 moduleType, address module, bytes moduleData, bytes internalData)[] pkg, bool removeCurrent, bytes uninstallData)"]),
+    functionName: "setRoot", args: [packages, true, "0x"],
+  }) }]);
+  const passkeyRuntime = webauthn();
+  const passkeyAccount = await passkeyRuntime.bindAccount({ address: fixture.address });
+  assert.equal(assertions, 0);
+  const oldCount = fixture.signatureCount;
+  await assert.rejects(after.bindAccount({ address: fixture.address }), error => error.code === "kernel_runtime_binding_mismatch");
+  assert.equal(fixture.signatureCount, oldCount);
+  await send(passkeyRuntime, passkeyAccount, "3", [{ target, value: "7", data: "0x" }]);
+  assert.equal(await reader.getBalance({ address: target }), 130n);
+  const sessionKey = kernelKey({ account: privateKeyToAccount(generatePrivateKey()), validator: module.expectedAddress });
+  const session = createKernelRuntime({ deployment: profile, operator: sessionOperator({ key: sessionKey,
+    policies: [{ kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "5" }] }] }), reads: ports.reads });
+  const sessionAccount = await session.bindAccount({ address: fixture.address });
+  const nonce = await kernelPermissionNonce({ runtime: session, account: sessionAccount, reads: ports.reads, requestHash: keccak256("0x012345") });
+  const approval = await approveKernelPermission({ owner: passkey, runtime: session, account: sessionAccount, nonce });
+  const enabled = await materializeKernelPermission({ runtime: session, approval, account: sessionAccount, grantId: "webauthn-root-permission", nonceKey: "0", sequence: "0", calls: [{ target, value: "5", data: "0x" }], gas });
+  await submit(enabled.prepared, enabled.signature);
+  assert.equal(await reader.getBalance({ address: target }), 135n);
+  const installed = await readKernelModules(reader, { address: fixture.address, version: "4", budget: { maxRequests: 64, timeout: 5000 } });
+  assert.ok(installed.permissions.some(permission => permission.status === "state-confirmed"));
+  const revoked = passkeyRuntime.prepareOperation({ kind: "revocation", grantId: "webauthn-root-permission", account: passkeyAccount, nonceKey: "0", sequence: "4",
+    calls: encodeKernelPermissionUninstallCalls({ account: fixture.address, packages: approval.packages }), gas });
+  await submit(revoked, await passkeyRuntime.signOperation(revoked));
+  // The already-spent enable cannot restore authority. A standard session call fails.
+  const later = session.prepareOperation({ kind: "execution", grantId: "webauthn-root-permission", account: sessionAccount, nonceKey: "0", sequence: "1", calls: [{ target, value: "5", data: "0x" }], gas });
+  let rejected = false;
+  try { await submit(later, await session.signOperation(later)); } catch { rejected = true; }
+  assert.equal(rejected, true);
+  assert.equal(await reader.getBalance({ address: target }), 135n);
+  assert.equal(assertions, 3);
+  console.log("packed Kernel import: reviewed implementation; WebAuthn root rotation/import, owner execution, session approval/materialization and revocation; unsupported root and wrong code refused before signing");
 } finally { await ports?.observation.close(); await fixture.close(); }
 `,
     "surface.ts": `
