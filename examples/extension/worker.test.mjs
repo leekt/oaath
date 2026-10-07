@@ -17,7 +17,7 @@ const { outputFiles } = await build({
           namespace: "test",
         }));
         builder.onLoad({ filter: /.*/, namespace: "test" }, ({ path }) => ({
-          contents: path.endsWith("/viem")
+          contents: path.endsWith("/cetane")
             ? "export const oaathProvider = () => { throw new Error('unexpected provider'); };"
             : "export const createOAAth = globalThis.createOAAth;",
         }));

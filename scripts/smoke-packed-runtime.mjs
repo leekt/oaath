@@ -6,7 +6,6 @@ import { createConsumer } from "./packed-consumer.mjs";
 const consumer = await createConsumer({
   label: "runtime-cli",
   packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing", "@oaath/cli"],
-  dependencies: { viem: "2.55.8" },
   files: {
     "run.mjs": `
 import { execFile, spawn } from "node:child_process";
@@ -16,8 +15,11 @@ import { promisify } from "node:util";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { kernelDeployment, kernelRuntimeReadiness } from "@oaath/sdk/kernel";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
-import { concat, createWalletClient, http, parseEther } from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { createWalletClient, http } from "cetane";
+import { createExecution } from "cetane/execution/evm";
+import assert from "node:assert/strict";
+assert.throws(() => import.meta.resolve("viem"), { code: "ERR_MODULE_NOT_FOUND" });
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
 const exec = promisify(execFile);
 const bin = "./node_modules/.bin/oaath";
 const help = await exec(bin, ["--help"]);
@@ -58,9 +60,9 @@ try {
   };
   const key = generatePrivateKey();
   const account = privateKeyToAccount(key);
-  await rpc("anvil_setBalance", [account.address, "0x" + parseEther("100").toString(16)]);
-  const wallet = createWalletClient({ account, transport: http(url, { retryCount: 0 }) });
-  const epHash = await wallet.sendTransaction({ chain: null, to: kernelDeployment({ chainId: 421614 }).create2Deployer, data: ${JSON.stringify(runtime.entryPoint.deploymentInput)}, gas: 10000000n });
+  await rpc("anvil_setBalance", [account.address, "0x" + (100n * 10n ** 18n).toString(16)]);
+  const wallet = createWalletClient({ chain: { id: 143, name: "Anvil", nativeAA: false, execution: createExecution() }, account: { address: account.address }, signer: account, transport: http(url) });
+  const epHash = await wallet.sendTransaction({ to: kernelDeployment({ chainId: 421614 }).create2Deployer, data: ${JSON.stringify(runtime.entryPoint.deploymentInput)}, gas: 10000000n });
   // Anvil can answer sendTransaction before its automined block lands; poll the receipt, bounded.
   let epReceipt = null;
   for (let attempt = 0; attempt < 50 && epReceipt === null; attempt++) {
@@ -69,7 +71,7 @@ try {
   }
   if (epReceipt?.status !== "0x1") throw new Error("local EntryPoint prerequisite failed");
   for (const input of ${JSON.stringify([runtime.callPolicy.deploymentInput, runtime.rateLimitPolicy.deploymentInput, runtime.ecdsaSigner.deploymentInput, runtime.p256Verifier.deploymentInput])}) {
-    const hash = await wallet.sendTransaction({ chain: null, to: kernelDeployment({ chainId: 143 }).create2Deployer, data: input, gas: 10000000n });
+    const hash = await wallet.sendTransaction({ to: kernelDeployment({ chainId: 143 }).create2Deployer, data: input, gas: 10000000n });
     let receipt = null;
     for (let attempt = 0; attempt < 50 && receipt === null; attempt++) {
       if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 100));

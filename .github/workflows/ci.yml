@@ -83,6 +83,8 @@ jobs:
       # so they prove the published artifacts rather than the workspace links.
       - run: bun run check:public-surface
       - run: bun run release:check
+      - run: bun run smoke:protocol
+      - run: bun run smoke:cetane
       - run: bun run smoke:passkey
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome

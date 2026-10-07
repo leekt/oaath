@@ -145,6 +145,11 @@ export async function createConsumer({
     await writeFile(join(directory, name), contents);
   }
   run("npm", ["install", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: directory });
+  const lock = JSON.parse(await readFile(join(directory, "package-lock.json"), "utf8"));
+  if (Object.keys(lock.packages).some((path) => /(?:^|\/)node_modules\/viem$/u.test(path))) {
+    await rm(directory, { recursive: true, force: true });
+    throw new Error("Packed OAAth consumers must not install viem");
+  }
   return {
     directory,
     /** Runs one consumer module under Node and returns its stdout. */

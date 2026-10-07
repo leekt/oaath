@@ -37,8 +37,8 @@ import {
 } from "@oaath/sdk/kernel";
 import { createMemoryStores } from "@oaath/sdk/testing";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
-import { keccak256, stringToBytes } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { privateKeyToAccount } from "cetane/accounts";
+import { keccak256 } from "cetane/utils";
 
 const CHAIN_ID = 421_614;
 const ISSUER_URL = "https://issuer.example";
@@ -239,7 +239,7 @@ const oaath = createOAAth({
     invalidateCapability: async ({ grantId }) => {
       invalidations += 1;
       return {
-        evidenceHash: keccak256(stringToBytes(`invalidated:${grantId}`)),
+        evidenceHash: keccak256(new TextEncoder().encode(`invalidated:${grantId}`)),
         invalidatedAt: now(),
       };
     },

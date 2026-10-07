@@ -15,8 +15,8 @@ import {
   createPostgresRelaySchema,
   createPostgresServiceDirectorySchema,
 } from "@oaath/server/postgres";
+import { hexToBytes, toHex } from "cetane/utils";
 import pg from "pg";
-import { hexToBytes, toHex } from "viem";
 import { startPhoneDevnet } from "./devnet.mjs";
 import { startPhoneService } from "./service.mjs";
 

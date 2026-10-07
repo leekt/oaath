@@ -105,7 +105,6 @@ assert(!FORBIDDEN.test(CONSUMER), "the review consumer names a Kernel version or
 const consumer = await createConsumer({
   label: "calls-review",
   packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing"],
-  dependencies: { viem: "2.55.8" },
   files: { "consumer.mjs": CONSUMER, "smoke.mjs": SMOKE, "types.ts": TYPES },
 });
 try {

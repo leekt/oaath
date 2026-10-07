@@ -15,14 +15,21 @@ const DIST = join(HERE, "dist");
 
 mkdirSync(DIST, { recursive: true });
 
-await build({
+const result = await build({
   entryPoints: [join(HERE, "worker.js")],
   outfile: join(DIST, "worker.bundle.js"),
   bundle: true,
   format: "esm",
   platform: "browser",
   logLevel: "silent",
+  metafile: true,
 });
+if (
+  Object.values(result.metafile.outputs).some(({ imports }) =>
+    imports.some(({ path }) => path.startsWith("node:")),
+  )
+)
+  throw new Error("Worker bundle must not import Node builtins");
 
 for (const file of [
   "manifest.json",

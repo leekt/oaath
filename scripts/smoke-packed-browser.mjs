@@ -61,9 +61,9 @@ import {
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
 } from "@oaath/protocol";
-import { bytesToHex, hexToBytes, keccak256, stringToBytes } from "viem";
+import { bytesToHex, hexToBytes, keccak256 } from "cetane/utils";
 import { p256 } from "@noble/curves/nist.js";
-import { privateKeyToAccount } from "viem/accounts";
+import { privateKeyToAccount } from "cetane/accounts";
 import { IDBFactory } from "fake-indexeddb";
 
 function fail(message) {
@@ -484,7 +484,7 @@ function createRealm(chains = [chain]) {
       invalidateCapability: async (request) => {
         invalidations += 1;
         return {
-          evidenceHash: keccak256(stringToBytes("invalidated:" + request.grantId)),
+          evidenceHash: keccak256(new TextEncoder().encode("invalidated:" + request.grantId)),
           invalidatedAt: now(),
         };
       },
@@ -1060,7 +1060,7 @@ const EXPECTED_SURFACES = {
 const consumer = await createConsumer({
   label: "browser",
   packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server"],
-  dependencies: { "@noble/curves": "1.9.1", "fake-indexeddb": "6.2.5", viem: "2.55.8" },
+  dependencies: { "@noble/curves": "1.9.1", "fake-indexeddb": "6.2.5" },
   files: { "smoke.mjs": SMOKE, "types.ts": TYPES },
 });
 

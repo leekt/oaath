@@ -7,7 +7,6 @@ const consumer = await createConsumer({
   dependencies: {
     esbuild: "0.28.1",
     "puppeteer-core": "25.5.0",
-    viem: "2.55.8",
     "@noble/curves": "1.9.1",
   },
   files: {
@@ -22,7 +21,7 @@ export async function enrol(signal: AbortSignal): Promise<OperatorCredentialProf
     "browser.mjs": String.raw`
 import { enrolWebAuthnCredential, kernelKey } from "@oaath/sdk/kernel";
 import { p256 } from "@noble/curves/nist.js";
-import { hexToBytes, keccak256, toHex } from "viem";
+import { hexToBytes, keccak256, toHex } from "cetane/utils";
 const assert = (value, code) => { if (!value) throw new Error(code); };
 const bytes = id => Uint8Array.from(atob(id.replace(/-/g, "+").replace(/_/g, "/")), char => char.charCodeAt(0));
 globalThis.passkeySmoke = async () => {
