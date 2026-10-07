@@ -32,7 +32,7 @@ export interface OaathConnectedEoaPayer {
     readonly signer?: Readonly<{ sign: (request: { hash: `0x${string}` }) => unknown }>;
     readonly request: (
       request: ConnectedEoaRpcRequest,
-      options?: { retryCount: 0 },
+      options?: { retryCount: 0; signal?: AbortSignal },
     ) => Promise<unknown>;
     readonly sendTransaction?: (
       input: Readonly<{

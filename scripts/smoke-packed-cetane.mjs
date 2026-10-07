@@ -6,6 +6,17 @@ const consumer = await createConsumer({
   packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/cli"],
   files: {
     "consumer.ts": `import { createCetaneChainPorts, type CetaneChainPortOptions } from "@oaath/sdk/cetane";
+import type { OaathConnectedEoaPayer } from "@oaath/sdk";
+import { createWalletClient, http } from "cetane";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
+import { createExecution } from "cetane/execution/evm";
+const signer = privateKeyToAccount(generatePrivateKey());
+const wallet = createWalletClient({
+  chain: { id: 143, name: "Fixture", nativeAA: false, execution: createExecution() },
+  account: { address: signer.address }, signer, transport: http("http://127.0.0.1:1"),
+});
+const payer: OaathConnectedEoaPayer = { kind: "connected-eoa", wallet };
+void payer;
 const options: CetaneChainPortOptions = { maxRequests: 3 };
 const ports = createCetaneChainPorts({ 143: { publicRpcUrls: ["http://127.0.0.1:1"] } }, options);
 void ports;`,
