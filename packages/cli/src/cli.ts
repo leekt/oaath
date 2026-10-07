@@ -93,7 +93,7 @@ async function main(): Promise<void> {
     ] = await Promise.all([
       import("./deploy.js"),
       import("./journal.js"),
-      import("viem/accounts"),
+      import("cetane/accounts"),
       import("node:os"),
       import("node:path"),
     ]);

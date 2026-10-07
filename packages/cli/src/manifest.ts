@@ -3,7 +3,8 @@ import {
   kernelDeployment,
   prepareRuntimeModuleDeployment,
 } from "@oaath/sdk/kernel";
-import { getCreate2Address, type Hex, sliceHex } from "viem";
+import type { Hex } from "cetane";
+import { getCreate2Address, keccak256 } from "cetane/utils";
 import runtime from "../../contracts/artifacts/KernelV4Runtime.json" with { type: "json" };
 import validity from "../../contracts/artifacts/OaathKernelV4ValidityPolicy.json" with {
   type: "json",
@@ -37,12 +38,12 @@ function deployableComponent(
   passkeySession = false,
 ): Component {
   const input = artifact.deploymentInput as Hex;
-  const salt = sliceHex(input, 0, 32);
+  const salt = input.slice(0, 66) as Hex;
   if (salt !== `0x${"00".repeat(32)}`) throw new Error(`Nonzero deployment salt: ${id}`);
   const address = getCreate2Address({
     from: create2Deployer,
     salt,
-    bytecode: sliceHex(input, 32),
+    bytecodeHash: keccak256(`0x${input.slice(66)}`),
   }).toLowerCase() as Hex;
   if (expectedAddress !== null && address !== expectedAddress.toLowerCase())
     throw new Error(`Deployment address mismatch: ${id}`);

@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Hex } from "viem";
+import type { Hex } from "cetane";
 
 export interface DeploymentRecord {
   readonly chainId: number;

@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { kernelRuntimeReadiness } from "@oaath/sdk/kernel";
-import { concat, type Hex } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
+import { parseTransaction } from "viem";
 import { describe, expect, it } from "vitest";
 import { createHarness, deployKernelStack, startAnvil } from "../../sdk/test/support/anvil.js";
 import { deployRuntime } from "../src/deploy.js";
@@ -20,6 +21,11 @@ suite("runtime deployment and recovery", () => {
     try {
       const network = new Rpc(chain.url, { maxRequests: 512, durationMs: 180_000 });
       const harness = await createHarness(chain);
+      const deploymentAccount = privateKeyToAccount(generatePrivateKey());
+      await new Rpc(chain.url).request("anvil_setBalance", [
+        deploymentAccount.address,
+        "0x56bc75e2d63100000",
+      ]);
       let sends = 0,
         keys = 0;
       const rpc: RpcReader = {
@@ -35,7 +41,7 @@ suite("runtime deployment and recovery", () => {
       };
       const account = () => {
         keys++;
-        return harness.submitter;
+        return deploymentAccount;
       };
       await expect(deployRuntime({ chainId: 143, rpc, journal, account })).rejects.toThrow(
         "deployment_prerequisite_missing",
@@ -97,13 +103,18 @@ suite("runtime deployment and recovery", () => {
     }
   }, 30_000);
 
-  it("recovers an accepted transaction after lost reply and reopened journal without a second signature or send", async () => {
+  it("recovers an accepted legacy transaction after lost reply and reopened journal without a second signature or send", async () => {
     const chain = await startAnvil(143);
     const directory = await mkdtemp(join(tmpdir(), "oaath-deploy-recovery-"));
     const path = join(directory, "state.sqlite");
     let journal = new DeploymentJournal(path);
     try {
       const harness = await createHarness(chain);
+      const deploymentAccount = privateKeyToAccount(generatePrivateKey());
+      await new Rpc(chain.url).request("anvil_setBalance", [
+        deploymentAccount.address,
+        "0x56bc75e2d63100000",
+      ]);
       await deployKernelStack(harness);
       for (const prerequisite of [
         harness.fixture.callPolicy,
@@ -124,21 +135,27 @@ suite("runtime deployment and recovery", () => {
         signatures = 0;
       const network = new Rpc(chain.url, { maxRequests: 128 });
       const account = {
-        ...harness.submitter,
-        signTransaction: async (...args: Parameters<typeof harness.submitter.signTransaction>) => {
+        ...deploymentAccount,
+        sign: async (...args: Parameters<typeof deploymentAccount.sign>) => {
           signatures++;
-          return harness.submitter.signTransaction(...args);
+          return deploymentAccount.sign(...args);
         },
       };
       const rpc: RpcReader = {
         request: async (method, params) => {
           if (method === "eth_sendRawTransaction") {
             sends++;
+            expect(parseTransaction(params?.[0] as `0x${string}`).type).toBe("legacy");
             expect(journal.pending(143)?.state).toBe("attempted");
             await network.request(method, params);
             throw new Error("lost reply");
           }
-          return network.request(method, params);
+          const result = await network.request(method, params);
+          if (method === "eth_getBlockByNumber" && params?.[0] === "latest") {
+            const { baseFeePerGas: _, ...legacyBlock } = result as Record<string, unknown>;
+            return legacyBlock;
+          }
+          return result;
         },
       };
       const uncertain = await deployRuntime({

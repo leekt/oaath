@@ -1,6 +1,7 @@
 import { encodeKernelFactoryImplementationRead } from "@oaath/sdk/advanced";
 import { kernelDeployment } from "@oaath/sdk/kernel";
-import { decodeAbiParameters, type Hex, keccak256 } from "viem";
+import type { Hex } from "cetane";
+import { decodeAbiParameters, keccak256 } from "cetane/utils";
 import { type Component, components } from "./manifest.js";
 import type { RpcReader } from "./rpc.js";
 
