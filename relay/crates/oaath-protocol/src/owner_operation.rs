@@ -1,10 +1,12 @@
-//! One exact owner operation a factory-derived Kernel 0.4.0 account's root
-//! signs, and its signed artifact (`owner-operation.ts`).
+//! One exact owner operation a factory-derived or existing (imported) Kernel
+//! 0.4.0 account's root signs, and its signed artifact (`owner-operation.ts`).
+//! An existing account is deployed, so its operation carries no factory.
 //!
 //! The root signs the EntryPoint 0.9 UserOperation hash, which binds chain,
 //! EntryPoint, account, nonce, calls, gas, factory and paymaster. Capture
 //! proves only address-free facts, exactly as TypeScript does; the account's
-//! derived address, factory and EntryPoint are proven by
+//! address (derived, or the existing profile's own), factory and EntryPoint
+//! are proven by
 //! [`verify_owner_operation_binding`], as the SDK's `verifyOwnerOperation`
 //! does. Root signatures are verified by the relay, never here.
 
@@ -16,10 +18,11 @@ use crate::capture::{
     MAX_SAFE_INTEGER_U64, Record, ZERO_ADDRESS, capture_address, exact_record, field,
     is_canonical_decimal, is_lower_hex_bytes, safe_integer,
 };
-use crate::error::{ErrorCode, OrFail, ProtocolResult, ensure, fail};
+use crate::error::{ErrorCode, OrFail, ProtocolResult, ensure};
 use crate::identity::{
-    KernelAccountProfile, KernelDerivedAccountProfile, KernelFactoryRoute, OwnerCredentialProfile,
-    address_of, b256_of, bytes_of, capture_kernel_account, hex_hash,
+    KernelAccountProfile, KernelDerivedAccountProfile, KernelExistingAccountVersion,
+    KernelFactoryRoute, OwnerCredentialProfile, address_of, b256_of, bytes_of,
+    capture_kernel_account, hex_hash,
 };
 use crate::kernel_account::{derive_kernel_v4_account_address, root_package};
 
@@ -76,7 +79,7 @@ pub struct OwnerUserOperation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnerOperationRequest {
-    pub account: KernelDerivedAccountProfile,
+    pub account: KernelAccountProfile,
     pub chain_id: u64,
     pub entry_point: String,
     pub calls: Vec<OwnerOperationCall>,
@@ -314,19 +317,29 @@ fn capture_request(value: &Value) -> ProtocolResult<OwnerOperationRequest> {
             && field(record, "kind") == "kernel-owner-operation",
         CODE,
     )?;
-    let KernelAccountProfile::Derived(account) =
-        capture_kernel_account(field(record, "account"), CODE)?
-    else {
-        return fail(CODE);
+    let account = capture_kernel_account(field(record, "account"), CODE)?;
+    let existing = match &account {
+        KernelAccountProfile::Derived(profile) => {
+            ensure(
+                profile.factory_route == KernelFactoryRoute::KernelFactory,
+                CODE,
+            )?;
+            false
+        }
+        KernelAccountProfile::Existing(profile) => {
+            ensure(
+                profile.kernel_version == KernelExistingAccountVersion::V0_4_0,
+                CODE,
+            )?;
+            true
+        }
     };
-    ensure(
-        account.factory_route == KernelFactoryRoute::KernelFactory,
-        CODE,
-    )?;
     let chain_id = safe_integer(field(record, "chainId"), 1, MAX_SAFE_INTEGER_U64).or_fail(CODE)?;
     let entry_point = address(field(record, "entryPoint"), false)?;
     let calls = capture_calls(field(record, "calls"))?;
     let user_operation = capture_user_operation(field(record, "userOperation"))?;
+    // An existing account is already deployed: nothing may deploy it.
+    ensure(!existing || user_operation.factory.is_none(), CODE)?;
     // Standard-mode root validation: the 192-bit key is only the uint16 lane.
     ensure(u256(&user_operation.nonce) >> 80 == U256::ZERO, CODE)?;
     ensure(user_operation.call_data == kernel_execution(&calls), CODE)?;
@@ -378,22 +391,32 @@ fn factory_deploy(
     Ok(format!("0x{}", hex::encode(data)))
 }
 
-/// Proves the request names the reviewed EntryPoint, its account's offline
-/// derived address, and (while undeployed) that account's exact factory
-/// deployment. `owner_validator` is the ECDSA root validator the account was
-/// derived with, and `None` for P-256 and WebAuthn roots.
+/// Proves the request names the reviewed EntryPoint and its account: a
+/// derived account's offline address and (while undeployed) its exact factory
+/// deployment, or an existing account's own address with no factory.
+/// `owner_validator` is the ECDSA root validator a derived account was derived
+/// with, and `None` for P-256 and WebAuthn roots; an existing account's root is
+/// proven on chain when it is imported, so it is not used.
 pub fn verify_owner_operation_binding(
     request: &OwnerOperationRequest,
     owner_validator: Option<&str>,
 ) -> ProtocolResult<()> {
-    let sender = derive_kernel_v4_account_address(&request.account, owner_validator)
+    ensure(request.entry_point == ENTRY_POINT_V09, BINDING)?;
+    let profile = match &request.account {
+        KernelAccountProfile::Existing(profile) => {
+            return ensure(
+                request.user_operation.sender == profile.address
+                    && request.user_operation.factory.is_none(),
+                BINDING,
+            );
+        }
+        KernelAccountProfile::Derived(profile) => profile,
+    };
+    let sender = derive_kernel_v4_account_address(profile, owner_validator)
         .map_err(|_| crate::ProtocolError::new(BINDING))?;
-    ensure(
-        request.entry_point == ENTRY_POINT_V09 && request.user_operation.sender == sender,
-        BINDING,
-    )?;
+    ensure(request.user_operation.sender == sender, BINDING)?;
     if let Some(factory) = &request.user_operation.factory {
-        let data = factory_deploy(&request.account, owner_validator)
+        let data = factory_deploy(profile, owner_validator)
             .map_err(|_| crate::ProtocolError::new(BINDING))?;
         ensure(
             factory.address == KERNEL_V4_FACTORY && factory.data == data,
@@ -405,7 +428,7 @@ pub fn verify_owner_operation_binding(
 
 impl OwnerOperationRequest {
     pub fn owner_credential(&self) -> &OwnerCredentialProfile {
-        &self.account.owner_credential
+        self.account.owner_credential()
     }
 
     /// The digest the root signs.
@@ -418,7 +441,7 @@ impl OwnerOperationRequest {
         json!({
             "version": OWNER_OPERATION_REQUEST_VERSION,
             "kind": "kernel-owner-operation",
-            "account": KernelAccountProfile::Derived(self.account.clone()).to_json(),
+            "account": self.account.to_json(),
             "chainId": self.chain_id,
             "entryPoint": self.entry_point,
             "calls": self.calls.iter().map(|call| json!({

@@ -343,3 +343,106 @@ async fn refuses_a_tampered_operation_another_signature_and_a_non_root_signer() 
     // The root still approves the untouched request.
     code_of(&decide(&h, &id, &signer_id, &account, &valid["signature"], &cookie).await);
 }
+
+/// `root`'s fixture account imported as an existing account: the stand-in
+/// chain shows the factory-deployed account rooted in it.
+async fn imported_account(root: &Root, address: &str) -> (Harness, String, String, Value) {
+    use alloy_primitives::Address;
+    use oaath_protocol::identity::parse_owner_credential_profile;
+    use oaath_relay::account_import::{AccountImport, import_digest};
+    use support::chain::{StubAccount, stub_chain};
+    let owner = parse_owner_credential_profile(&root.profile()).unwrap();
+    let chain = stub_chain(421_614, &[(address, StubAccount::kernel(&owner))]).await;
+    // The stand-in serves from its own task for the rest of the test.
+    let reader = chain.reader();
+    let h = harness_with(move |options| {
+        options.oauth.as_mut().unwrap().issuer = FIXTURE_ISSUER.to_owned();
+        options.chain = Some(reader);
+    });
+    let (signer_id, cookie) = sign_in(&h, root).await;
+    let fingerprint = format!("0x{}", "22".repeat(32));
+    let digest = import_digest(&AccountImport {
+        account: address.parse::<Address>().unwrap(),
+        ownerProfileHash: owner.hash(),
+        inventoryFingerprint: fingerprint.parse::<B256>().unwrap(),
+        issuedAt: CLOCK_SECONDS,
+        nonce: "import-1".to_owned(),
+    });
+    let signature = match root {
+        Root::WebAuthn(key, _) => {
+            webauthn_assertion(key, digest, "oaath.taek.tech", FIXTURE_ISSUER)
+        }
+        _ => root.sign(digest),
+    };
+    let account = h
+        .send(portal_call(
+            "POST",
+            "/portal/accounts/import",
+            Some(&cookie),
+            Some(json!({
+                "root_signer_id": signer_id,
+                "address": address,
+                "inventory_fingerprint": fingerprint,
+                "issued_at": CLOCK_SECONDS,
+                "nonce": "import-1",
+                "signature": format!("0x{}", hex::encode(signature)),
+            })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    (h, signer_id, cookie, account)
+}
+
+#[tokio::test]
+async fn each_root_kind_approves_an_owner_operation_on_its_imported_account() {
+    for kind in ["ecdsa", "p256", "webauthn"] {
+        let root = fixture_root(kind, "root");
+        let signed = case(&format!("{kind} root: existing account: valid"));
+        let address = signed["request"]["userOperation"]["sender"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (h, signer_id, cookie, account) = imported_account(&root, &address).await;
+        assert_eq!(account["profile"], signed["request"]["account"], "{kind}");
+        assert_eq!(signed["request"]["userOperation"]["factory"], Value::Null);
+        let client_id = client(&h).await;
+
+        // The derived profile of the same address is not this registry account.
+        let derived = case(&format!("{kind} root: valid, account already deployed"));
+        assert_eq!(
+            par(&h, &client_id, &derived["request"]).await.body["error"],
+            json!("invalid_authorization_details"),
+            "{kind}"
+        );
+        for name in [
+            "existing account: sender is not its address",
+            "existing account: another EntryPoint",
+            "existing account: carries a factory",
+        ] {
+            let reply = par(
+                &h,
+                &client_id,
+                &case(&format!("{kind} root: {name}"))["request"],
+            )
+            .await;
+            assert_eq!(reply.status, 400, "{kind} {name}");
+        }
+
+        let id = transaction_id(&par(&h, &client_id, &signed["request"]).await);
+        let other = case(&format!(
+            "{kind} root: existing account: signed by another key of the same kind"
+        ));
+        decide(&h, &id, &signer_id, &account, &other["signature"], &cookie)
+            .await
+            .failure(E::RequestInvalid);
+        let code =
+            code_of(&decide(&h, &id, &signer_id, &account, &signed["signature"], &cookie).await);
+        let released = token(&h, &client_id, &code).await.ok(200).clone();
+        assert_eq!(
+            released["authorization_details"],
+            json!([{ "type": "oaath_operation", "signed": signed }]),
+            "{kind}"
+        );
+    }
+}

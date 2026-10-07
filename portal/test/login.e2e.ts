@@ -21,7 +21,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { hashOwnerCredentialProfile } from "@oaath/protocol";
+import {
+  hashOwnerCredentialProfile,
+  OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+} from "@oaath/protocol";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import {
   createKernelRuntime,
@@ -1577,6 +1580,97 @@ describe("importing an existing account through the portal's chain-read proxy", 
     await review.close();
     await grantDapp.close();
     await root.close();
+
+    // An owner operation on the imported account: no factory, executed at
+    // its own address through the dapp's bundler.
+    const target = `0x${"bf".repeat(20)}` as const;
+    const operation = prepareOwnerOperation({
+      account: {
+        version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+        kind: "kernel",
+        address: owner as `0x${string}`,
+        kernelVersion: "0.4.0",
+        entryPoint: { version: "0.9" },
+        ownerCredential: {
+          version: "oaath.owner-credential-profile/v1",
+          kind: "ecdsa",
+          address: WALLET_ADDRESS,
+        },
+      },
+      chainId: 421_614,
+      deployed: true,
+      calls: [{ target, value: "1000", data: "0x" }],
+      nonce: { lane: "0", sequence: "0" },
+      gas: {
+        callGasLimit: "900000",
+        verificationGasLimit: "3000000",
+        preVerificationGas: "150000",
+        maxFeePerGas: "2000000000",
+        maxPriorityFeePerGas: "1000000000",
+      },
+    });
+    expect(operation.request.userOperation.sender).toBe(owner);
+    await local.chain.rpc("anvil_setBalance", [owner, toHex(10n ** 18n)]);
+    const operationDapp = await browser.newPage();
+    await operationDapp.goto(`${dapp}/`);
+    const pushedOperation = await pushOperation(operationDapp, operation.request);
+    const approval = await openGrant(pushedOperation);
+    await click(approval, "::-p-text(E2E Wallet)");
+    await click(approval, `button[aria-label='Smart account ${owner}, Owner']`);
+    await approval.waitForSelector("#operation-heading");
+    const shown = await approval.$eval("main", (node) => (node as HTMLElement).innerText);
+    expect(shown).toContain(target);
+    expect(shown).not.toContain("Deployed by this transaction");
+    await Promise.all([
+      approval.waitForNavigation(),
+      click(approval, "::-p-text(Approve and sign)"),
+    ]);
+    const operationCode = new URL(approval.url()).searchParams.get("code");
+    if (!operationCode) throw new Error("no operation code");
+    const released = await operationDapp.evaluate(
+      async (input) => {
+        const response = await fetch(`${input.portal}/oauth/token`, {
+          method: "POST",
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: input.clientId,
+            code: input.code,
+            code_verifier: input.verifier,
+            redirect_uri: `${location.origin}/callback`,
+          }),
+        });
+        return (await response.json()) as {
+          authorization_details: { signed: unknown }[];
+        };
+      },
+      {
+        portal,
+        clientId: pushedOperation.clientId,
+        verifier: pushedOperation.verifier,
+        code: operationCode,
+      },
+    );
+    const verified = await verifyOwnerOperation(
+      JSON.parse(JSON.stringify(released.authorization_details[0]?.signed)),
+    );
+    const sentBefore = local.sent.length;
+    const submitted = await fetch(local.bundlerUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_sendUserOperation",
+        params: [verified.userOperation, verified.entryPoint],
+      }),
+    });
+    expect(((await submitted.json()) as { result: unknown }).result).toBe(
+      operation.request.userOperationHash,
+    );
+    expect(local.sent).toHaveLength(sentBefore + 1);
+    expect(await local.chain.rpc("eth_getBalance", [target, "latest"])).toBe("0x3e8");
+    await approval.close();
+    await operationDapp.close();
   });
 });
 

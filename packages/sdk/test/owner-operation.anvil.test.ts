@@ -3,8 +3,10 @@
  * holder of the signed artifact verifies and submits it. For each root kind the
  * operation deploys the factory-derived account and executes its call through
  * a local bundler; a tampered artifact is refused before anything is sent, and
- * a reload observes the receipt by hash without resubmitting.
+ * a reload observes the receipt by hash without resubmitting. The same account,
+ * then imported as an existing profile, executes its next owner operation.
  */
+import { OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION } from "@oaath/protocol";
 import { getSigningHash, type Operation } from "cetane/execution/erc4337";
 import { encodeFunctionData, parseEther } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
@@ -165,6 +167,35 @@ function fixtureBundler(harness: KernelHarness) {
         ),
       ).toEqual({ success: true });
       expect(bundler.sends()).toBe(1);
+
+      // The same deployed account, imported as an existing profile: the next
+      // owner operation executes at its own address, with no factory.
+      const imported = prepareOwnerOperation({
+        ...input,
+        account: {
+          version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+          kind: "kernel",
+          address: account.account,
+          kernelVersion: "0.4.0",
+          entryPoint: { version: "0.9" },
+          ownerCredential: root.credential,
+        },
+        deployed: true,
+        nonce: { lane: "0", sequence: "1" },
+      });
+      expect(imported.request.userOperation.sender).toBe(account.account);
+      expect(imported.request.userOperation.factory).toBeNull();
+      const importedVerified = await verifyOwnerOperation(
+        JSON.parse(JSON.stringify(await imported.sign(root.key))),
+        RELYING_PARTY,
+      );
+      expect(
+        await bundler.sendUserOperation(
+          { ...importedVerified.userOperation },
+          importedVerified.entryPoint,
+        ),
+      ).toBe(imported.request.userOperationHash);
+      expect(await harness.client.getBalance({ address: target })).toBe(1000n);
     },
     120_000,
   );
