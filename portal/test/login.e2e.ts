@@ -22,9 +22,16 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 import { calculateJwkThumbprint, createRemoteJWKSet, type JWK, jwtVerify } from "jose";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import { hashTypedData, recoverAddress } from "viem";
+import { decodeEventLog, encodeFunctionData, hashTypedData, recoverAddress, toHex } from "viem";
+import {
+  entryPoint07Abi,
+  getUserOperationHash,
+  toPackedUserOperation,
+  type UserOperation,
+} from "viem/account-abstraction";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import worker, { type Env, ORIGIN } from "../worker/index.js";
@@ -37,6 +44,15 @@ const WALLET_ADDRESS = WALLET.address.toLowerCase() as `0x${string}`;
 /** Every EIP-712 approval the fixture wallet signed: logins ask for none. */
 let walletSignatures = 0;
 const EXAMPLE = fileURLToPath(new URL("../../examples/oauth-login/server.mjs", import.meta.url));
+const GRANT_DEMO = fileURLToPath(
+  new URL("../../examples/oauth-grant-demo/server.mjs", import.meta.url),
+);
+const ANVIL = fileURLToPath(
+  new URL("../../packages/testing/src/anvil-process.mjs", import.meta.url),
+);
+const V33 = fileURLToPath(
+  new URL("../../packages/sdk/test/fixtures/kernel-v33-deployments.json", import.meta.url),
+);
 
 let browser: Browser;
 let relay: ReturnType<typeof spawn> | undefined;
@@ -722,5 +738,263 @@ describe("dapp Grants requested with the SDK through the portal popup", () => {
     await click(popup, "::-p-text(Cancel and return to the app)");
     expect(await outcome(dappPage.page)).toBe("oaath_client_access_denied");
     await dappPage.page.close();
+  });
+});
+
+interface GrantDemo {
+  readonly url: string;
+  usage(): { used: number; maxRequests: number; stopped: string | null };
+  close(): Promise<void>;
+}
+type StartGrantDemo = (input: Record<string, unknown>) => Promise<GrantDemo>;
+
+/**
+ * Local Arbitrum Sepolia: chain 421614 on Osaka Anvil with the pinned Kernel
+ * stack and the ECDSA root validator, plus a minimal ERC-4337 facade that hands
+ * each UserOperation to the EntryPoint. Reads, receipts and finality are
+ * Anvil's own; only the bundler is a fixture.
+ */
+async function startLocalArbitrumSepolia() {
+  const { startAnvil, deployKernelStack } = (await import(ANVIL)) as {
+    startAnvil(
+      chainId: number,
+      hardfork: string,
+    ): Promise<{
+      url: string;
+      client: {
+        waitForTransactionReceipt(input: { hash: `0x${string}` }): Promise<{
+          status: string;
+          blockHash: `0x${string}`;
+          blockNumber: bigint;
+          logs: { topics: `0x${string}`[]; data: `0x${string}` }[];
+        }>;
+      };
+      rpc(method: string, params?: unknown[]): Promise<unknown>;
+      stop(): void;
+    }>;
+    deployKernelStack(chain: unknown): Promise<{
+      submitter: { address: `0x${string}` };
+      wallet: { sendTransaction(input: Record<string, unknown>): Promise<`0x${string}`> };
+    }>;
+  };
+  const chain = await startAnvil(421_614, "osaka");
+  closers.push(async () => chain.stop());
+  const stack = await deployKernelStack(chain);
+  const deployment = kernelDeployment({ chainId: 421_614 });
+  const v33 = JSON.parse(await readFile(V33, "utf8")) as {
+    ecdsaValidator: { deploymentInput: `0x${string}` };
+  };
+  const deployed = await stack.wallet.sendTransaction({
+    to: deployment.create2Deployer,
+    data: v33.ecdsaValidator.deploymentInput,
+    gas: 10_000_000n,
+  });
+  await chain.client.waitForTransactionReceipt({ hash: deployed });
+
+  const sent: UserOperation<"0.9">[] = [];
+  const receipts = new Map<string, unknown>();
+  const port = await listen(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += String(chunk);
+    const rpc = JSON.parse(body) as { id: number; method: string; params: unknown[] };
+    let result: unknown;
+    if (rpc.method === "eth_chainId") result = toHex(421_614);
+    else if (rpc.method === "eth_supportedEntryPoints") result = [deployment.entryPoint.address];
+    else if (rpc.method === "eth_getUserOperationReceipt")
+      result = receipts.get(String(rpc.params[0])) ?? null;
+    else if (rpc.method === "eth_estimateUserOperationGas")
+      result = {
+        callGasLimit: "0xdbba0",
+        verificationGasLimit: "0x2dc6c0",
+        preVerificationGas: "0x249f0",
+      };
+    else if (rpc.method === "eth_sendUserOperation") {
+      const wire = rpc.params[0] as Record<string, string>;
+      const operation = {
+        ...wire,
+        nonce: BigInt(wire.nonce ?? "0"),
+        callGasLimit: BigInt(wire.callGasLimit ?? "0"),
+        verificationGasLimit: BigInt(wire.verificationGasLimit ?? "0"),
+        preVerificationGas: BigInt(wire.preVerificationGas ?? "0"),
+        maxFeePerGas: BigInt(wire.maxFeePerGas ?? "0"),
+        maxPriorityFeePerGas: BigInt(wire.maxPriorityFeePerGas ?? "0"),
+      } as unknown as UserOperation<"0.9">;
+      sent.push(operation);
+      const hash = getUserOperationHash({
+        userOperation: operation,
+        entryPointAddress: deployment.entryPoint.address,
+        entryPointVersion: deployment.entryPoint.version,
+        chainId: 421_614,
+      });
+      const transactionHash = await stack.wallet.sendTransaction({
+        to: deployment.entryPoint.address,
+        gas: 8_000_000n,
+        data: encodeFunctionData({
+          abi: entryPoint07Abi,
+          functionName: "handleOps",
+          args: [[toPackedUserOperation(operation)], stack.submitter.address],
+        }),
+      });
+      const receipt = await chain.client.waitForTransactionReceipt({ hash: transactionHash });
+      const event = receipt.logs
+        .map((log) => {
+          try {
+            return decodeEventLog({
+              abi: entryPoint07Abi,
+              topics: log.topics as never,
+              data: log.data,
+            });
+          } catch {
+            return null;
+          }
+        })
+        .find((entry) => entry?.eventName === "UserOperationEvent");
+      if (!event || event.eventName !== "UserOperationEvent") throw new Error("no operation event");
+      receipts.set(hash, {
+        userOpHash: hash,
+        entryPoint: deployment.entryPoint.address,
+        sender: operation.sender,
+        nonce: toHex(operation.nonce),
+        actualGasCost: toHex(event.args.actualGasCost),
+        actualGasUsed: toHex(event.args.actualGasUsed),
+        success: event.args.success,
+        receipt: {
+          transactionHash,
+          blockHash: receipt.blockHash,
+          blockNumber: toHex(receipt.blockNumber),
+        },
+      });
+      // A devnet finalizes as blocks arrive: two behind the head.
+      await chain.rpc("anvil_mine", ["0x3"]);
+      result = hash;
+    } else throw new Error("ordinary RPC reached the bundler");
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
+  });
+  return { chain, sent, bundlerUrl: `http://127.0.0.1:${port}` };
+}
+
+describe("the live Grant demo, rehearsed on a local Arbitrum Sepolia", () => {
+  it("grants, then one covered call deploys, enables and executes through the budgeted proxy", async () => {
+    const local = await startLocalArbitrumSepolia();
+    const { startGrantDemo } = (await import(GRANT_DEMO)) as { startGrantDemo: StartGrantDemo };
+    const lines: string[] = [];
+    const demo = await startGrantDemo({
+      issuer: portal,
+      chainId: 421_614,
+      rpcUrl: local.chain.url,
+      bundlerUrl: local.bundlerUrl,
+      explorerTxUrl: "https://sepolia.arbiscan.io/tx/",
+      maxRequests: 600,
+      timeCapMs: 120_000,
+      pollIntervalMs: 500,
+      target: "0x000000000000000000000000000000000000dead",
+      selector: "0x12345678",
+      host: "127.0.0.1",
+      log: (line: string) => lines.push(line),
+    });
+    closers.push(demo.close);
+
+    const dappPage = await openDapp(demo.url, "#grant:not([disabled])");
+    const popup = await startLogin(dappPage, undefined, "#grant");
+    await signInWithRememberedWallet(popup);
+    await popup.waitForSelector("::-p-text(Approve and sign):not([disabled])");
+    const review = await popup.$eval("main", (node) => (node as HTMLElement).innerText);
+    expect(review).toContain("0x000000000000000000000000000000000000dead");
+    const signatures = walletSignatures;
+    await click(popup, "::-p-text(Approve and sign)");
+    expect(await outcome(dappPage.page)).toBe("granted");
+    expect(walletSignatures).toBe(signatures + 1);
+
+    await dappPage.page.waitForSelector("#amount:not(:empty)");
+    const account = await dappPage.page.$eval("#account", (node) => node.textContent ?? "");
+    expect(account).toMatch(/^0x[0-9a-f]{40}$/u);
+    expect(await dappPage.page.$eval("#amount", (node) => node.textContent)).toMatch(
+      /^Send at least [0-9.]+ ETH on chain 421614/u,
+    );
+    expect(await local.chain.rpc("eth_getCode", [account, "latest"])).toBe("0x");
+    await local.chain.rpc("anvil_setBalance", [account, toHex(10n ** 18n)]);
+    await click(dappPage.page, "#balance");
+    await dappPage.page.waitForSelector("::-p-text(1 ETH)");
+
+    await click(dappPage.page, "#send");
+    await dappPage.page.waitForSelector("#result[data-outcome=finalized]", { timeout: 30_000 });
+    const operation = await dappPage.page.$eval("#operation", (node) => node.textContent ?? "");
+    expect(operation).toMatch(/UserOperation 0x[0-9a-f]{64}/u);
+    expect(operation).toMatch(/https:\/\/sepolia\.arbiscan\.io\/tx\/0x[0-9a-f]{64}/u);
+    // One UserOperation: enable mode deployed the account and installed the permission.
+    expect(local.sent).toHaveLength(1);
+    expect(BigInt(local.sent[0]?.nonce ?? 0) >> 248n).toBe(12n);
+    expect(local.sent[0]?.factory).toBeTruthy();
+    expect(await local.chain.rpc("eth_getCode", [account, "latest"])).not.toBe("0x");
+    // The root's one approval was the only signature; sending asked the wallet nothing.
+    expect(walletSignatures).toBe(signatures + 1);
+
+    // The proxy counted every request, and logs name methods, never endpoints.
+    const usage = demo.usage();
+    expect(usage.stopped).toBeNull();
+    expect(usage.used).toBeGreaterThan(0);
+    expect(usage.used).toBeLessThan(usage.maxRequests);
+    expect(lines.join("\n")).not.toContain(local.chain.url);
+    expect(lines.join("\n")).not.toContain(local.bundlerUrl);
+
+    // A reload resumes the Grant and observes the stored operation; nothing is resent.
+    await dappPage.page.reload();
+    await dappPage.page.waitForSelector("#result[data-outcome=finalized]", { timeout: 30_000 });
+    expect(local.sent).toHaveLength(1);
+    await dappPage.page.close();
+  });
+
+  it("refuses to forward outside its method list, past its budget, or after its time cap", async () => {
+    const local = await startLocalArbitrumSepolia();
+    const { startGrantDemo } = (await import(GRANT_DEMO)) as { startGrantDemo: StartGrantDemo };
+    const lines: string[] = [];
+    const start = (input: Record<string, unknown>) =>
+      startGrantDemo({
+        issuer: portal,
+        chainId: 421_614,
+        rpcUrl: local.chain.url,
+        bundlerUrl: local.bundlerUrl,
+        target: "0x000000000000000000000000000000000000dead",
+        selector: "0x12345678",
+        host: "127.0.0.1",
+        log: (line: string) => lines.push(line),
+        maxRequests: 2,
+        timeCapMs: 60_000,
+        ...input,
+      });
+    const call = (demo: GrantDemo, method: string) =>
+      fetch(`${demo.url}/rpc/chain`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: [] }),
+      }).then(
+        (response) => response.json() as Promise<{ result?: string; error?: { message: string } }>,
+      );
+
+    const budgeted = await start({});
+    closers.push(budgeted.close);
+    expect((await call(budgeted, "eth_sendRawTransaction")).error?.message).toBe(
+      "method not allowed by the demo",
+    );
+    expect((await call(budgeted, "eth_chainId")).result).toBe(toHex(421_614));
+    expect((await call(budgeted, "eth_chainId")).result).toBe(toHex(421_614));
+    expect((await call(budgeted, "eth_chainId")).error?.message).toBe(
+      "demo stopped: request budget exhausted",
+    );
+    // Once stopped, it stays stopped.
+    expect(budgeted.usage()).toEqual({
+      used: 2,
+      maxRequests: 2,
+      stopped: "request budget exhausted",
+    });
+
+    const capped = await start({ maxRequests: 100, timeCapMs: 1 });
+    closers.push(capped.close);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await call(capped, "eth_chainId")).error?.message).toBe(
+      "demo stopped: time cap reached",
+    );
+    expect(capped.usage().used).toBe(0);
   });
 });
