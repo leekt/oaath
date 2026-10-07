@@ -8,17 +8,17 @@ use alloy_primitives::{Address, B256, U256, keccak256};
 use crate::capture::hex_bytes;
 use crate::error::{ErrorCode, ProtocolResult, ensure, fail};
 use crate::identity::{
-    KernelAccountProfile, KernelFactoryRoute, OwnerCredentialProfile, address_of, b256_of,
+    KernelDerivedAccountProfile, KernelFactoryRoute, OwnerCredentialProfile, address_of, b256_of,
 };
 
 /// `KernelFactory` for EntryPoint 0.9 (zero-salt CREATE2 deployment).
-pub const KERNEL_V4_FACTORY: &str = "0x3d6d678742e276b6388fd06c1b8ecd19e2d64c2d";
+const KERNEL_V4_FACTORY: &str = "0x3d6d678742e276b6388fd06c1b8ecd19e2d64c2d";
 /// The factory's `UUPS` implementation each account proxy delegates to.
-pub const KERNEL_V4_UUPS_IMPLEMENTATION: &str = "0x6250926dd0309d9deaaeb4a2c413da5f3c4de37a";
+const KERNEL_V4_UUPS_IMPLEMENTATION: &str = "0x6250926dd0309d9deaaeb4a2c413da5f3c4de37a";
 /// The reviewed raw P-256 root validator.
-pub const KERNEL_V4_P256_VALIDATOR: &str = "0x9906ab44ff795883c5a725687a2705be4118b0f3";
+const KERNEL_V4_P256_VALIDATOR: &str = "0x9906ab44ff795883c5a725687a2705be4118b0f3";
 /// The reviewed WebAuthn root validator.
-pub const KERNEL_V4_WEBAUTHN_VALIDATOR: &str = "0x6f781fff97b830daa2e11ee0ad6344aff7131ef2";
+const KERNEL_V4_WEBAUTHN_VALIDATOR: &str = "0x6f781fff97b830daa2e11ee0ad6344aff7131ef2";
 
 const CODE: ErrorCode = ErrorCode::KernelAccountDerivationInvalid;
 const ROOT_VALIDATOR_MODULE_TYPE: u64 = 1;
@@ -101,14 +101,11 @@ fn erc1967_init_code_hash(implementation: Address) -> B256 {
 ///
 /// `owner_validator` is the deployment-bound ECDSA root validator (Kernel v4
 /// pins none) and must be `None` for P-256 and WebAuthn, whose validators are
-/// pinned. Existing accounts and the meta-factory route are not derivable.
+/// pinned. The meta-factory route is not derivable.
 pub fn derive_kernel_v4_account_address(
-    account: &KernelAccountProfile,
+    profile: &KernelDerivedAccountProfile,
     owner_validator: Option<&str>,
 ) -> ProtocolResult<String> {
-    let KernelAccountProfile::Derived(profile) = account else {
-        return fail(CODE);
-    };
     ensure(
         profile.factory_route == KernelFactoryRoute::KernelFactory,
         CODE,
