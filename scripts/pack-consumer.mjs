@@ -12,7 +12,10 @@ const provenance = JSON.parse(readFileSync("vendor/provenance.json"));
 const peerPins = Object.fromEntries(
 	provenance
 		.filter((p) => ["@oaath/sdk", "@oaath/protocol", "cetane"].includes(p.name))
-		.map((p) => [p.name, `file:../../vendor/${p.file}`]),
+		.map((p) => [
+			p.name,
+			p.name === "cetane" ? p.version : `file:../../vendor/${p.file}`,
+		]),
 );
 const file = "vendor/oaath-automation-0.1.0.tgz",
 	data = readFileSync(file),

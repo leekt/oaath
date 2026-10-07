@@ -11,7 +11,7 @@
     "@oaath/protocol": "file:../vendor/oaath-protocol-0.3.4-0aae97b8ad5b.tgz",
     "@oaath/sdk": "file:../vendor/oaath-sdk-0.3.4-63d94987cd4b.tgz",
     "@oaath/server": "file:../vendor/oaath-server-0.3.4-b3dd6110b317.tgz",
-    "cetane": "file:../vendor/cetane-0.0.3-9402c6396e1c.tgz",
+    "cetane": "0.0.3",
     "moesi": "file:../vendor/moesi-0.15.2-dbee82a83ae6.tgz"
   }
 }

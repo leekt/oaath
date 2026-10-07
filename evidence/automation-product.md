@@ -87,9 +87,9 @@ baseline and make no quantified claim about them.
 and [checksums](../vendor/checksums.json) identify the current retained bytes.
 [The Cetane 0.0.3 update record](cetane-0.0.3.md) lists the focused checks rerun
 after the original acceptance proofs above. OAAth's
-isolated `automation-foundation` branch is `eb4536e`; ten focused patches are
-retained in [upstream/](../upstream/README.md). Cetane 0.0.3 `5730621` and Moesi `0ef5be6`
-are clean committed sources. Sibling checkout changes were not imported.
+isolated `automation-foundation` branch is `d81beeb`; eleven focused patches are
+retained in [upstream/](../upstream/README.md). Cetane 0.0.3 is installed from npm;
+Moesi remains the clean committed source `0ef5be6`. Sibling checkout changes were not imported.
 
 The schema and API are current unreleased definitions, without compatibility
 aliases or a data-migration layer. Public-chain configuration, production KMS,

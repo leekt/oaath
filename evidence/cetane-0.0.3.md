@@ -1,18 +1,23 @@
 # Cetane 0.0.3 update — 7 October 2026
 
-The product and its packed consumer now resolve Cetane 0.0.3 from clean release
-commit `5730621c6d6e6edf0fc348f7b58002fc1966349b`. At verification, npm returned
-E404 for `cetane@0.0.3`; this is an exact source-built release tarball, not a
-registry artifact. Its SHA-256 is recorded in
-[dependency provenance](../vendor/provenance.json).
+The product, OAAth prerequisites and packed consumer now install Cetane 0.0.3
+from npm. The earlier registry E404 has resolved. Registry SHA-512 integrity and
+the retained archive SHA-256 are in [provenance](../vendor/provenance.json).
+Every file inside the published archive matches the earlier source-built
+release commit `5730621c6d6e6edf0fc348f7b58002fc1966349b`; only archive bytes differ.
 
-OAAth protocol and SDK dependency declarations now specify 0.0.3, in isolated
-commit `eb4536e` and the tenth [upstream patch](../upstream/README.md). Moesi's
-transitive dependency also resolves the same exact artifact through the product
-override. The canonical-module inventory is additive; existing Cetane source
-files used by this product did not change from the prior pinned commit.
+OAAth protocol and SDK specify 0.0.3. Isolated commit `d81beeb` removes their
+temporary source-artifact override; the eleventh [upstream patch](../upstream/README.md)
+retains it. The product override also makes Moesi resolve published Cetane 0.0.3.
 
-Checks rerun for this update:
+Registry-switch checks: integrity verification, package-content equivalence,
+frozen installs, product typecheck/lint/36 tests/three builds, and the packed
+consumer dependency/export proof passed. All reachable Cetane packages resolve
+0.0.3; production dependencies remain free of viem. The packer now downloads and
+verifies the release instead of rebuilding Cetane from a local checkout.
+
+Checks from the preceding 0.0.3 source update:
+
 
 - OAAth protocol: 258 tests passed.
 - OAAth Cetane adapter, read-only ports, wallet ECDSA and headless execution:

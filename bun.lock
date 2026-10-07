@@ -20,7 +20,7 @@
         "@types/pg": "8.15.5",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
-        "cetane": "file:vendor/cetane-0.0.3-9402c6396e1c.tgz",
+        "cetane": "0.0.3",
         "fake-indexeddb": "^6.2.5",
         "pg": "8.22.0",
         "tailwindcss": "^4.3.3",
@@ -43,7 +43,7 @@
         "@oaath/protocol": "file:../vendor/oaath-protocol-0.3.4-0aae97b8ad5b.tgz",
         "@oaath/sdk": "file:../vendor/oaath-sdk-0.3.4-63d94987cd4b.tgz",
         "@oaath/server": "file:../vendor/oaath-server-0.3.4-b3dd6110b317.tgz",
-        "cetane": "file:../vendor/cetane-0.0.3-9402c6396e1c.tgz",
+        "cetane": "0.0.3",
         "moesi": "file:../vendor/moesi-0.15.2-dbee82a83ae6.tgz",
         "pg": "8.22.0",
       },
@@ -78,7 +78,7 @@
     "@oaath/sdk": "file:vendor/oaath-sdk-0.3.4-63d94987cd4b.tgz",
     "@oaath/server": "file:vendor/oaath-server-0.3.4-b3dd6110b317.tgz",
     "@oaath/testing": "file:vendor/oaath-testing-0.3.4-c9779c85670a.tgz",
-    "cetane": "file:vendor/cetane-0.0.3-9402c6396e1c.tgz",
+    "cetane": "0.0.3",
   },
   "packages": {
     "@account-abstraction/contracts": ["@account-abstraction/contracts@0.7.0", "", { "dependencies": { "@openzeppelin/contracts": "^5.0.0", "@uniswap/v3-periphery": "^1.4.3" } }, "sha512-Bt/66ilu3u8I9+vFZ9fTd+cWs55fdb9J5YKfrhsrFafH1drkzwuCSL/xEot1GGyXXNJLQuXbMRztQPyelNbY1A=="],
@@ -331,7 +331,7 @@
 
     "braces": ["braces@3.0.3", "", { "dependencies": { "fill-range": "^7.1.1" } }, "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA=="],
 
-    "cetane": ["cetane@vendor/cetane-0.0.3-9402c6396e1c.tgz", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.4.0", "abitype": "1.2.3" } }, "sha512-ANsjifHMwZkC95udaZIDXw7If2MUCUEH0Tk4l/Kn+D5VyeGg9bT3p8fIuINrXRujQOADKaV7coLA7+tfcuZuiA=="],
+    "cetane": ["cetane@0.0.3", "", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.4.0", "abitype": "1.2.3" } }, "sha512-avf5S7D8pijen6Ni0zdPJe8pfvqAzrpQ6hve/hrxeapisrwkyKnslmwxjAZPFq5ttnDHj5wXslSmQ/H9A17DLA=="],
 
     "class-variance-authority": ["class-variance-authority@0.7.1", "", { "dependencies": { "clsx": "^2.1.1" } }, "sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg=="],
 
