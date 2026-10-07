@@ -374,6 +374,10 @@ ambiguous_transaction! {
     list_account_signers(id: &str) -> RelayResult<Vec<(registry::SignerRecord, registry::AccountSignerRecord)>>;
     delete_account_signers(account: &str, signer: &str) -> RelayResult<bool>;
     set_account_signer_status(account: &str, signer: &str, status: registry::MembershipStatus, at: u64) -> RelayResult<bool>;
+    lock_pending_grant(id: &str) -> RelayResult<Option<oauth::pending::PendingGrantRecord>>;
+    insert_pending_grant(r: &oauth::pending::PendingGrantRecord) -> RelayResult<bool>;
+    decide_pending_grant(id: &str, o: oauth::pending::PendingOutcome, at: u64) -> RelayResult<bool>;
+    list_pending_grants(id: &str) -> RelayResult<Vec<oauth::pending::PendingGrantRecord>>;
     lock_link_request(id: &str) -> RelayResult<Option<link::LinkRequestRecord>>;
     insert_link_request(r: &link::LinkRequestRecord) -> RelayResult<bool>;
     decide_link_request(id: &str, outcome: link::LinkOutcome, signature: Option<&str>, grant: Option<&str>, at: u64) -> RelayResult<bool>;

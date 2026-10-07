@@ -19,6 +19,7 @@ use super::{RelayStore, RelayTransaction};
 use crate::account_import::AccountImportRecord;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::link::{LinkOutcome, LinkRequestRecord};
+use crate::oauth::pending::{PendingGrantRecord, PendingOutcome};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
 use crate::policy::PolicyTemplateRecord;
 use crate::records::{
@@ -254,6 +255,24 @@ pub fn schema_statements() -> Vec<String> {
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
   )"
         ),
+        format!(
+            "CREATE TABLE oaath_pending_grant_v1 (
+    request_id text PRIMARY KEY
+      REFERENCES oaath_relay_authorization_request_v1 (request_id),
+    record_version text NOT NULL,
+    account_id text NOT NULL REFERENCES oaath_account_v1 (account_id),
+    member_signer_id text NOT NULL REFERENCES oaath_signer_v1 (signer_id),
+    artifact_id text NOT NULL UNIQUE,
+    code_ref text NOT NULL,
+    created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
+    expires_at bigint NOT NULL CHECK (expires_at > created_at AND expires_at <= {max}),
+    outcome text CHECK (outcome IN ('approved', 'rejected')),
+    decided_at bigint CHECK (decided_at >= 0 AND decided_at <= {max}),
+    CHECK ((outcome IS NULL) = (decided_at IS NULL))
+  )"
+        ),
+        "CREATE INDEX oaath_pending_grant_account_v1 ON oaath_pending_grant_v1 (account_id)"
+            .to_owned(),
         format!(
             "CREATE TABLE oaath_policy_template_v1 (
     template_id text PRIMARY KEY,
@@ -502,6 +521,27 @@ fn template_record(row: &PgRow) -> RelayResult<PolicyTemplateRecord> {
             ("lifetimeSeconds", "lifetime_seconds", true),
             ("createdAt", "created_at", true),
             ("updatedAt", "updated_at", true),
+        ],
+    )?)
+}
+
+const PENDING_COLUMNS: &str = "request_id, record_version, account_id, member_signer_id, \
+     artifact_id, code_ref, created_at, expires_at, outcome, decided_at";
+
+fn pending_record(row: &PgRow) -> RelayResult<PendingGrantRecord> {
+    PendingGrantRecord::parse(&columns(
+        row,
+        &[
+            ("version", "record_version", false),
+            ("requestId", "request_id", false),
+            ("accountId", "account_id", false),
+            ("memberSignerId", "member_signer_id", false),
+            ("artifactId", "artifact_id", false),
+            ("codeRef", "code_ref", false),
+            ("createdAt", "created_at", true),
+            ("expiresAt", "expires_at", true),
+            ("outcome", "outcome", false),
+            ("decidedAt", "decided_at", true),
         ],
     )?)
 }
@@ -1185,6 +1225,79 @@ impl RelayTransaction for PostgresTransaction {
             },
         )
         .await
+    }
+
+    async fn lock_pending_grant(
+        &mut self,
+        request_id: &str,
+    ) -> RelayResult<Option<PendingGrantRecord>> {
+        let sql = format!(
+            "SELECT {PENDING_COLUMNS} FROM oaath_pending_grant_v1 WHERE request_id = $1 FOR UPDATE"
+        );
+        self.first(sqlx::query(&sql).bind(request_id), pending_record)
+            .await
+    }
+
+    async fn insert_pending_grant(&mut self, record: &PendingGrantRecord) -> RelayResult<bool> {
+        // An unknown account, member or request inserts nothing instead of aborting.
+        let sql = format!(
+            "INSERT INTO oaath_pending_grant_v1 ({PENDING_COLUMNS}) \
+             SELECT $1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL \
+             WHERE EXISTS (SELECT 1 FROM oaath_account_v1 WHERE account_id = $3) \
+             AND EXISTS (SELECT 1 FROM oaath_signer_v1 WHERE signer_id = $4) \
+             AND EXISTS (SELECT 1 FROM oaath_relay_authorization_request_v1 \
+             WHERE request_id = $1) ON CONFLICT DO NOTHING"
+        );
+        self.applied(
+            sqlx::query(&sql)
+                .bind(&record.request_id)
+                .bind(record.version)
+                .bind(&record.account_id)
+                .bind(&record.member_signer_id)
+                .bind(&record.artifact_id)
+                .bind(&record.code_ref)
+                .bind(bigint(record.created_at))
+                .bind(bigint(record.expires_at)),
+        )
+        .await
+    }
+
+    async fn decide_pending_grant(
+        &mut self,
+        request_id: &str,
+        outcome: PendingOutcome,
+        decided_at: u64,
+    ) -> RelayResult<bool> {
+        let outcome = match outcome {
+            PendingOutcome::Approved => "approved",
+            PendingOutcome::Rejected => "rejected",
+        };
+        self.applied(
+            sqlx::query(
+                "UPDATE oaath_pending_grant_v1 SET outcome = $2, decided_at = $3 \
+                 WHERE request_id = $1 AND outcome IS NULL",
+            )
+            .bind(request_id)
+            .bind(outcome)
+            .bind(bigint(decided_at)),
+        )
+        .await
+    }
+
+    async fn list_pending_grants(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Vec<PendingGrantRecord>> {
+        let sql = format!(
+            "SELECT {PENDING_COLUMNS} FROM oaath_pending_grant_v1 WHERE account_id = $1 \
+             ORDER BY created_at, request_id COLLATE \"C\" FOR UPDATE"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(account_id)
+            .fetch_all(&mut *self.transaction)
+            .await
+            .map_err(|_| RelayErrorCode::StoreUnavailable)?;
+        rows.iter().map(pending_record).collect()
     }
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>> {

@@ -1261,3 +1261,120 @@ async fn creates_one_account_for_concurrent_retries_of_one_key() {
     shutdown(first).await;
     shutdown(second).await;
 }
+
+#[tokio::test]
+async fn keeps_a_member_grant_request_pending_across_restarts() {
+    use support::grant::{Root, approval, detail, link_member, root_key, sign_in};
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let root = Root::Ecdsa(root_key());
+    let member = Root::Ecdsa(k256::ecdsa::SigningKey::from_slice(&[0x55; 32]).unwrap());
+    let token = |client_id: &str, code: &str| {
+        oauth_form(
+            "/oauth/token",
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", client_id),
+                ("code", code),
+                ("code_verifier", CODE_VERIFIER),
+                ("redirect_uri", REDIRECT_URI),
+            ],
+        )
+    };
+
+    let h = fixture.process(clock.clone()).await;
+    let (root_id, root_cookie) = sign_in(&h, &root).await;
+    let account = h
+        .send(portal_call(
+            "POST",
+            "/portal/accounts",
+            Some(&root_cookie),
+            Some(json!({ "root_signer_id": root_id, "creation_key": creation_key() })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    let (member_id, member_cookie) = sign_in(&h, &member).await;
+    link_member(
+        &h,
+        text(&account, "address"),
+        (&member_id, &member_cookie),
+        (&root, &root_cookie),
+    )
+    .await;
+    let client = h
+        .send(post(
+            "/oauth/clients",
+            None,
+            Some(json!({ "client_name": "Dapp", "redirect_uris": [REDIRECT_URI] })),
+        ))
+        .await;
+    let client_id = text(client.ok(201), "client_id").to_owned();
+    let challenge = code_challenge();
+    let details = json!([detail()]).to_string();
+    let pushed = h
+        .send(oauth_form(
+            "/oauth/par",
+            &[
+                ("client_id", &client_id),
+                ("redirect_uri", REDIRECT_URI),
+                ("response_type", "code"),
+                ("code_challenge", &challenge),
+                ("code_challenge_method", "S256"),
+                ("scope", "openid"),
+                ("authorization_details", &details),
+            ],
+        ))
+        .await;
+    let id = text(pushed.ok(201), "request_uri")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_owned();
+    let code = redirect_code(
+        &h.send(portal_call(
+            "POST",
+            &format!("/portal/transactions/{id}/decision"),
+            Some(&member_cookie),
+            Some(json!({
+                "outcome": "request_approval",
+                "signer_id": member_id,
+                "account_id": account["account_id"],
+            })),
+        ))
+        .await,
+    );
+    shutdown(h).await;
+
+    let h = fixture.process(clock.clone()).await;
+    let pending = h.send(token(&client_id, &code)).await;
+    assert_eq!(pending.body["error"], json!("authorization_pending"));
+    let path = format!("/portal/requests/{id}");
+    let prepared = h
+        .send(portal_call(
+            "POST",
+            &format!("{path}/prepare"),
+            Some(&root_cookie),
+            Some(json!({})),
+        ))
+        .await
+        .ok(200)
+        .clone();
+    h.send(portal_call(
+        "POST",
+        &format!("{path}/approve"),
+        Some(&root_cookie),
+        Some(json!({ "artifact": approval(&prepared, &root).to_string() })),
+    ))
+    .await
+    .ok(200);
+    shutdown(h).await;
+
+    let h = fixture.process(clock).await;
+    let tokens = h.send(token(&client_id, &code)).await.ok(200).clone();
+    assert_eq!(tokens["authorization_details"][0]["grant_id"], json!(id));
+    let again = h.send(token(&client_id, &code)).await;
+    assert_eq!(again.body["error"], json!("invalid_grant"));
+    shutdown(h).await;
+}

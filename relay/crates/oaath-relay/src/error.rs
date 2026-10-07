@@ -82,6 +82,14 @@ pub enum RelayErrorCode {
     #[error("relay_capability_invalidated")]
     #[serde(rename = "relay_capability_invalidated")]
     CapabilityInvalidated,
+    /// A member's grant request waits for its account's root.
+    #[error("relay_authorization_pending")]
+    #[serde(rename = "relay_authorization_pending")]
+    AuthorizationPending,
+    /// The account's root rejected the request.
+    #[error("relay_access_denied")]
+    #[serde(rename = "relay_access_denied")]
+    AccessDenied,
     /// The account's root suspended this signer's membership.
     #[error("relay_membership_suspended")]
     #[serde(rename = "relay_membership_suspended")]
@@ -116,6 +124,8 @@ impl RelayErrorCode {
             Self::ChainUnavailable => 503,
             Self::CapabilityInvalidated => 409,
             Self::MembershipSuspended => 403,
+            Self::AuthorizationPending => 400,
+            Self::AccessDenied => 403,
             Self::Internal => 500,
         }
     }

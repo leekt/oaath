@@ -26,6 +26,8 @@
 //! GET|POST|PUT|DELETE /portal/accounts/{a}/policies(/{t})  portal  the root's templates
 //! POST /portal/links/{linkId}/prepare                portal  what a template approval signs
 //! GET  /portal/grants/{grantId}                      portal  a member grant (root, member)
+//! GET  /portal/accounts/{a}/requests                 portal  the root's pending grant requests
+//! GET|POST /portal/requests/{id}(/prepare|approve|reject)  portal  a member's grant request
 //! ```
 //!
 //! A signer's accounts, account creation, and grant prepare and approved
@@ -53,7 +55,7 @@ use crate::link::{
 use crate::member_grant::{assign_grant, member_grant_view, prepare_assignment};
 use crate::oauth::{
     LoginDecision, OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, grant,
-    login_decision, operation, parse_form, prepare_grant, push_authorization_request,
+    login_decision, operation, parse_form, pending, prepare_grant, push_authorization_request,
     read_transaction, recover_redirect, register_client,
 };
 use crate::policy::{delete_template, list_templates, save_template};
@@ -492,6 +494,54 @@ impl Relay {
                     save_template(store, clock, account_id, Some(template_id), &body, &session);
                 return reply(200, &saved.await?);
             }
+            if group == Some("requests") && (count == 3 || count == 4) {
+                let session = session_signer(store, clock, headers).await?;
+                let request_id = identifier_segment(third)?;
+                let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
+                let kms = self.kms.as_ref();
+                return match fourth {
+                    None => {
+                        require_method(method, &Method::GET)?;
+                        reply(
+                            200,
+                            &pending::read_pending(store, clock, request_id, &session).await?,
+                        )
+                    }
+                    Some("prepare") => {
+                        require_method(method, &Method::POST)?;
+                        exact_body(&body_record(headers, body, self.max_body_bytes).await?, &[])?;
+                        let prepared =
+                            pending::prepare_pending(store, clock, request_id, &session).await?;
+                        reply(200, &prepared)
+                    }
+                    Some(action @ ("approve" | "reject")) => {
+                        require_method(method, &Method::POST)?;
+                        let body = body_record(headers, body, self.max_body_bytes).await?;
+                        let view = pending::decide_pending(
+                            store,
+                            clock,
+                            kms,
+                            issuer,
+                            request_id,
+                            &body,
+                            &session,
+                            action == "approve",
+                        )
+                        .await?;
+                        reply(200, &view)
+                    }
+                    Some(_) => Err(RelayErrorCode::NotFound),
+                };
+            }
+            if group == Some("accounts") && fourth == Some("requests") && count == 4 {
+                require_method(method, &Method::GET)?;
+                let session = session_signer(store, clock, headers).await?;
+                let account_id = identifier_segment(third)?;
+                return reply(
+                    200,
+                    &pending::list_pending(store, clock, account_id, &session).await?,
+                );
+            }
             if group == Some("grants") && count == 3 {
                 require_method(method, &Method::GET)?;
                 let session = session_signer(store, clock, headers).await?;
@@ -564,9 +614,27 @@ impl Relay {
                         let body = body_record(headers, body, self.max_body_bytes).await?;
                         let decision = login_decision(&body)?;
                         if let LoginDecision::Approved { signer_id, .. }
-                        | LoginDecision::Grant { signer_id, .. } = &decision
+                        | LoginDecision::Grant { signer_id, .. }
+                        | LoginDecision::RequestApproval { signer_id, .. } = &decision
                         {
                             require_signer(store, clock, headers, signer_id).await?;
+                        }
+                        if let LoginDecision::RequestApproval {
+                            signer_id,
+                            account_id,
+                        } = &decision
+                        {
+                            let redirect = pending::request_root_approval(
+                                store,
+                                clock,
+                                kms,
+                                &oauth.issuer,
+                                id,
+                                signer_id,
+                                account_id,
+                            )
+                            .await?;
+                            return reply(200, &redirect);
                         }
                         if let LoginDecision::Grant {
                             signer_id,
