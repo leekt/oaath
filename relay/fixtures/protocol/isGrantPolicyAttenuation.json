@@ -1,0 +1,1577 @@
+[
+  {
+    "name": "identical",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": true
+    }
+  },
+  {
+    "name": "lower value limit",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "99",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": true
+    }
+  },
+  {
+    "name": "higher value limit",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "101",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "subset of calls",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": true
+    }
+  },
+  {
+    "name": "extra call",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "different selector",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345679",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "added argument equality",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": [
+              {
+                "index": 5,
+                "value": "0x6666666666666666666666666666666666666666666666666666666666666666"
+              }
+            ]
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": true
+    }
+  },
+  {
+    "name": "dropped argument equality",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "changed argument equality",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x7777777777777777777777777777777777777777777777777777777777777777"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "later validAfter",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 150,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": true
+    }
+  },
+  {
+    "name": "earlier validAfter",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 99,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "earlier validUntil",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 150,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": true
+    }
+  },
+  {
+    "name": "later validUntil",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 191,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "indefinite approval of finite request",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": null,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "finite approval of indefinite request",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": null,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": true
+    }
+  },
+  {
+    "name": "lower count",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 1,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": true
+    }
+  },
+  {
+    "name": "higher count",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 11,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "window added",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": 60
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "window removed",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": 60
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "window lengthened",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": 60
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": 120
+        }
+      }
+    },
+    "expect": {
+      "ok": false
+    }
+  },
+  {
+    "name": "invalid approved",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "error": "grant_policy_attenuation_input_invalid"
+    }
+  },
+  {
+    "name": "invalid requested",
+    "fn": "isGrantPolicyAttenuation",
+    "input": {
+      "requested": {
+        "version": "x",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "approved": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
+    },
+    "expect": {
+      "error": "grant_policy_attenuation_input_invalid"
+    }
+  },
+  {
+    "name": "approved -0 validAfter",
+    "fn": "isGrantPolicyAttenuation",
+    "inputText": "{\"requested\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"approved\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":-0,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}}}",
+    "expect": {
+      "error": "grant_policy_attenuation_input_invalid"
+    }
+  }
+]

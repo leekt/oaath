@@ -1,0 +1,3326 @@
+[
+  {
+    "name": "frontend derived ecdsa",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "existing account webauthn operator",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.3.3",
+        "address": "0x6666666666666666666666666666666666666666",
+        "entryPoint": {
+          "version": "0.7"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "webauthn",
+        "publicKey": "0x04724162db6b9e3f3dd5ae4eff2c7caa1580dc7550cb1dcc5c24bffc5ee4763079ffd42dc09f37a25cfca26d302163564673ab5c2f378910820ab336b93db76f26",
+        "authenticatorIdHash": "0x5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0xaa06ae996bf79e1c8763c73543d6cfe9bbb571023ce9cb36e26a1e9079199bdd"
+    }
+  },
+  {
+    "name": "p256 owner application backend",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": {
+        "mode": "application_backend",
+        "providerId": "backend-kms"
+      }
+    },
+    "expect": {
+      "ok": "0xe4eee2d52293e546bd0e37331528098f9fadec48a94a46d9227743c983895159"
+    }
+  },
+  {
+    "name": "webauthn owner oaath hosted team",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "team",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": {
+        "mode": "oaath_hosted",
+        "providerId": "🔑 hosted"
+      }
+    },
+    "expect": {
+      "ok": "0x8761c499c19db07b5c57c711bda78ca71f56c7dd173adb7677aba4e80c22ddd5"
+    }
+  },
+  {
+    "name": "existing 0.4.0 p256 windowed",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.4.0",
+        "address": "0x6666666666666666666666666666666666666666",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 2,
+          "intervalSeconds": 86400
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x7a5711f2ed721bca7829d7a5f5c97f2777adacf3052e95224ec3e7f730104737"
+    }
+  },
+  {
+    "name": "origin uppercase host",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://Request.Example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "origin default port",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example:443",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "origin root slash",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example/",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "origin http port",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "http://request.example:8080",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x3aab02f1da249829ec8155bcab2a29b505467991bc080feb034c8ef2ea2f6c8c"
+    }
+  },
+  {
+    "name": "origin http default port",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "http://request.example:80",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x181db2e04a5cdec24f910b1ebbd4231dd0d3e93587a657089f18db3cccda1a32"
+    }
+  },
+  {
+    "name": "origin path",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example/app",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "origin query",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example/?q=1",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "origin empty query",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example?",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "origin empty fragment",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example#",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "origin fragment",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example#x",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "origin credentials",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://user@request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "origin empty credentials",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://@request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "origin empty password",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://:@request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "origin surrounding spaces",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "  https://request.example  ",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "origin embedded newline",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.\nexample",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x5869ebc508203ba4ea25f886f8df4495cb96c4fbe338d152bea56fb5c4ae0b9c"
+    }
+  },
+  {
+    "name": "origin unicode host",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://réquest.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0xe77fbdf35f275e93e2ed9bfd410b9af1107aec149576d803e95a2d3fe6110352"
+    }
+  },
+  {
+    "name": "origin ipv4 decimal",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "http://2130706433",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0xa079054d420321035868d6d013bda11fbd19145fe92cbb974255457c974bc282"
+    }
+  },
+  {
+    "name": "origin ipv6",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://[::1]:8443",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x0ad5912a74feac5e39c48223a5ea5b9bbf8991d73be5cad1b2c1de64df3095f5"
+    }
+  },
+  {
+    "name": "origin ftp",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "ftp://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "origin wss",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "wss://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "origin file",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "file:///tmp",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "origin no scheme",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "origin 2049 characters",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "permission-request-1",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "requestId 256 units",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0xb6f037a6c64387ff7137b26d5b220d7e0be3e28340f0ba2675b9df57e8adc6dc"
+    }
+  },
+  {
+    "name": "requestId 257 units",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "requestId surrogate pairs at 256 units",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0xdaa1f95b9a3727f67360a0df7ef8e3169f3332b1fddfef3a1ffa3545b5812111"
+    }
+  },
+  {
+    "name": "requestId surrogate pairs at 258 units",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "requestId leading space",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": " request",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "requestId trailing tab",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "request\t",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "requestId trailing NEL (not JavaScript whitespace)",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "request",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x91b80fad1b10a585d6471b977253dd8f4190ba8744c058f4cb3cdc7e02f296ba"
+    }
+  },
+  {
+    "name": "requestId leading BOM (JavaScript whitespace)",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "﻿request",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "requestId trailing ideographic space",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "request　",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "requestId trailing line separator",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "request ",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "requestId trailing narrow no-break space",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "request ",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  },
+  {
+    "name": "requestId trailing zero width space (not whitespace)",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "request​",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x4b7f4970ba5564d4dda8be4fcd03b153de44a1f326f80b7d84a504f4c5c2eff1"
+    }
+  },
+  {
+    "name": "requestId inner spaces",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "a request id",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "ok": "0x3921cf48fac158cf3823bebd066e508958ee561dbeaf4f1463681c224b191072"
+    }
+  },
+  {
+    "name": "requestId empty",
+    "fn": "hashPermissionRequest",
+    "input": {
+      "version": "oaath.permission-request/v2",
+      "requestId": "",
+      "context": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      },
+      "application": {
+        "applicationId": "oaath-tests",
+        "clientId": "permission-protocol",
+        "origin": "https://request.example",
+        "deviceId": "request-device"
+      },
+      "chainScope": "all",
+      "logicalAccount": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      },
+      "operatorCredential": {
+        "version": "oaath.operator-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x4444444444444444444444444444444444444444"
+      },
+      "policy": {
+        "version": "oaath.grant-policy/v2",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x12345678",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      },
+      "requestedAt": 100,
+      "expiresAt": 200,
+      "sessionSigner": null
+    },
+    "expect": {
+      "error": "permission_request_invalid"
+    }
+  }
+]

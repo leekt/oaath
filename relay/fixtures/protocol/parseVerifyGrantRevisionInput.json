@@ -1,0 +1,1326 @@
+[
+  {
+    "name": "valid",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "revision 0",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 0,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "revision 2",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 2,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 2,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "revision 2^48 - 1",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 281474976710655,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 281474976710655,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "revision 2^48",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 281474976710656,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "revision -0",
+    "fn": "parseVerifyGrantRevisionInput",
+    "inputText": "{\"grantId\":\"grant-1\",\"revision\":-0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"requiredCallsDigest\":\"0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888\"}",
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "revision 1.0",
+    "fn": "parseVerifyGrantRevisionInput",
+    "inputText": "{\"grantId\":\"grant-1\",\"revision\":1.0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"requiredCallsDigest\":\"0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888\"}",
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "revision 1e0",
+    "fn": "parseVerifyGrantRevisionInput",
+    "inputText": "{\"grantId\":\"grant-1\",\"revision\":1e0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"requiredCallsDigest\":\"0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888\"}",
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "revision string",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": "1",
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject URL-safe punctuation",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "A-z_0.9~",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "A-z_0.9~",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "subject 256 characters",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "subject 257 characters",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject space",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "a b",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject slash",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "a/b",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject unicode",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "café",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject empty",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId URL-safe punctuation",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "A-z_0.9~",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "A-z_0.9~",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "clientId 256 characters",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "clientId 257 characters",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId space",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "a b",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId slash",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "a/b",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId unicode",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "café",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId empty",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience URL-safe punctuation",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "A-z_0.9~",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "A-z_0.9~",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "organizationAudience 256 characters",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "organizationAudience 257 characters",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience space",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "a b",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience slash",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "a/b",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience unicode",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "café",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience empty",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "grantId inner space",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant 1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant 1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "grantId leading space",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": " grant",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "grantId trailing NEL",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "grantId 256 units",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "grantId 257 units",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "grantId unicode",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "😀",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "😀",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "input: drop root.grantId",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as null",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": null,
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as number",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": 1,
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as string",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "x",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "x",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "input: root.grantId as array",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": [],
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as object",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": {},
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as boolean",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": true,
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.revision",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as null",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": null,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as string",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": "x",
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as array",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": [],
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as object",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": {},
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as boolean",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": true,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.subject",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as null",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": null,
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as number",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": 1,
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as string",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "x",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "x",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "input: root.subject as array",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": [],
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as object",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": {},
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as boolean",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": true,
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.clientId",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as null",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": null,
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as number",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": 1,
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as string",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "x",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "x",
+        "organizationAudience": "org.example",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "input: root.clientId as array",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": [],
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as object",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": {},
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as boolean",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": true,
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.organizationAudience",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as null",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": null,
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as number",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": 1,
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as string",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "x",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "ok": {
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "x",
+        "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      }
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as array",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": [],
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as object",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": {},
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as boolean",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": true,
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.requiredCallsDigest",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.requiredCallsDigest as null",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": null
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.requiredCallsDigest as number",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": 1
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.requiredCallsDigest as string",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "x"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.requiredCallsDigest as array",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": []
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.requiredCallsDigest as object",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": {}
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.requiredCallsDigest as boolean",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": true
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: unknown key at root",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888",
+      "unexpected": true
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root as null",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": null,
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root as number",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": 1,
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root as string",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": "x",
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root as array",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": [],
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "uppercase digest",
+    "fn": "parseVerifyGrantRevisionInput",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "requiredCallsDigest": "0xABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  }
+]

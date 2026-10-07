@@ -1,0 +1,1847 @@
+[
+  {
+    "name": "valid",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "revision 0",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 0,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "revision 2",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 2,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 2,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "revision 2^48 - 1",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 281474976710655,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 281474976710655,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "revision 2^48",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 281474976710656,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "revision -0",
+    "fn": "parseOaathGrantRef",
+    "inputText": "{\"version\":\"oaath.grant-reference/v1\",\"grantId\":\"grant-1\",\"revision\":-0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"state\":\"active\",\"policyDigest\":\"0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec\"}",
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "revision 1.0",
+    "fn": "parseOaathGrantRef",
+    "inputText": "{\"version\":\"oaath.grant-reference/v1\",\"grantId\":\"grant-1\",\"revision\":1.0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"state\":\"active\",\"policyDigest\":\"0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec\"}",
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "revision 1e0",
+    "fn": "parseOaathGrantRef",
+    "inputText": "{\"version\":\"oaath.grant-reference/v1\",\"grantId\":\"grant-1\",\"revision\":1e0,\"subject\":\"subject-1\",\"clientId\":\"client-1\",\"organizationAudience\":\"org.example\",\"state\":\"active\",\"policyDigest\":\"0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec\"}",
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "revision string",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": "1",
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject URL-safe punctuation",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "A-z_0.9~",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "A-z_0.9~",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "subject 256 characters",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "subject 257 characters",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject space",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "a b",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject slash",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "a/b",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject unicode",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "café",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "subject empty",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId URL-safe punctuation",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "A-z_0.9~",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "A-z_0.9~",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "clientId 256 characters",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "clientId 257 characters",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId space",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "a b",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId slash",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "a/b",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId unicode",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "café",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "clientId empty",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience URL-safe punctuation",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "A-z_0.9~",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "A-z_0.9~",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "organizationAudience 256 characters",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "organizationAudience 257 characters",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience space",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "a b",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience slash",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "a/b",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience unicode",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "café",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "organizationAudience empty",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "grantId inner space",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant 1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant 1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "grantId leading space",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": " grant",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "grantId trailing NEL",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "grantId 256 units",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "grantId 257 units",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "grantId unicode",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "😀",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "😀",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "input: drop root.version",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.version as null",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": null,
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.version as number",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": 1,
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.version as string",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "x",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.version as array",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": [],
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.version as object",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": {},
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.version as boolean",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": true,
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.grantId",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as null",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": null,
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as number",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": 1,
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as string",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "x",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "x",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "input: root.grantId as array",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": [],
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as object",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": {},
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.grantId as boolean",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": true,
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.revision",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as null",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": null,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as string",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": "x",
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as array",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": [],
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as object",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": {},
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.revision as boolean",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": true,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.subject",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as null",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": null,
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as number",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": 1,
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as string",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "x",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "x",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "input: root.subject as array",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": [],
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as object",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": {},
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.subject as boolean",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": true,
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.clientId",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as null",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": null,
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as number",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": 1,
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as string",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "x",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "x",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "input: root.clientId as array",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": [],
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as object",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": {},
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.clientId as boolean",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": true,
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.organizationAudience",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as null",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": null,
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as number",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": 1,
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as string",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "x",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "x",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as array",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": [],
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as object",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": {},
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.organizationAudience as boolean",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": true,
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.state",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.state as null",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": null,
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.state as number",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": 1,
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.state as string",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "x",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.state as array",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": [],
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.state as object",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": {},
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.state as boolean",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": true,
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: drop root.policyDigest",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.policyDigest as null",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": null
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.policyDigest as number",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": 1
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.policyDigest as string",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "x"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.policyDigest as array",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": []
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.policyDigest as object",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": {}
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root.policyDigest as boolean",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": true
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: unknown key at root",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec",
+      "unexpected": true
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root as null",
+    "fn": "parseOaathGrantRef",
+    "input": null,
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root as number",
+    "fn": "parseOaathGrantRef",
+    "input": 1,
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root as string",
+    "fn": "parseOaathGrantRef",
+    "input": "x",
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "input: root as array",
+    "fn": "parseOaathGrantRef",
+    "input": [],
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "state pending",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "pending",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "pending",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "state revoked",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "revoked",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "revoked",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "state expired",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "expired",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "expired",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    }
+  },
+  {
+    "name": "state approved",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v1",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "approved",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "version v2",
+    "fn": "parseOaathGrantRef",
+    "input": {
+      "version": "oaath.grant-reference/v2",
+      "grantId": "grant-1",
+      "revision": 1,
+      "subject": "subject-1",
+      "clientId": "client-1",
+      "organizationAudience": "org.example",
+      "state": "active",
+      "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  }
+]

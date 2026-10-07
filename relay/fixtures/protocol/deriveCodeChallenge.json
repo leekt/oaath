@@ -1,0 +1,130 @@
+[
+  {
+    "name": "RFC 7636 appendix B verifier",
+    "fn": "deriveCodeChallenge",
+    "input": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+    "expect": {
+      "ok": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+    }
+  },
+  {
+    "name": "43 characters",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expect": {
+      "ok": "ZtNPunH49FD35FWYhT5Tv8I7vRKQJ8uxMaL0_9eHjNA"
+    }
+  },
+  {
+    "name": "128 characters",
+    "fn": "deriveCodeChallenge",
+    "input": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    "expect": {
+      "ok": "Gn88msbRKQ0wmy6Kms0RzrR4ZXFo3OGDewwvI9C7qZg"
+    }
+  },
+  {
+    "name": "every unreserved character",
+    "fn": "deriveCodeChallenge",
+    "input": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~",
+    "expect": {
+      "ok": "RZ77XZltYSfl0BLxuGd8pHGJ4EoMoVDVuSWHgNq3RY8"
+    }
+  },
+  {
+    "name": "42 characters",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "129 characters",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "empty",
+    "fn": "deriveCodeChallenge",
+    "input": "",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "contains plus",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "contains slash",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "contains equals",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "contains space",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "contains percent",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "contains latin small e acute",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "contains emoji",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "contains trailing newline",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  },
+  {
+    "name": "contains nul",
+    "fn": "deriveCodeChallenge",
+    "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\u0000",
+    "expect": {
+      "error": "authorization_code_verifier_mismatch"
+    }
+  }
+]

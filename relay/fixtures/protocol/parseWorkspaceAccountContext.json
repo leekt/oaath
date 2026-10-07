@@ -1,0 +1,796 @@
+[
+  {
+    "name": "personal",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      }
+    }
+  },
+  {
+    "name": "team",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "team",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "team",
+        "accountId": "account-1"
+      }
+    }
+  },
+  {
+    "name": "organization kind",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "organization",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "version v2",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v2",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "workspaceId 64 characters",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      }
+    }
+  },
+  {
+    "name": "workspaceId 65 characters",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "workspaceId uppercase",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "Account-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "workspaceId leading hyphen",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "-account",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "workspaceId leading dot",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": ".account",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "workspaceId digit first",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "1account",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "1account",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      }
+    }
+  },
+  {
+    "name": "workspaceId underscore and dot",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "a_b.c-d",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "a_b.c-d",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      }
+    }
+  },
+  {
+    "name": "workspaceId tilde",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "a~b",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "workspaceId space",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "a b",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "workspaceId empty",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "workspaceId trailing newline",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "account\n",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "accountId 64 characters",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  {
+    "name": "accountId 65 characters",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "accountId uppercase",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "Account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "accountId leading hyphen",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "-account"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "accountId leading dot",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": ".account"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "accountId digit first",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "1account"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "1account"
+      }
+    }
+  },
+  {
+    "name": "accountId underscore and dot",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "a_b.c-d"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "a_b.c-d"
+      }
+    }
+  },
+  {
+    "name": "accountId tilde",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "a~b"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "accountId space",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "a b"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "accountId empty",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": ""
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "accountId trailing newline",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account\n"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: drop root.version",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.version as null",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": null,
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.version as number",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": 1,
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.version as string",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "x",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.version as array",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": [],
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.version as object",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": {},
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.version as boolean",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": true,
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: drop root.workspaceId",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceId as null",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": null,
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceId as number",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": 1,
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceId as string",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "x",
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "x",
+        "workspaceKind": "personal",
+        "accountId": "account-1"
+      }
+    }
+  },
+  {
+    "name": "context: root.workspaceId as array",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": [],
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceId as object",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": {},
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceId as boolean",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": true,
+      "workspaceKind": "personal",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: drop root.workspaceKind",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceKind as null",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": null,
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceKind as number",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": 1,
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceKind as string",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "x",
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceKind as array",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": [],
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceKind as object",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": {},
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.workspaceKind as boolean",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": true,
+      "accountId": "account-1"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: drop root.accountId",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal"
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.accountId as null",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": null
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.accountId as number",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": 1
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.accountId as string",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "x"
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.workspace-account-context/v1",
+        "workspaceId": "personal-1",
+        "workspaceKind": "personal",
+        "accountId": "x"
+      }
+    }
+  },
+  {
+    "name": "context: root.accountId as array",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": []
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.accountId as object",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": {}
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root.accountId as boolean",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": true
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: unknown key at root",
+    "fn": "parseWorkspaceAccountContext",
+    "input": {
+      "version": "oaath.workspace-account-context/v1",
+      "workspaceId": "personal-1",
+      "workspaceKind": "personal",
+      "accountId": "account-1",
+      "unexpected": true
+    },
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root as null",
+    "fn": "parseWorkspaceAccountContext",
+    "input": null,
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root as number",
+    "fn": "parseWorkspaceAccountContext",
+    "input": 1,
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root as string",
+    "fn": "parseWorkspaceAccountContext",
+    "input": "x",
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  },
+  {
+    "name": "context: root as array",
+    "fn": "parseWorkspaceAccountContext",
+    "input": [],
+    "expect": {
+      "error": "service_bootstrap_invalid"
+    }
+  }
+]

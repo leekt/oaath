@@ -1,0 +1,201 @@
+[
+  {
+    "name": "policy calls",
+    "fn": "hashGrantPolicyCalls",
+    "input": [
+      {
+        "target": "0x1111111111111111111111111111111111111111",
+        "selector": "0x12345678",
+        "valueLimit": "100",
+        "argumentEquals": [
+          {
+            "index": 0,
+            "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "index": 2,
+            "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+          }
+        ]
+      },
+      {
+        "target": "0x2222222222222222222222222222222222222222",
+        "selector": "0xabcdef01",
+        "valueLimit": "0",
+        "argumentEquals": []
+      }
+    ],
+    "expect": {
+      "ok": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+    }
+  },
+  {
+    "name": "single call",
+    "fn": "hashGrantPolicyCalls",
+    "input": [
+      {
+        "target": "0x2222222222222222222222222222222222222222",
+        "selector": "0xabcdef01",
+        "valueLimit": "0",
+        "argumentEquals": []
+      }
+    ],
+    "expect": {
+      "ok": "0x27bce11175b4d5e8e00ee80dde504439c5b05f64acee8cf12d9aa5b3e79d9f53"
+    }
+  },
+  {
+    "name": "argument index 1.0",
+    "fn": "hashGrantPolicyCalls",
+    "inputText": "[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":1.0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}]",
+    "expect": {
+      "ok": "0xf4862365d7197f8af68b42f0a9a0c96dae2b01bafc27b1ebb0b14a8a5872ffd1"
+    }
+  },
+  {
+    "name": "empty",
+    "fn": "hashGrantPolicyCalls",
+    "input": [],
+    "expect": {
+      "error": "grant_policy_invalid"
+    }
+  },
+  {
+    "name": "unsorted",
+    "fn": "hashGrantPolicyCalls",
+    "input": [
+      {
+        "target": "0x2222222222222222222222222222222222222222",
+        "selector": "0xabcdef01",
+        "valueLimit": "0",
+        "argumentEquals": []
+      },
+      {
+        "target": "0x1111111111111111111111111111111111111111",
+        "selector": "0x12345678",
+        "valueLimit": "100",
+        "argumentEquals": [
+          {
+            "index": 0,
+            "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "index": 2,
+            "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "error": "grant_policy_invalid"
+    }
+  },
+  {
+    "name": "object",
+    "fn": "hashGrantPolicyCalls",
+    "input": {
+      "version": "oaath.grant-policy/v2",
+      "calls": [
+        {
+          "target": "0x1111111111111111111111111111111111111111",
+          "selector": "0x12345678",
+          "valueLimit": "100",
+          "argumentEquals": [
+            {
+              "index": 0,
+              "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+            },
+            {
+              "index": 2,
+              "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+            }
+          ]
+        },
+        {
+          "target": "0x2222222222222222222222222222222222222222",
+          "selector": "0xabcdef01",
+          "valueLimit": "0",
+          "argumentEquals": []
+        }
+      ],
+      "validAfter": 100,
+      "validUntil": 190,
+      "perChainOperationLimit": {
+        "count": 10,
+        "intervalSeconds": null
+      }
+    },
+    "expect": {
+      "error": "grant_policy_invalid"
+    }
+  },
+  {
+    "name": "null",
+    "fn": "hashGrantPolicyCalls",
+    "input": null,
+    "expect": {
+      "error": "grant_policy_invalid"
+    }
+  },
+  {
+    "name": "call with unknown key",
+    "fn": "hashGrantPolicyCalls",
+    "input": [
+      {
+        "target": "0x1111111111111111111111111111111111111111",
+        "selector": "0x12345678",
+        "valueLimit": "100",
+        "argumentEquals": [
+          {
+            "index": 0,
+            "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "index": 2,
+            "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+          }
+        ],
+        "unexpected": true
+      },
+      {
+        "target": "0x2222222222222222222222222222222222222222",
+        "selector": "0xabcdef01",
+        "valueLimit": "0",
+        "argumentEquals": []
+      }
+    ],
+    "expect": {
+      "error": "grant_policy_invalid"
+    }
+  },
+  {
+    "name": "call value limit invalid",
+    "fn": "hashGrantPolicyCalls",
+    "input": [
+      {
+        "target": "0x1111111111111111111111111111111111111111",
+        "selector": "0x12345678",
+        "valueLimit": "01",
+        "argumentEquals": [
+          {
+            "index": 0,
+            "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "index": 2,
+            "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+          }
+        ]
+      },
+      {
+        "target": "0x2222222222222222222222222222222222222222",
+        "selector": "0xabcdef01",
+        "valueLimit": "0",
+        "argumentEquals": []
+      }
+    ],
+    "expect": {
+      "error": "grant_policy_invalid"
+    }
+  }
+]

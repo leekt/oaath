@@ -1,0 +1,430 @@
+[
+  {
+    "name": "authorized",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "authorized",
+      "ref": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    },
+    "expect": {
+      "ok": {
+        "state": "authorized",
+        "ref": {
+          "version": "oaath.grant-reference/v1",
+          "grantId": "grant-1",
+          "revision": 1,
+          "subject": "subject-1",
+          "clientId": "client-1",
+          "organizationAudience": "org.example",
+          "state": "active",
+          "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+        }
+      }
+    }
+  },
+  {
+    "name": "authorized invalid ref",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "authorized",
+      "ref": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 0,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "authorized with code",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "authorized",
+      "ref": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      },
+      "code": "grant_pending"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_pending",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_pending"
+    },
+    "expect": {
+      "ok": {
+        "state": "denied",
+        "code": "grant_pending"
+      }
+    }
+  },
+  {
+    "name": "unknown grant_pending",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_pending"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_rejected",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_rejected"
+    },
+    "expect": {
+      "ok": {
+        "state": "denied",
+        "code": "grant_rejected"
+      }
+    }
+  },
+  {
+    "name": "unknown grant_rejected",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_rejected"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_revoked",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_revoked"
+    },
+    "expect": {
+      "ok": {
+        "state": "denied",
+        "code": "grant_revoked"
+      }
+    }
+  },
+  {
+    "name": "unknown grant_revoked",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_revoked"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_expired",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_expired"
+    },
+    "expect": {
+      "ok": {
+        "state": "denied",
+        "code": "grant_expired"
+      }
+    }
+  },
+  {
+    "name": "unknown grant_expired",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_expired"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_revision_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_revision_mismatch"
+    },
+    "expect": {
+      "ok": {
+        "state": "denied",
+        "code": "grant_revision_mismatch"
+      }
+    }
+  },
+  {
+    "name": "unknown grant_revision_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_revision_mismatch"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_subject_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_subject_mismatch"
+    },
+    "expect": {
+      "ok": {
+        "state": "denied",
+        "code": "grant_subject_mismatch"
+      }
+    }
+  },
+  {
+    "name": "unknown grant_subject_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_subject_mismatch"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_client_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_client_mismatch"
+    },
+    "expect": {
+      "ok": {
+        "state": "denied",
+        "code": "grant_client_mismatch"
+      }
+    }
+  },
+  {
+    "name": "unknown grant_client_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_client_mismatch"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_audience_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_audience_mismatch"
+    },
+    "expect": {
+      "ok": {
+        "state": "denied",
+        "code": "grant_audience_mismatch"
+      }
+    }
+  },
+  {
+    "name": "unknown grant_audience_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_audience_mismatch"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_calls_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_calls_mismatch"
+    },
+    "expect": {
+      "ok": {
+        "state": "denied",
+        "code": "grant_calls_mismatch"
+      }
+    }
+  },
+  {
+    "name": "unknown grant_calls_mismatch",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_calls_mismatch"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied grant_unknown",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_unknown"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "unknown grant_unknown",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_unknown"
+    },
+    "expect": {
+      "ok": {
+        "state": "unknown",
+        "code": "grant_unknown"
+      }
+    }
+  },
+  {
+    "name": "denied grant_unreadable",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_unreadable"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "unknown grant_unreadable",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_unreadable"
+    },
+    "expect": {
+      "ok": {
+        "state": "unknown",
+        "code": "grant_unreadable"
+      }
+    }
+  },
+  {
+    "name": "denied grant_other",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_other"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "unknown grant_other",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "unknown",
+      "code": "grant_other"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "denied with ref",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "denied",
+      "code": "grant_pending",
+      "ref": {
+        "version": "oaath.grant-reference/v1",
+        "grantId": "grant-1",
+        "revision": 1,
+        "subject": "subject-1",
+        "clientId": "client-1",
+        "organizationAudience": "org.example",
+        "state": "active",
+        "policyDigest": "0x7eeb1690544c128e942a8727e76518bcad1e4c559568772480cbe34bcf2783ec"
+      }
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "state other",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "state": "pending",
+      "code": "grant_pending"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "missing state",
+    "fn": "parseGrantVerificationResult",
+    "input": {
+      "code": "grant_pending"
+    },
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "null",
+    "fn": "parseGrantVerificationResult",
+    "input": null,
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  },
+  {
+    "name": "array",
+    "fn": "parseGrantVerificationResult",
+    "input": [],
+    "expect": {
+      "error": "grant_reference_invalid"
+    }
+  }
+]

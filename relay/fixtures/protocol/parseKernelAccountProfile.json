@@ -1,0 +1,3027 @@
+[
+  {
+    "name": "derived meta factory ecdsa",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "derived kernel factory p256",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "kernel_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "p256",
+        "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "kernel_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      }
+    }
+  },
+  {
+    "name": "derived webauthn",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "webauthn",
+        "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+        "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "7",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      }
+    }
+  },
+  {
+    "name": "derived unknown factory",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived kernel 0.3.3",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.3.3",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived entryPoint 0.7",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived entryPoint extra key",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9",
+        "address": "0x1111111111111111111111111111111111111111"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "accountIndex zero",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "0",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "0",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "accountIndex max uint256",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-account-profile/v1",
+        "kind": "kernel",
+        "accountIndex": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        "kernelVersion": "0.4.0",
+        "factoryRoute": "meta_factory",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "accountIndex max uint256 + 1",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "115792089237316195423570985008687907853269984665640564039457584007913129639936",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "accountIndex leading zero",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "07",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "accountIndex negative",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "-1",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "accountIndex 79 digits",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "1111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "accountIndex hex",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "0x7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "accountIndex empty",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "accountIndex number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": 7,
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing 0.3.3 ecdsa",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.3.3",
+        "address": "0x6666666666666666666666666666666666666666",
+        "entryPoint": {
+          "version": "0.7"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing 0.4.0 ecdsa",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.4.0",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.4.0",
+        "address": "0x6666666666666666666666666666666666666666",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing 0.4.0 p256",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.4.0",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "p256",
+        "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.4.0",
+        "address": "0x6666666666666666666666666666666666666666",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "p256",
+          "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing 0.3.3 p256",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "p256",
+        "publicKey": "0x046bf2e6ec0bfa4a688995ef8d9c779da3d6d16dd55626d231dd1a64eb4c09cc30526eb26ec6ddc5d5bad36650d9c3c0e0c02146da454a8b67466726c57d0add40"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing 0.4.0 webauthn",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.4.0",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "webauthn",
+        "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+        "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing 0.3.3 entryPoint 0.9",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing kernel 0.3.1",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.1",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing with derived fields",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      },
+      "accountIndex": "0",
+      "factoryRoute": "meta_factory"
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived with address",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      },
+      "address": "0x6666666666666666666666666666666666666666"
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived version with existing fields",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "kind safe",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "safe",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "invalid owner credential",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x0000000000000000000000000000000000000000"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing address: EIP-55 checksummed",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x52908400098527886E0F7030069857D2E4169EE7",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.3.3",
+        "address": "0x52908400098527886e0f7030069857d2e4169ee7",
+        "entryPoint": {
+          "version": "0.7"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing address: lowercase mixed-hex",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x52908400098527886e0f7030069857d2e4169ee7",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.3.3",
+        "address": "0x52908400098527886e0f7030069857d2e4169ee7",
+        "entryPoint": {
+          "version": "0.7"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing address: uppercase hex digits",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x52908400098527886E0F7030069857D2E4169EE7",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.3.3",
+        "address": "0x52908400098527886e0f7030069857d2e4169ee7",
+        "entryPoint": {
+          "version": "0.7"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x1111111111111111111111111111111111111111"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing address: invalid checksum",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x52908400098527886e0F7030069857D2E4169EE7",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing address: zero",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x0000000000000000000000000000000000000000",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing address: 19 bytes",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x11111111111111111111111111111111111111",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing address: missing 0x",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "1111111111111111111111111111111111111111",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing address: 0X prefix",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0X1111111111111111111111111111111111111111",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: drop root.version",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.version as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": null,
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.version as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": 1,
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.version as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "x",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.version as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": [],
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.version as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": {},
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.version as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": true,
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: drop root.kind",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kind as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": null,
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kind as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": 1,
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kind as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "x",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kind as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": [],
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kind as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": {},
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kind as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": true,
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: drop root.accountIndex",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.accountIndex as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": null,
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.accountIndex as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": 1,
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.accountIndex as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "x",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.accountIndex as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": [],
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.accountIndex as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": {},
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.accountIndex as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": true,
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: drop root.kernelVersion",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kernelVersion as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": null,
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kernelVersion as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": 1,
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kernelVersion as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "x",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kernelVersion as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": [],
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kernelVersion as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": {},
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.kernelVersion as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": true,
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: drop root.factoryRoute",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.factoryRoute as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": null,
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.factoryRoute as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": 1,
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.factoryRoute as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "x",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.factoryRoute as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": [],
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.factoryRoute as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": {},
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.factoryRoute as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": true,
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: drop root.entryPoint",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.entryPoint as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": null,
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.entryPoint as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": 1,
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.entryPoint as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": "x",
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.entryPoint as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": [],
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.entryPoint as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {},
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.entryPoint as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": true,
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: drop root.ownerCredential",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.ownerCredential as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": null
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.ownerCredential as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": 1
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.ownerCredential as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": "x"
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.ownerCredential as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": []
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.ownerCredential as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {}
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root.ownerCredential as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": true
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: unknown key at root",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      },
+      "unexpected": true
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root as null",
+    "fn": "parseKernelAccountProfile",
+    "input": null,
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root as number",
+    "fn": "parseKernelAccountProfile",
+    "input": 1,
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root as string",
+    "fn": "parseKernelAccountProfile",
+    "input": "x",
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived: root as array",
+    "fn": "parseKernelAccountProfile",
+    "input": [],
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: drop root.version",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.version as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": null,
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.version as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": 1,
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.version as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "x",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.version as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": [],
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.version as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": {},
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.version as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": true,
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: drop root.kind",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kind as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": null,
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kind as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": 1,
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kind as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "x",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kind as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": [],
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kind as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": {},
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kind as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": true,
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: drop root.kernelVersion",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kernelVersion as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": null,
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kernelVersion as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": 1,
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kernelVersion as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "x",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kernelVersion as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": [],
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kernelVersion as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": {},
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.kernelVersion as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": true,
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: drop root.address",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.address as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": null,
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.address as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": 1,
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.address as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "x",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.address as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": [],
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.address as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": {},
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.address as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": true,
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: drop root.entryPoint",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.entryPoint as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": null,
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.entryPoint as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": 1,
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.entryPoint as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": "x",
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.entryPoint as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": [],
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.entryPoint as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {},
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.entryPoint as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": true,
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: drop root.ownerCredential",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.ownerCredential as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": null
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.ownerCredential as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": 1
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.ownerCredential as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": "x"
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.ownerCredential as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": []
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.ownerCredential as object",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {}
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root.ownerCredential as boolean",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": true
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: unknown key at root",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      },
+      "unexpected": true
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root as null",
+    "fn": "parseKernelAccountProfile",
+    "input": null,
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root as number",
+    "fn": "parseKernelAccountProfile",
+    "input": 1,
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root as string",
+    "fn": "parseKernelAccountProfile",
+    "input": "x",
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing: root as array",
+    "fn": "parseKernelAccountProfile",
+    "input": [],
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived entryPoint: drop entryPoint.version",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {},
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived entryPoint: unknown key at entryPoint",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": {
+        "version": "0.9",
+        "unexpected": true
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived entryPoint: entryPoint as null",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": null,
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived entryPoint: entryPoint as number",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": 1,
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived entryPoint: entryPoint as string",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": "x",
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "derived entryPoint: entryPoint as array",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-account-profile/v1",
+      "kind": "kernel",
+      "accountIndex": "7",
+      "kernelVersion": "0.4.0",
+      "factoryRoute": "meta_factory",
+      "entryPoint": [],
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "ecdsa",
+        "address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  }
+]
