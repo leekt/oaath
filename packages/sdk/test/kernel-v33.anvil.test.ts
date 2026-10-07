@@ -2,11 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { p256 } from "@noble/curves/nist.js";
-import {
-  hashOwnerSigningRequest,
-  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-  parsePermissionRequest,
-} from "@oaath/protocol";
+import { OAATH_OWNER_CREDENTIAL_PROFILE_VERSION, parsePermissionRequest } from "@oaath/protocol";
 import { createSqliteOperationStoreAdapter } from "@oaath/testing";
 import {
   bytesToHex,
@@ -1693,8 +1689,7 @@ function passkeySession() {
       signer: { account: address },
       typedData: { domain: { name: "Kernel", version: "0.3.3", chainId: "0" } },
     });
-    // Another owner is refused before it is asked to sign; a P-256 artifact
-    // cannot complete an ECDSA owner's approval.
+    // Another owner is refused before it is asked to sign.
     const otherSign = vi.fn();
     await expect(
       prepared.sign(
@@ -1706,17 +1701,6 @@ function passkeySession() {
       ),
     ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
     expect(otherSign).not.toHaveBeenCalled();
-    await expect(
-      prepared.complete(
-        {
-          version: "oaath.owner-signing-artifact/v1",
-          kind: "p256",
-          requestHash: hashOwnerSigningRequest(prepared.signingRequest),
-          signature: `0x${"11".repeat(64)}`,
-        },
-        now,
-      ),
-    ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
 
     const ownerSign = vi.fn(ownerAccount.sign.bind(ownerAccount));
     const decision = await prepared.sign(

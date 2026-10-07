@@ -183,17 +183,9 @@ export {
   parseKernelInstallPackages,
   parseKernelReplayableInstallOwnerSigningRequest,
 } from "./kernel-v4-replayable-install.js";
-export type {
-  KernelRevocationEffect,
-  KernelRevocationOperation,
-  KernelRevocationSigningRequest,
-} from "./kernel-v4-revocation.js";
 export {
   encodeKernelInstallNonceInvalidationCall,
   encodeKernelPermissionUninstallCalls,
-  hashKernelRevocationSigningRequest,
-  OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,
-  parseKernelRevocationSigningRequest,
 } from "./kernel-v4-revocation.js";
 export type {
   AbandonedOperation,
@@ -248,12 +240,6 @@ export {
   parseOwnerOperationRequest,
   parseSignedOwnerOperation,
 } from "./owner-operation.js";
-export type { OwnerSigningArtifact } from "./owner-signing-artifact.js";
-export {
-  OAATH_OWNER_SIGNING_ARTIFACT_VERSION,
-  parseOwnerSigningArtifact,
-  serializeOwnerSigningArtifact,
-} from "./owner-signing-artifact.js";
 export type {
   ApplyPermissionDecisionInput,
   ApplyPermissionDecisionResult,

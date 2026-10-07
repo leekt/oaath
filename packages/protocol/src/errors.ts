@@ -21,7 +21,6 @@ export type ProtocolContractErrorCode =
   | "authorization_code_verifier_mismatch"
   | "grant_reference_invalid"
   | "service_bootstrap_invalid"
-  | "signing_artifact_invalid"
   | "signing_request_invalid";
 
 /** Raised by the shared protocol contract owners. */

@@ -1,9 +1,8 @@
 /**
  * Canonical permission request -> Kernel signing request -> grant artifact.
  * Preparation uses public credentials only. The one owner signature comes from
- * whoever holds the owner key: a key profile through `sign`, or an owner
- * device's signing artifact through `complete`. No signer, submission, or
- * durable state is retained here.
+ * whoever holds the owner key, through a key profile passed to `sign`. No
+ * signer, submission, or durable state is retained here.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -17,10 +16,8 @@ import {
   type KernelExistingAccountProfile,
   OAATH_OWNER_SIGNING_REQUEST_VERSION,
   OAATH_PERMISSION_DECISION_VERSION,
-  type OwnerSigningArtifact,
   type PermissionRequest,
   parseKernelReplayableInstallOwnerSigningRequest,
-  parseOwnerSigningArtifact,
   parseOwnerSigningRequest,
   parsePermissionRequest,
 } from "@oaath/protocol";
@@ -50,7 +47,6 @@ import {
   runtimeFail,
 } from "../internal.js";
 import { credentialKey } from "../key/credential.js";
-import { p256Key } from "../key/p256.js";
 import { ownerOperator } from "../operator/owner.js";
 import { sessionOperator } from "../operator/session.js";
 import type { KernelRuntime, KeyProfile, OperatorProfile } from "../types.js";
@@ -82,7 +78,7 @@ export interface PreparedKernelPermissionApproval {
   readonly request: Readonly<PermissionRequest>;
   /**
    * The exact `kernel-enable` owner signing request. For a Kernel `0.4.0`
-   * account it is the replayable install request an owner device completes.
+   * account it is the replayable install request.
    */
   readonly signingRequest: Readonly<Eip712OwnerSigningRequest>;
   /**
@@ -91,14 +87,6 @@ export interface PreparedKernelPermissionApproval {
    * time and owner key are checked before the owner is asked. Submits nothing.
    */
   sign(owner: Readonly<KeyProfile>, decidedAt: number): Promise<Readonly<KernelPermissionDecision>>;
-  /**
-   * Verifies an owner device's P-256 signing artifact and assembles a decision;
-   * it submits nothing. Another owner kind fails with `kernel_runtime_unsupported`.
-   */
-  complete(
-    artifact: Readonly<OwnerSigningArtifact>,
-    decidedAt: number,
-  ): Promise<Readonly<KernelPermissionDecision>>;
 }
 
 /** One configured chain an existing account is bound on. */
@@ -462,9 +450,7 @@ function preparedApproval(
   signingRequest: Readonly<Eip712OwnerSigningRequest>,
   approve: (owner: Readonly<KeyProfile>) => Promise<Readonly<KernelGrantApproval>>,
 ): Readonly<PreparedKernelPermissionApproval> {
-  const ownerCredential = request.logicalAccount.ownerCredential;
   const requestHash = hashPermissionRequest(request);
-  const signingRequestHash = hashOwnerSigningRequest(signingRequest);
 
   function requireDecisionTime(decidedAt: number): void {
     if (
@@ -504,25 +490,6 @@ function preparedApproval(
           "approval owner key does not match the request's owner credential",
         );
       return decide(owner, decidedAt);
-    },
-    async complete(artifactValue: Readonly<OwnerSigningArtifact>, decidedAt: number) {
-      requireDecisionTime(decidedAt);
-      const artifact = parseOwnerSigningArtifact(artifactValue);
-      if (ownerCredential.kind !== "p256")
-        return runtimeFail(
-          "kernel_runtime_unsupported",
-          "a signing artifact completes only a P-256 owner's approval",
-        );
-      if (artifact.requestHash !== signingRequestHash) {
-        return runtimeFail(
-          "kernel_runtime_signature_invalid",
-          "owner artifact belongs to another Kernel signing request",
-        );
-      }
-      return decide(
-        p256Key({ credential: ownerCredential, sign: async () => artifact.signature }),
-        decidedAt,
-      );
     },
   });
 }
