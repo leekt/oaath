@@ -82,7 +82,9 @@ pub fn signer_record(credential: &OwnerCredentialProfile, now: u64) -> SignerRec
     }
 }
 
-/// The signer for this profile hash, registering it if absent.
+/// The signer for this profile hash, registering it if absent. A passkey
+/// profile naming a credential another profile already names is refused, so
+/// a credential identifies at most one signer.
 pub async fn register(
     transaction: &mut dyn RelayTransaction,
     record: &SignerRecord,
@@ -93,15 +95,26 @@ pub async fn register(
     {
         return Ok(existing.signer_id);
     }
+    if let Some(hash) = record.authenticator_id_hash()?
+        && transaction
+            .lock_signer_by_authenticator(&hash)
+            .await?
+            .is_some()
+    {
+        return Err(RelayErrorCode::CredentialRegistered);
+    }
     if transaction.insert_signer(record).await? {
         return Ok(record.signer_id.clone());
     }
-    // A concurrent registration of the same profile won; answer its signer.
-    transaction
+    // A concurrent registration won: the same profile answers its signer,
+    // another profile for the same credential is refused.
+    match transaction
         .lock_signer_by_profile_hash(&record.profile_hash)
         .await?
-        .map(|existing| existing.signer_id)
-        .ok_or(RelayErrorCode::Internal)
+    {
+        Some(existing) => Ok(existing.signer_id),
+        None => Err(RelayErrorCode::CredentialRegistered),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -118,8 +131,7 @@ const MAX_CREDENTIAL_ID_BYTES: usize = 1023;
 /// (base64url, as `navigator.credentials.get()` returns it). Identification
 /// only: nothing is verified, and a match grants no authority. The match is
 /// the profile's own `authenticatorIdHash = keccak256(credentialId)`, so no
-/// separate credential fact is stored. More than one match (a profile copying
-/// another's authenticator) is ambiguous and reads as absent.
+/// separate credential fact is stored; registration keeps it unique.
 pub async fn signer_by_credential(
     store: &dyn RelayStore,
     credential_id: &str,
@@ -137,13 +149,11 @@ pub async fn signer_by_credential(
     let authenticator_id_hash = hex_hash(keccak256(&raw));
     let mut transaction = store.begin().await?;
     let result = transaction
-        .list_signers_by_authenticator(&authenticator_id_hash)
+        .lock_signer_by_authenticator(&authenticator_id_hash)
         .await;
-    let mut signers = settle(transaction, result).await?;
-    if signers.len() != 1 {
-        return Err(RelayErrorCode::NotFound);
-    }
-    let signer = signers.remove(0);
+    let signer = settle(transaction, result)
+        .await?
+        .ok_or(RelayErrorCode::NotFound)?;
     let credential = signer.credential()?;
     Ok(IdentifiedSigner {
         signer_id: signer.signer_id,

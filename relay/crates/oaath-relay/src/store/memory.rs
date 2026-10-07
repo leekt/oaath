@@ -308,19 +308,17 @@ impl RelayTransaction for MemoryTransaction {
         Ok(found)
     }
 
-    async fn list_signers_by_authenticator(
+    async fn lock_signer_by_authenticator(
         &mut self,
         authenticator_id_hash: &str,
-    ) -> RelayResult<Vec<SignerRecord>> {
-        let mut signers = Vec::new();
+    ) -> RelayResult<Option<SignerRecord>> {
         for value in self.staged.signers.values() {
             let record = SignerRecord::parse(value)?;
             if record.authenticator_id_hash()?.as_deref() == Some(authenticator_id_hash) {
-                signers.push(record);
+                return Ok(Some(record));
             }
         }
-        signers.sort_by(|a, b| (a.created_at, &a.signer_id).cmp(&(b.created_at, &b.signer_id)));
-        Ok(signers)
+        Ok(None)
     }
 
     async fn insert_signer(&mut self, record: &SignerRecord) -> RelayResult<bool> {
@@ -328,6 +326,11 @@ impl RelayTransaction for MemoryTransaction {
             .lock_signer_by_profile_hash(&record.profile_hash)
             .await?
             .is_some()
+        {
+            return Ok(false);
+        }
+        if let Some(hash) = record.authenticator_id_hash()?
+            && self.lock_signer_by_authenticator(&hash).await?.is_some()
         {
             return Ok(false);
         }

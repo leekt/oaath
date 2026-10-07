@@ -94,6 +94,10 @@ pub enum RelayErrorCode {
     #[error("relay_membership_suspended")]
     #[serde(rename = "relay_membership_suspended")]
     MembershipSuspended,
+    /// Another signer's passkey profile already names this credential.
+    #[error("relay_credential_registered")]
+    #[serde(rename = "relay_credential_registered")]
+    CredentialRegistered,
     /// An invariant the relay owns was violated.
     #[error("relay_internal")]
     #[serde(rename = "relay_internal")]
@@ -126,6 +130,7 @@ impl RelayErrorCode {
             Self::MembershipSuspended => 403,
             Self::AuthorizationPending => 400,
             Self::AccessDenied => 403,
+            Self::CredentialRegistered => 409,
             Self::Internal => 500,
         }
     }

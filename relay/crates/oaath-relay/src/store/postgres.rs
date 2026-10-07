@@ -122,7 +122,7 @@ pub fn schema_statements() -> Vec<String> {
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
   )"
         ),
-        "CREATE INDEX oaath_signer_authenticator_v1 ON oaath_signer_v1 (authenticator_id_hash)"
+        "CREATE UNIQUE INDEX oaath_signer_authenticator_v1 ON oaath_signer_v1 (authenticator_id_hash)"
             .to_owned(),
         format!(
             "CREATE TABLE oaath_account_v1 (
@@ -942,30 +942,27 @@ impl RelayTransaction for PostgresTransaction {
         .await
     }
 
-    async fn list_signers_by_authenticator(
+    async fn lock_signer_by_authenticator(
         &mut self,
         authenticator_id_hash: &str,
-    ) -> RelayResult<Vec<SignerRecord>> {
-        let rows = sqlx::query(
-            "SELECT signer_id, record_version, profile_hash, profile, created_at \
-             FROM oaath_signer_v1 WHERE authenticator_id_hash = $1 \
-             ORDER BY created_at, signer_id COLLATE \"C\"",
-        )
-        .bind(authenticator_id_hash)
-        .fetch_all(&mut *self.transaction)
-        .await
-        .map_err(|_| RelayErrorCode::StoreUnavailable)?;
-        let signers = rows
-            .iter()
-            .map(signer_record)
-            .collect::<RelayResult<Vec<_>>>()?;
+    ) -> RelayResult<Option<SignerRecord>> {
+        let signer = self
+            .first(
+                sqlx::query(
+                    "SELECT signer_id, record_version, profile_hash, profile, created_at \
+                     FROM oaath_signer_v1 WHERE authenticator_id_hash = $1 FOR UPDATE",
+                )
+                .bind(authenticator_id_hash),
+                signer_record,
+            )
+            .await?;
         // The index column is a copy; the stored profile owns the fact.
-        for signer in &signers {
-            if signer.authenticator_id_hash()?.as_deref() != Some(authenticator_id_hash) {
-                return Err(RelayErrorCode::RecordUnreadable);
-            }
+        if let Some(signer) = &signer
+            && signer.authenticator_id_hash()?.as_deref() != Some(authenticator_id_hash)
+        {
+            return Err(RelayErrorCode::RecordUnreadable);
         }
-        Ok(signers)
+        Ok(signer)
     }
 
     async fn insert_signer(&mut self, record: &SignerRecord) -> RelayResult<bool> {
