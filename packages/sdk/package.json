@@ -98,7 +98,7 @@
   "dependencies": {
     "@noble/curves": "1.9.1",
     "@oaath/protocol": "workspace:*",
-    "cetane": "0.0.3",
+    "cetane": "0.0.4",
     "@noble/hashes": "1.8.0"
   },
   "publishConfig": {
