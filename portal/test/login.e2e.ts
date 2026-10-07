@@ -22,10 +22,25 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { kernelDeployment } from "@oaath/sdk/kernel";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
+import {
+  createKernelRuntime,
+  ECDSA_VALIDATOR,
+  kernelDeployment,
+  kernelKey,
+  ownerOperator,
+} from "@oaath/sdk/kernel";
 import { calculateJwkThumbprint, createRemoteJWKSet, type JWK, jwtVerify } from "jose";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import { decodeEventLog, encodeFunctionData, hashTypedData, recoverAddress, toHex } from "viem";
+import {
+  decodeEventLog,
+  encodeAbiParameters,
+  encodeFunctionData,
+  hashTypedData,
+  parseAbi,
+  recoverAddress,
+  toHex,
+} from "viem";
 import {
   entryPoint07Abi,
   getUserOperationHash,
@@ -130,9 +145,19 @@ async function startRelay(issuer: string) {
   }
 }
 
+/**
+ * The Worker's chain-read provider: a closed loopback port until a test starts
+ * its local Arbitrum Sepolia, so no test can reach a public endpoint.
+ */
+let rpcUpstream = "http://127.0.0.1:9/";
+
 /** The portal origin: Node's HTTP server in front of the real Worker module. */
 async function startPortal() {
   const env: Env = {
+    get RPC_UPSTREAM_421614() {
+      return rpcUpstream;
+    },
+    RPC_LIMIT: { limit: async () => ({ success: true }) },
     ASSETS: {
       async fetch(request) {
         const path = new URL(request.url).pathname;
@@ -875,7 +900,7 @@ async function startLocalArbitrumSepolia() {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
   });
-  return { chain, sent, bundlerUrl: `http://127.0.0.1:${port}` };
+  return { chain, stack, sent, bundlerUrl: `http://127.0.0.1:${port}` };
 }
 
 describe("the live Grant demo, rehearsed on a local Arbitrum Sepolia", () => {
@@ -1089,5 +1114,121 @@ describe("adding a passkey on a second device to an existing account", () => {
     await root.waitForSelector("button[aria-label='Remove Second device']", { hidden: true });
     await root.close();
     await device.close();
+  });
+});
+
+describe("importing an existing account through the portal's chain-read proxy", () => {
+  it("checks the root and lists modules, marking an executor installed elsewhere as outside", async () => {
+    const local = await startLocalArbitrumSepolia();
+    rpcUpstream = local.chain.url;
+    const deployment = kernelDeployment({ chainId: 421_614 });
+    const [ports] = createCetaneChainPorts({ 421614: { publicRpcUrls: [local.chain.url] } });
+    if (!ports) throw new Error("no chain reads");
+    const reads = ports.reads;
+    /** A factory-deployed Kernel v4 account whose ECDSA root is `owner`. */
+    async function deployAccount(owner: `0x${string}`, accountIndex: string) {
+      const runtime = createKernelRuntime({
+        deployment,
+        operator: ownerOperator({
+          key: kernelKey({
+            credential: {
+              version: "oaath.owner-credential-profile/v1",
+              kind: "ecdsa",
+              address: owner,
+            },
+            validator: ECDSA_VALIDATOR,
+          }),
+        }),
+        reads,
+      });
+      const account = await runtime.bindAccount({
+        accountIndex,
+        initialPackages: runtime.packages,
+      });
+      if (account.state !== "counterfactual" || !("factoryDeployCalldata" in account))
+        throw new Error("account already deployed");
+      const hash = await local.stack.wallet.sendTransaction({
+        to: account.factory,
+        data: account.factoryDeployCalldata,
+        gas: 3_000_000n,
+      });
+      await local.chain.client.waitForTransactionReceipt({ hash });
+      return account.account;
+    }
+    const owned = await deployAccount(WALLET_ADDRESS, "70");
+    const extended = await deployAccount(WALLET_ADDRESS, "71");
+    const foreign = await deployAccount(`0x${"77".repeat(20)}`, "0");
+    // Another app installs an executor on `extended`, as its own self-call.
+    await local.chain.rpc("anvil_impersonateAccount", [extended]);
+    await local.chain.rpc("anvil_setBalance", [extended, toHex(10n ** 18n)]);
+    await local.chain.rpc("eth_sendTransaction", [
+      {
+        from: extended,
+        to: extended,
+        gas: toHex(500_000),
+        data: encodeFunctionData({
+          abi: parseAbi([
+            "function installModule(uint256 moduleType, address module, bytes initData)",
+          ]),
+          functionName: "installModule",
+          args: [
+            2n,
+            `0x${"e1".repeat(20)}`,
+            encodeAbiParameters([{ type: "bytes" }, { type: "bytes" }], ["0x", "0x"]),
+          ],
+        }),
+      },
+    ]);
+
+    const dappPage = await openDapp();
+    const popup = await startLogin(dappPage);
+    await click(popup, "::-p-text(E2E Wallet)");
+    await popup.waitForSelector("#account-heading");
+    await click(popup, "::-p-text(Import an existing account)");
+    async function inspect(address: string) {
+      await popup.waitForSelector("#import-address");
+      await popup.$eval("#import-address", (node) => {
+        (node as HTMLInputElement).value = "";
+      });
+      await popup.type("#import-address", address);
+      await click(popup, "::-p-text(Check account)");
+      await popup.waitForSelector(
+        ".inventory, .check-fail, .check-unknown, #import-account [role=alert]",
+      );
+      return popup.$eval("#import-account", (node) => (node as HTMLElement).innerText);
+    }
+
+    const plain = await inspect(owned);
+    expect(plain).toContain("This signer is the account's root owner.");
+    expect(plain).toContain("No modules outside OAAth.");
+    expect(plain).toMatch(/ECDSA validator\s*Validator · 0x845a…ce57\s*Root/u);
+    const fingerprint = await popup.$eval(
+      ".inventory",
+      (node) => (node as HTMLElement).dataset.fingerprint,
+    );
+    expect(fingerprint).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(
+      await popup.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+
+    const withExecutor = await inspect(extended);
+    expect(withExecutor).toContain("1 module outside OAAth.");
+    expect(withExecutor).toMatch(/Unknown executor\s*Executor · 0xe1e1…e1e1\s*Outside OAAth/u);
+    expect(
+      await popup.$eval(".inventory", (node) => (node as HTMLElement).dataset.fingerprint),
+    ).not.toBe(fingerprint);
+
+    expect(await inspect(foreign)).toContain(
+      "This signer is not the account's root owner. Sign in with the signer that owns the account.",
+    );
+    expect(await popup.$(".inventory")).toBeNull();
+    expect(await inspect(deployment.entryPoint.address)).toContain(
+      "This contract is not a Kernel smart account: it has no upgradeable implementation.",
+    );
+    expect(await inspect(`0x${"12".repeat(20)}`)).toContain(
+      "No contract is deployed at this address on Arbitrum Sepolia.",
+    );
+    await popup.close();
+    await dappPage.page.close();
   });
 });

@@ -8,7 +8,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   type DecisionRequest,
   type PortalAccount,
@@ -21,6 +21,11 @@ import { GrantReview } from "./GrantReview.js";
 import { LinkApproval, LinkRequest, ManageAccounts } from "./Links.js";
 import { CancelButton, Frame, message, Notice, SignerStep } from "./shared.js";
 import { type RememberedSigner, rememberSigner, shortAddress } from "./signers.js";
+
+/** Module discovery loads only when an account is imported. */
+const ImportAccount = lazy(() =>
+  import("./ImportAccount.js").then((module) => ({ default: module.ImportAccount })),
+);
 
 type Step =
   | { readonly name: "signer" }
@@ -196,6 +201,7 @@ function AccountStep({
 }) {
   const [accounts, setAccounts] = useState<readonly PortalAccount[] | null>(null);
   const [linking, setLinking] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -298,8 +304,23 @@ function AccountStep({
             Link to an existing account
           </button>
         )}
+        <button
+          type="button"
+          className="secondary"
+          aria-expanded={importing}
+          aria-controls="import-account"
+          disabled={busy}
+          onClick={() => setImporting(!importing)}
+        >
+          Import an existing account
+        </button>
       </div>
       {linking && <LinkRequest signer={signer} onApproved={linked} />}
+      {importing && (
+        <Suspense fallback={<p className="quiet">Loading…</p>}>
+          <ImportAccount signer={signer} />
+        </Suspense>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
