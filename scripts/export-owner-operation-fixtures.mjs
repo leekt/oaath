@@ -3,12 +3,14 @@
  * verifier to the SDK, for each root a portal account can have.
  *
  * Each root kind (ECDSA, raw P-256, WebAuthn) signs one fixed operation on its
- * factory-derived account through `prepareOwnerOperation`, offline. Variants
+ * factory-derived account through `prepareOwnerOperation`, offline, and one on
+ * the same account named by an existing-account (imported) profile. Variants
  * alter exactly one fact. An altered operation that is re-encoded and
  * re-hashed keeps the original signature, as a submitter tampering after
  * signing would. `expect.failure` names the first failing stage of the SDK's
  * own `verifyOwnerOperation`: `request` (protocol shape, calls against
- * callData, root nonce, hash), `binding` (derived sender, factory, EntryPoint),
+ * callData, root nonce, hash), `binding` (derived or existing sender, factory,
+ * EntryPoint),
  * or `signature`. Keys and inputs are fixed, so the output is deterministic.
  *
  * Run: bun run fixtures:protocol
@@ -27,9 +29,11 @@ const { ECDSA_VALIDATOR, prepareOwnerOperation, verifyOwnerOperation } = await i
   `${sdk}src/kernel.ts`
 );
 const { ecdsaWalletKey } = await import(`${sdk}src/kernel/key/ecdsa.ts`);
-const { OAATH_KERNEL_ACCOUNT_PROFILE_VERSION, ownerUserOperationForCetane } = await import(
-  `${root}packages/protocol/src/index.ts`
-);
+const {
+  OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
+  OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+  ownerUserOperationForCetane,
+} = await import(`${root}packages/protocol/src/index.ts`);
 const fromSdk = { resolve: (specifier) => Bun.resolveSync(specifier, sdk) };
 const { privateKeyToAccount } = await import(fromSdk.resolve("cetane/accounts"));
 const { getSigningHash } = await import(fromSdk.resolve("cetane/execution/erc4337"));
@@ -77,6 +81,18 @@ function account(rootKey, accountIndex = "0") {
     accountIndex,
     kernelVersion: "0.4.0",
     factoryRoute: "kernel_factory",
+    entryPoint: { version: "0.9" },
+    ownerCredential: rootKey.credential,
+  };
+}
+
+/** The same account as an existing (imported) Kernel 0.4.0 profile at `address`. */
+function existingAccount(rootKey, address) {
+  return {
+    version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+    kind: "kernel",
+    address,
+    kernelVersion: "0.4.0",
     entryPoint: { version: "0.9" },
     ownerCredential: rootKey.credential,
   };
@@ -279,6 +295,49 @@ for (const kind of ["ecdsa", "p256", "webauthn"]) {
     kind,
     "signature byte flipped",
     { ...signed, signature: flipByte(signed.signature, kind === "webauthn" ? 100 : 10) },
+    false,
+  );
+
+  // The same account, imported: it executes at its own address, deployed.
+  const address = signed.request.userOperation.sender;
+  const existing = existingAccount(rootKey, address);
+  const imported = clone(
+    await prepareOwnerOperation({ ...base, deployed: true, account: existing }).sign(rootKey.key),
+  );
+  await record(kind, "existing account: valid", imported, true);
+  await record(
+    kind,
+    "existing account: sender is not its address",
+    rehashed(imported, { userOperation: { sender: `0x${"5e".repeat(20)}` } }),
+    false,
+  );
+  await record(
+    kind,
+    "existing account: carries a factory",
+    rehashed(imported, { userOperation: { factory: signed.request.userOperation.factory } }),
+    false,
+  );
+  await record(
+    kind,
+    "existing account: another EntryPoint",
+    rehashed(imported, { request: { entryPoint: `0x${"43".repeat(20)}` } }),
+    false,
+  );
+  await record(
+    kind,
+    "existing account: a Kernel 0.3.3 profile",
+    rehashed(imported, {
+      request: { account: { ...existing, kernelVersion: "0.3.3", entryPoint: { version: "0.7" } } },
+    }),
+    false,
+  );
+  await record(
+    kind,
+    "existing account: signed by another key of the same kind",
+    {
+      ...imported,
+      signature: await portalRoot(kind, "other").key.sign(imported.request.userOperationHash),
+    },
     false,
   );
   if (kind === "webauthn") {

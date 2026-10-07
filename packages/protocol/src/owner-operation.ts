@@ -5,10 +5,14 @@
  * digest, so chain, EntryPoint, account, nonce, calls, gas, factory and
  * paymaster are all bound by the one signature.
  *
+ * The account is factory-derived, or an existing (imported) Kernel 0.4.0
+ * account, which is already deployed and so carries no factory.
+ *
  * Capture checks only facts derivable without deployment addresses: exact
  * shape, calls against callData, a root-validation nonce, and the hash. The
- * account's derived address, factory, and EntryPoint belong to the deployment
- * owner (SDK `verifyOwnerOperation`, Rust `verify_owner_operation_binding`).
+ * account's address (derived, or the existing profile's own), factory, and
+ * EntryPoint belong to the deployment owner (SDK `verifyOwnerOperation`, Rust
+ * `verify_owner_operation_binding`).
  * Nothing here verifies a signature or submits anything.
  *
  * @author taek <leekt216@gmail.com>
@@ -20,6 +24,7 @@ import {
   captureKernelAccountProfile,
   isKernelExistingAccountProfile,
   type KernelDerivedAccountProfile,
+  type KernelExistingAccountProfile,
 } from "./identity-profile.js";
 import { captureDenseArray, exactRecord } from "./internal/exact-record.js";
 import { encodeKernelExecution } from "./internal/kernel-execution.js";
@@ -69,8 +74,8 @@ export interface OwnerUserOperation {
 export interface OwnerOperationRequest {
   readonly version: typeof OAATH_OWNER_OPERATION_REQUEST_VERSION;
   readonly kind: "kernel-owner-operation";
-  /** The factory-derived account whose root signs. */
-  readonly account: Readonly<KernelDerivedAccountProfile>;
+  /** The factory-derived or existing Kernel 0.4.0 account whose root signs. */
+  readonly account: Readonly<KernelDerivedAccountProfile | KernelExistingAccountProfile>;
   readonly chainId: number;
   readonly entryPoint: `0x${string}`;
   /** The exact calls the root reviews; `userOperation.callData` executes exactly these. */
@@ -258,8 +263,11 @@ function captureRequest(value: unknown, context: WeakSet<object>): Readonly<Owne
   )
     return fail("owner operation request version or kind is unsupported");
   const account = captureKernelAccountProfile(record.account, context, fail);
-  if (isKernelExistingAccountProfile(account) || account.factoryRoute !== "kernel_factory")
-    return fail("owner operation account must be factory-derived");
+  const existing = isKernelExistingAccountProfile(account);
+  if (existing ? account.kernelVersion !== "0.4.0" : account.factoryRoute !== "kernel_factory")
+    return fail(
+      "owner operation account must be factory-derived or an existing Kernel 0.4.0 account",
+    );
   if (
     typeof record.chainId !== "number" ||
     !Number.isSafeInteger(record.chainId) ||
@@ -269,6 +277,9 @@ function captureRequest(value: unknown, context: WeakSet<object>): Readonly<Owne
   const entryPoint = address(record.entryPoint, "owner operation EntryPoint");
   const calls = captureCalls(record.calls, context);
   const userOperation = captureUserOperation(record.userOperation, context);
+  // An existing account is already deployed: nothing may deploy it.
+  if (existing && userOperation.factory !== null)
+    return fail("an existing account's owner operation carries no factory");
   // Standard-mode root validation: the 192-bit key is only the uint16 lane.
   if (BigInt(userOperation.nonce) >> 80n !== 0n)
     return fail("owner operation nonce must use root validation");
@@ -285,7 +296,7 @@ function captureRequest(value: unknown, context: WeakSet<object>): Readonly<Owne
   return Object.freeze({
     version: OAATH_OWNER_OPERATION_REQUEST_VERSION,
     kind: "kernel-owner-operation",
-    account: account as Readonly<KernelDerivedAccountProfile>,
+    account,
     chainId: record.chainId,
     entryPoint,
     calls,
