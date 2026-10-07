@@ -27,8 +27,7 @@ import {
   ownerOperator,
   sessionOperator,
 } from "@oaath/sdk/kernel";
-import { parseEther } from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
 import {
   anvilAvailable,
   deployKernelStack,
@@ -113,7 +112,7 @@ async function bringUp(chainId) {
     accountIndex: "0",
     initialPackages: ownerRuntime.packages,
   });
-  await stack.fund(account.account, parseEther("1"));
+  await stack.fund(account.account, 10n ** 18n);
   return { chain, stack, ownerRuntime, sessionRuntime, account };
 }
 

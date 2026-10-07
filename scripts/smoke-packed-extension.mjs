@@ -75,7 +75,7 @@ import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
 import { approveKernelPermission, createKernelRuntime, kernelDeployment, kernelKey, kernelPermissionCapabilityHash, ownerOperator, sessionOperator } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import puppeteer from "puppeteer-core";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
 import { createFakeChain } from "./fake-chain.mjs";
 
 const CHAIN_ID = 421_614;
@@ -680,7 +680,6 @@ try {
     dependencies: {
       esbuild: "0.28.1",
       "puppeteer-core": "25.5.0",
-      viem: "2.55.8",
     },
     files: {
       ...extensionFiles,

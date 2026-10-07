@@ -5,14 +5,19 @@ const AUTO = process.argv.includes("--auto");
 
 const APP = `
 import { createOAAth } from "@oaath/sdk";
-import { createWalletClient, custom } from "viem";
+import { createRpcWalletClient, custom } from "cetane";
 import { OAATH_KERNEL_VALIDITY_POLICY, OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH } from "@oaath/sdk/advanced";
 import { kernelDeployment } from "@oaath/sdk/kernel";
 const address = "0x1111111111111111111111111111111111111111";
 const target = "0x2222222222222222222222222222222222222222";
 const deployment = kernelDeployment({ chainId: 143, kernelVersion: "0.3.3" });
 const now = () => Math.floor(Date.now() / 1000);
-const wallet = createWalletClient({ account: window.ownerAddress, transport: custom({ request: (request) => window.walletRequest(request) }) });
+const client = createRpcWalletClient({ chain: { id: 143, name: "Fixture", nativeAA: false }, account: window.ownerAddress, transport: custom({ request: (request) => window.walletRequest(request) }) });
+const wallet = {
+  ...client,
+  signMessage: ({ message }) => client.request({ method: "personal_sign", params: [message.raw, window.ownerAddress] }),
+  signTypedData: (request) => client.request({ method: "eth_signTypedData_v4", params: [window.ownerAddress, JSON.stringify(request, (_, value) => typeof value === "bigint" ? value.toString() : value)] }),
+};
 const reads = { async read(request) {
   if (request.type === "runtime_code_hash") return request.address === OAATH_KERNEL_VALIDITY_POLICY ? OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH : deployment.entryPoint.runtimeCodeHash;
   const result = { chain_id: 143, code: "0x6000", kernel_account_implementation: deployment.implementation, kernel_account_version: "kernel.advanced.v0.3.3", kernel_account_entrypoint: deployment.entryPoint.address, kernel_account_root_validator: "0x01" + deployment.ecdsaValidator.slice(2), kernel_ecdsa_owner: window.ownerAddress.toLowerCase(), kernel_v33_permission_nonce: "1" }[request.type];
@@ -60,7 +65,10 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { build } from "esbuild";
 import puppeteer from "puppeteer-core";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
+import { hashTypedData } from "cetane/utils";
+import assert from "node:assert/strict";
+assert.throws(() => import.meta.resolve("viem"), { code: "ERR_MODULE_NOT_FOUND" });
 const owner = privateKeyToAccount(generatePrivateKey());
 const auto = ${AUTO};
 let approvals = 0, sends = 0, ownerSignatures = 0;
@@ -84,7 +92,7 @@ try {
     }
     if (method !== "eth_signTypedData_v4" || params[0].toLowerCase() !== owner.address.toLowerCase()) throw new Error("unexpected wallet request");
     approvals++;
-    return owner.signTypedData(JSON.parse(params[1]));
+    return owner.sign({ hash: hashTypedData(JSON.parse(params[1])) });
   });
   await page.exposeFunction("sendOperation", async (prepared) => {
     if (prepared.userOperation.sender !== "0x1111111111111111111111111111111111111111" || BigInt(prepared.userOperation.nonce) >> 248n !== (auto ? 0n : 1n)) throw new Error("incorrect enable operation");
@@ -110,21 +118,27 @@ try {
 const consumer = await createConsumer({
   label: "local-wallet-browser",
   packages: ["@oaath/protocol", "@oaath/sdk"],
-  dependencies: { esbuild: "0.28.1", "puppeteer-core": "25.5.0", viem: "2.55.8" },
+  dependencies: { esbuild: "0.28.1", "puppeteer-core": "25.5.0" },
   files: {
     "app.js": APP,
     "run.mjs": RUN,
     "surface.ts": `
 import { createOAAth, type OaathWalletOptions, type OaathWalletApprovalReview, type OaathGrantHandle, type OaathSendCallsInput } from "@oaath/sdk";
-import { createWalletClient, custom, type EIP1193Provider, type Address } from "viem";
+import type { OaathApprovalWallet } from "@oaath/sdk";
+import { createRpcWalletClient, custom, type RpcRequest, type Address } from "cetane";
 export async function send(grant: Readonly<OaathGrantHandle>, request: OaathSendCallsInput) {
   const review = await grant.reviewCalls({ ...request, signer: "auto" });
   if (review.signer === "owner") { const limits: null = review.perChainOperationLimit; void limits; }
   else { const limit: { count: number; intervalSeconds: number | null } = review.perChainOperationLimit; void limit; }
   return grant.sendCalls({ ...request, signer: "auto" });
 }
-export function connect(provider: EIP1193Provider, owner: Address, account: Address) {
-  const wallet = createWalletClient({ account: owner, transport: custom(provider) });
+export function connect(provider: { request: (request: RpcRequest) => Promise<unknown> }, owner: Address, account: Address) {
+  const client = createRpcWalletClient({ chain: { id: 143, name: "Fixture", nativeAA: false }, account: owner, transport: custom(provider) });
+  const wallet: OaathApprovalWallet = {
+    ...client,
+    signMessage: ({ message }) => client.request({ method: "personal_sign", params: [message.raw, owner] }),
+    signTypedData: (request) => client.request({ method: "eth_signTypedData_v4", params: [owner, JSON.stringify(request, (_, value) => typeof value === "bigint" ? value.toString() : value)] }),
+  };
   const config: OaathWalletOptions = { approvals: { kind: "wallet", owner: wallet, onApproval: async (review: Readonly<OaathWalletApprovalReview>) => { void review.policy; } }, account, chains: { 143: { publicRpcUrls: ["http://localhost:8545"], bundlerUrl: "http://localhost:8546" } } };
   return createOAAth(config);
 }

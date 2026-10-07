@@ -97,7 +97,7 @@ close. An unresolved operation occupies
 one account/chain slot. Concurrent sends and sends after reload fail with a state
 conflict until observation resolves it; `getOperation` only observes the exact
 saved identity. Closing releases resources and does not revoke account authority.
-The owner key is an optional setting: a connected viem wallet (the ECDSA
+The owner key is an optional setting: a connected wallet (the ECDSA
 default) or any `kernelKey(...)` signing profile, such as a raw P-256 key
 (`account.owner(kernelKey({ credential, sign }))`). The account stays at its
 existing address. Each send checks its implementation, EntryPoint, root
@@ -113,7 +113,7 @@ signer of an operation.
 
 For scoped sessions without an issuer service or phone, add
 `approvals: { kind: "wallet", owner }` to the same options. `owner` is a
-browser or local viem wallet, which approves with one typed-data prompt, or any
+browser or local wallet implementing `account`, `signMessage`, and `signTypedData`, which approves with one typed-data prompt, or any
 `kernelKey(...)` signing profile the owner operations above accept, which signs
 the same approval digest. The account's
 Kernel deployment is detected on every configured chain; chains that disagree
@@ -234,7 +234,7 @@ const prepared = runtime.prepareOperation({
 const signature = await runtime.signOperation(prepared);
 ```
 
-`walletClient` is a connected viem wallet client with an account. A `wallet` key
+`walletClient` is a connected wallet client with an account. A `wallet` key
 requests one `personal_sign` signature over the exact 32-byte operation digest
 and verifies the EIP-191 signature against that captured account locally. It
 does not request accounts or retry a rejected signature. `ecdsaValidator` is
