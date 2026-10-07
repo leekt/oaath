@@ -233,3 +233,41 @@ pub fn approval(prepared: &Value, root: &Root) -> Value {
         },
     })
 }
+
+/// Links `member` (signed in with `member_cookie`) to the account at
+/// `address`, approved by its `root` through the wire.
+pub async fn link_member(
+    h: &Harness,
+    address: &str,
+    (member_id, member_cookie): (&str, &str),
+    (root, root_cookie): (&Root, &str),
+) {
+    let created = h
+        .send(portal_call(
+            "POST",
+            "/portal/links",
+            Some(member_cookie),
+            Some(json!({ "signer_id": member_id, "account": address, "label": "Member" })),
+        ))
+        .await;
+    let link_id = created.ok(201)["link_id"].as_str().unwrap().to_owned();
+    let view = h
+        .send(portal_call(
+            "GET",
+            &format!("/portal/links/{link_id}"),
+            Some(root_cookie),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    let digest: B256 = view["digest"].as_str().unwrap().parse().unwrap();
+    h.send(portal_call(
+        "POST",
+        &format!("/portal/links/{link_id}/approve"),
+        Some(root_cookie),
+        Some(json!({ "signature": format!("0x{}", hex::encode(root.sign(digest))) })),
+    ))
+    .await
+    .ok(200);
+}

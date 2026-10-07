@@ -9,7 +9,9 @@ mod support;
 use axum::body::Body;
 use axum::http::Request;
 use oaath_relay::error::RelayErrorCode as E;
-use oaath_relay::registry::{ACCOUNT_SIGNER_RECORD_VERSION, AccountSignerRecord, MembershipRole};
+use oaath_relay::registry::{
+    ACCOUNT_SIGNER_RECORD_VERSION, AccountSignerRecord, MembershipRole, MembershipStatus,
+};
 use serde_json::{Value, json};
 use support::*;
 
@@ -179,12 +181,14 @@ async fn derives_accounts_at_the_smallest_unused_index_and_lists_them() {
                 "account_id": first["account_id"],
                 "address": address_0,
                 "role": "root",
+                "status": "active",
                 "profile": first["profile"],
             },
             {
                 "account_id": second["account_id"],
                 "address": address_1,
                 "role": "root",
+                "status": "active",
                 "profile": second["profile"],
             },
         ] })
@@ -328,6 +332,9 @@ async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
         request_id: None,
         link_id: None,
         created_at: CLOCK_START,
+        status: MembershipStatus::Active,
+        suspended_at: None,
+        restored_at: None,
     };
     let mut transaction = h.store.begin().await.unwrap();
     assert!(

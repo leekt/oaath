@@ -86,6 +86,10 @@ pub enum RelayErrorCode {
     #[error("relay_capability_invalidated")]
     #[serde(rename = "relay_capability_invalidated")]
     CapabilityInvalidated,
+    /// The account's root suspended this signer's membership.
+    #[error("relay_membership_suspended")]
+    #[serde(rename = "relay_membership_suspended")]
+    MembershipSuspended,
     /// An invariant the relay owns was violated.
     #[error("relay_internal")]
     #[serde(rename = "relay_internal")]
@@ -116,6 +120,7 @@ impl RelayErrorCode {
             Self::ApnsCredentialsInvalid => 500,
             Self::ChainUnavailable => 503,
             Self::CapabilityInvalidated => 409,
+            Self::MembershipSuspended => 403,
             Self::Internal => 500,
         }
     }

@@ -397,3 +397,27 @@ h1:focus {
   border-radius: 0.5rem;
   cursor: pointer;
 }
+
+.status-badge {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 0.25rem;
+}
+
+.member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.member-actions p {
+  flex-basis: 100%;
+  margin: 0;
+}

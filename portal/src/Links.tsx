@@ -7,7 +7,7 @@
  *   signs one OAAth membership approval (`membership.ts`). The new signer can
  *   then sign in as the account; it holds no on-chain authority.
  * - `/accounts` lists the owner's accounts and their members; the owner can
- *   remove a member. Nothing happens on-chain.
+ *   suspend, restore, or remove a member. Nothing happens on-chain.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -392,9 +392,26 @@ const ROLE_LABEL: Readonly<Record<PortalMember["role"], string>> = {
 };
 
 /** The account's members, for its owner, with removal. */
+type MemberAction = "suspend" | "restore" | "remove";
+
+const CONFIRM: Readonly<Record<MemberAction, { label: string; note: string }>> = {
+  suspend: {
+    label: "Confirm suspension",
+    note: "They can't sign in as this account, and its app access is cut off. Nothing changes on-chain.",
+  },
+  restore: {
+    label: "Confirm restore",
+    note: "They can sign in again. App access cut off by the suspension stays off.",
+  },
+  remove: { label: "Confirm removal", note: "They leave this account. Nothing changes on-chain." },
+};
+
 function Members({ accountId }: { accountId: string }) {
   const [members, setMembers] = useState<readonly PortalMember[] | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<{
+    readonly signerId: string;
+    readonly action: MemberAction;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -405,14 +422,23 @@ function Members({ accountId }: { accountId: string }) {
     );
   }, [accountId]);
 
-  async function remove(member: PortalMember) {
+  async function act(member: PortalMember, action: MemberAction) {
     setBusy(true);
     setError(null);
     try {
-      await portalApi.removeMember(accountId, member.signer_id);
-      setMembers((current) =>
-        (current ?? []).filter((entry) => entry.signer_id !== member.signer_id),
-      );
+      if (action === "remove") {
+        await portalApi.removeMember(accountId, member.signer_id);
+        setMembers((current) =>
+          (current ?? []).filter((entry) => entry.signer_id !== member.signer_id),
+        );
+      } else {
+        const { status } = await portalApi.setMemberStatus(accountId, member.signer_id, action);
+        setMembers((current) =>
+          (current ?? []).map((entry) =>
+            entry.signer_id === member.signer_id ? { ...entry, status } : entry,
+          ),
+        );
+      }
     } catch (failure) {
       setError(linkMessage(failure));
     }
@@ -430,43 +456,78 @@ function Members({ accountId }: { accountId: string }) {
       )}
       {members && (
         <ul className="choices">
-          {members.map((member) => (
-            <li key={`${member.signer_id}:${member.link_id ?? member.grant_id ?? "root"}`}>
-              <div className="choice member">
-                <span className="choice-text">
-                  <span className="choice-title">
-                    {member.label ??
-                      (member.grant_id ? "App signer" : (KIND_LABEL[member.kind] ?? member.kind))}
+          {members.map((member) => {
+            const name =
+              member.label ??
+              (member.grant_id ? "App signer" : (KIND_LABEL[member.kind] ?? member.kind));
+            const pending = confirming?.signerId === member.signer_id ? confirming.action : null;
+            const toggle = member.status === "suspended" ? "restore" : "suspend";
+            return (
+              <li key={`${member.signer_id}:${member.link_id ?? member.grant_id ?? "root"}`}>
+                <div className="choice member">
+                  <span className="choice-text">
+                    <span className="choice-title">
+                      {name}
+                      {member.status === "suspended" && (
+                        <span className="status-badge"> Suspended</span>
+                      )}
+                    </span>
+                    <span className="choice-detail">
+                      {ROLE_LABEL[member.role]} · {KIND_LABEL[member.kind] ?? member.kind} ·{" "}
+                      <span className="mono">{signerDetail(member.profile)}</span>
+                    </span>
                   </span>
-                  <span className="choice-detail">
-                    {ROLE_LABEL[member.role]} · {KIND_LABEL[member.kind] ?? member.kind} ·{" "}
-                    <span className="mono">{signerDetail(member.profile)}</span>
-                  </span>
-                </span>
-                {member.role !== "root" &&
-                  (confirming === member.signer_id ? (
-                    <button
-                      type="button"
-                      className="danger"
-                      disabled={busy}
-                      onClick={() => remove(member)}
-                    >
-                      Confirm removal
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={busy}
-                      aria-label={`Remove ${member.label ?? signerDetail(member.profile)}`}
-                      onClick={() => setConfirming(member.signer_id)}
-                    >
-                      Remove
-                    </button>
-                  ))}
-              </div>
-            </li>
-          ))}
+                  {member.role !== "root" && pending && (
+                    <div className="member-actions">
+                      <p className="choice-detail">{CONFIRM[pending].note}</p>
+                      <button
+                        type="button"
+                        className="danger"
+                        disabled={busy}
+                        onClick={() => act(member, pending)}
+                      >
+                        {CONFIRM[pending].label}
+                      </button>
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={busy}
+                        onClick={() => setConfirming(null)}
+                      >
+                        Keep as is
+                      </button>
+                    </div>
+                  )}
+                  {member.role !== "root" && !pending && (
+                    <div className="member-actions">
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={busy}
+                        aria-label={`${toggle === "suspend" ? "Suspend" : "Restore"} ${name}`}
+                        onClick={() =>
+                          setConfirming({ signerId: member.signer_id, action: toggle })
+                        }
+                      >
+                        {toggle === "suspend" ? "Suspend" : "Restore"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={busy}
+                        aria-label={`Remove ${name}`}
+                        onClick={() =>
+                          setConfirming({ signerId: member.signer_id, action: "remove" })
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
       {error && (

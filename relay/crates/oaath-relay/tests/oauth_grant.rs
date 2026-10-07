@@ -683,3 +683,85 @@ async fn the_root_removing_a_dapp_signer_invalidates_its_grant() {
         artifact["capabilityHash"]
     );
 }
+
+#[tokio::test]
+async fn suspending_a_grant_signer_invalidates_its_grant_and_restoring_never_revives_it() {
+    let h = harness();
+    let root = Root::Ecdsa(root_key());
+    let (id, _, _, artifact, tokens) = approved_grant(&h, &root).await;
+    let (root_id, cookie) = sign_in(&h, &root).await;
+    let account_id = h
+        .send(portal_call(
+            "GET",
+            &format!("/portal/signers/{root_id}/accounts"),
+            Some(&cookie),
+            None,
+        ))
+        .await
+        .ok(200)["accounts"][0]["account_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let members = |cookie: &str| {
+        portal_call(
+            "GET",
+            &format!("/portal/accounts/{account_id}/members"),
+            Some(cookie),
+            None,
+        )
+    };
+    let dapp = h.send(members(&cookie)).await.ok(200)["members"][1].clone();
+    let dapp_id = text(&dapp, "signer_id").to_owned();
+    let move_to = |action: &str| {
+        portal_call(
+            "POST",
+            &format!("/portal/accounts/{account_id}/members/{dapp_id}/{action}"),
+            Some(&cookie),
+            Some(json!({})),
+        )
+    };
+    let grant_status = || async {
+        h.send(bearer_get(
+            &format!("/oauth/grants/{id}"),
+            text(&tokens, "access_token"),
+        ))
+        .await
+        .ok(200)["status"]
+            .clone()
+    };
+    assert_eq!(grant_status().await, "approved");
+
+    h.send(move_to("suspend")).await.ok(200);
+    assert_eq!(grant_status().await, "invalidated");
+    assert_eq!(
+        h.send(members(&cookie)).await.ok(200)["members"][1]["status"],
+        "suspended"
+    );
+    let mut transaction = h.store.begin().await.unwrap();
+    let invalidation = transaction
+        .lock_capability_invalidation(&id)
+        .await
+        .unwrap()
+        .unwrap();
+    transaction.rollback().await;
+    assert_eq!(
+        json!(invalidation.capability_hash),
+        artifact["capabilityHash"]
+    );
+
+    h.send(move_to("restore")).await.ok(200);
+    assert_eq!(
+        h.send(members(&cookie)).await.ok(200)["members"][1]["status"],
+        "active"
+    );
+    assert_eq!(grant_status().await, "invalidated");
+    // Restore takes no body.
+    h.send(portal_call(
+        "POST",
+        &format!("/portal/accounts/{account_id}/members/{dapp_id}/suspend"),
+        Some(&cookie),
+        Some(json!({ "reason": "x" })),
+    ))
+    .await
+    .failure(E::RequestInvalid);
+}
