@@ -194,7 +194,7 @@ let consumer;
 try {
   consumer = await createConsumer({
     label: "process-recovery",
-    packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing"],
+    packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/testing"],
     dependencies: { "@types/node": "22.13.0" },
     types: ["node"],
     skipLibCheck: true,

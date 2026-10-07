@@ -27,7 +27,10 @@ import {
   exactCapturedRecord,
   exactRecord,
 } from "./internal/exact-record.js";
-import { parseWorkspaceAccountContext, type WorkspaceAccountContext } from "./service-bootstrap.js";
+import {
+  parseWorkspaceAccountContext,
+  type WorkspaceAccountContext,
+} from "./workspace-account-context.js";
 
 export const OAATH_PERMISSION_REQUEST_VERSION = "oaath.permission-request/v2" as const;
 export const OAATH_PERMISSION_DECISION_VERSION = "oaath.permission-decision/v1" as const;

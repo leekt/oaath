@@ -5,7 +5,7 @@ import { createConsumer } from "./packed-consumer.mjs";
 
 const consumer = await createConsumer({
   label: "runtime-cli",
-  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing", "@oaath/cli"],
+  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/testing", "@oaath/cli"],
   files: {
     "run.mjs": `
 import { execFile, spawn } from "node:child_process";

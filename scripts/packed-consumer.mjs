@@ -2,7 +2,7 @@
  * Owns: building, packing, and installing workspace tarballs into a clean
  * consumer outside the workspace.
  *
- * Shared by `smoke-packed-browser.mjs` and `smoke-packed-server.mjs`. A consumer
+ * Shared by the `smoke-packed-*.mjs` scripts. A consumer
  * lives in a fresh temporary directory with its own `node_modules`, installed by
  * `npm` from tarballs only, so nothing resolves through the Bun workspace link
  * farm and no `src` path is reachable. `bun pm pack` rewrites `workspace:*` to the

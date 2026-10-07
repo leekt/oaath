@@ -3,8 +3,8 @@
  * order (build, and the pack/publish scripts whose prepack builds).
  *
  * `bun run --workspaces` and `bun run --filter` start scripts concurrently once
- * the dev graph has a cycle (the SDK's tests depend on `@oaath/server` and
- * `@oaath/testing`, which depend on the SDK), so a dependent can bundle a
+ * the dev graph has a cycle (the SDK's tests depend on `@oaath/testing`,
+ * which depends on the SDK), so a dependent can bundle a
  * `dist` that is still being replaced. Only runtime `dependencies` and
  * `peerDependencies` order scripts here; each runs after its dependencies
  * finish.

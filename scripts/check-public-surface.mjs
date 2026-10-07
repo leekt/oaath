@@ -14,23 +14,18 @@
  *      `@oaath/protocol` root entries reaches no `node:*`, no driver, and no
  *      test-only package.
  *   2. Direction: production edges match the declared table exactly, so
- *      protocol depends on nothing internal, sdk only on protocol, server
- *      composes the SDK through its Kernel execution subpath, and
+ *      protocol depends on nothing internal, sdk only on protocol, and
  *      `@oaath/testing` is never a production dependency of anything.
  *   3. Provenance: every published entry points at built artifacts, never
  *      `src`, and every public package builds those artifacts during `prepack`.
  *      Private packages are never published and are exempt from the provenance
  *      rule.
  *   4. Version-agnostic names: no value or type exported from any published
- *      `@oaath/protocol`, `@oaath/sdk`, `@oaath/server` or `@oaath/testing`
+ *      `@oaath/protocol`, `@oaath/sdk` or `@oaath/testing`
  *      entry names a Kernel version (`V33`/`V4`). An artifact's own version
  *      discriminant carries its version. Kernel and EntryPoint versions are
  *      detected or optional settings; deployment-specific addresses are
  *      `kernelDeployment(...)` fields.
- *
- * `@oaath/server`'s own entry graphs are owned by
- * `packages/server/test/package.test.ts`; this gate covers the graphs that
- * cross a package boundary.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -48,7 +43,6 @@ const FORBIDDEN = [
     match: (target) => target === "postgres" || target.startsWith("postgres/"),
     why: "PostgreSQL driver",
   },
-  { match: (target) => target === "@oaath/server/postgres", why: "Node-only PostgreSQL subpath" },
   { match: (target) => target.startsWith("@oaath/testing"), why: "test-only package" },
 ];
 
@@ -60,8 +54,7 @@ const FORBIDDEN = [
 const DIRECTION = {
   "@oaath/protocol": [],
   "@oaath/sdk": ["@oaath/protocol"],
-  "@oaath/server": ["@oaath/protocol", "@oaath/sdk"],
-  "@oaath/testing": ["@oaath/protocol", "@oaath/sdk", "@oaath/server"],
+  "@oaath/testing": ["@oaath/protocol", "@oaath/sdk"],
   "@oaath/contracts": [],
   "@oaath/cli": ["@oaath/sdk"],
 };
@@ -245,12 +238,7 @@ async function exportedNames(file) {
 }
 
 /** Published packages whose every entry must export no Kernel-version name. */
-const VERSION_AGNOSTIC_PACKAGES = [
-  "@oaath/protocol",
-  "@oaath/sdk",
-  "@oaath/server",
-  "@oaath/testing",
-];
+const VERSION_AGNOSTIC_PACKAGES = ["@oaath/protocol", "@oaath/sdk", "@oaath/testing"];
 
 async function checkVersionAgnosticEntries(workspace) {
   let count = 0;
