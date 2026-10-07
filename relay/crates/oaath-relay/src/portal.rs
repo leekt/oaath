@@ -7,8 +7,9 @@
 //! POST /portal/accounts                {root_signer_id}  -> {account_id, address, profile}
 //! ```
 //!
-//! The portal is unauthenticated: registering a signer or deriving an account
-//! grants no authority, because only a root signature can approve anything.
+//! Registering a signer and recognising a passkey are public: they reveal no
+//! account. A signer's accounts and account creation require that signer's
+//! portal session (`session.rs`). Only a root signature approves anything.
 //! The routes are same-origin only, so another site cannot drive them from a
 //! visitor's browser.
 
@@ -208,10 +209,12 @@ pub struct CreatedAccount {
 
 /// Derives the root signer's next counterfactual account (the smallest unused
 /// index) and records it with its root membership in one transaction.
+/// `session` is the request's proven signer; only it may be the root.
 pub async fn create_account(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
     body: &Map<String, Value>,
+    session: &str,
 ) -> RelayResult<CreatedAccount> {
     if body.len() != 1 {
         return Err(INVALID);
@@ -221,6 +224,9 @@ pub async fn create_account(
         .and_then(Value::as_str)
         .ok_or(INVALID)?;
     canonical_str(root_signer_id, INVALID)?;
+    if root_signer_id != session {
+        return Err(RelayErrorCode::Forbidden);
+    }
     let now = relay_now(clock)?;
     let mut transaction = store.begin().await?;
     let result = create(&mut *transaction, root_signer_id, now).await;

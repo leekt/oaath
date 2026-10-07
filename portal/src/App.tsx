@@ -1,7 +1,8 @@
 /**
- * The "Login with OAAth" popup: choose a signer, then an account, then return
- * to the dapp. Choosing is the whole login; nothing here signs anything. A
- * grant adds one review in which the account root signs the dapp's request.
+ * The "Login with OAAth" popup: sign in with a signer, then choose an account,
+ * then return to the dapp. Signing in proves the signer (a passkey assertion
+ * or a wallet's Sign-In with Ethereum message) and approves nothing. A grant
+ * adds one review in which the account root signs the dapp's request.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -15,11 +16,11 @@ import {
   transactionIdFromRequestUri,
 } from "./api.js";
 import { GrantReview } from "./GrantReview.js";
+import { signInPasskey, signInUnknownPasskey, signInWallet } from "./session.js";
 import {
   type AnnouncedWallet,
   connectWallet,
   createPasskey,
-  identifyPasskey,
   type NewSigner,
   type RememberedSigner,
   rememberedSigners,
@@ -51,6 +52,16 @@ function message(error: unknown): string {
     case "unsupported":
     case "rp-mismatch":
       return "This browser cannot create a passkey here.";
+    case "wallet-unavailable":
+      return "Your wallet isn't available. Open it and try again.";
+    case "wallet-declined":
+      return "The sign-in was declined in your wallet.";
+    case "wallet-account-mismatch":
+      return "Your wallet is on another account. Switch to this signer's account and try again.";
+    case "sign-in-refused":
+      return "OAAth couldn't verify that sign-in. Please try again.";
+    case "relay_unauthenticated":
+      return "Your sign-in expired. Choose your signer again.";
     default:
       return "Something went wrong. Please try again.";
   }
@@ -163,7 +174,11 @@ function Authorize({ transactionId }: { transactionId: string }) {
       {step.name === "account" && (
         <AccountStep
           signer={step.signer}
-          onBack={() => setStep({ name: "signer" })}
+          onBack={() => {
+            // Best effort: the session also expires on its own.
+            portalApi.signOut().catch(() => {});
+            setStep({ name: "signer" });
+          }}
           rootOnly={grant !== undefined}
           onChosen={(account) =>
             grant
@@ -209,16 +224,13 @@ function SignerStep({
   useEffect(() => heading.current?.focus(), []);
   useEffect(() => (adding ? watchWallets(setWallets) : undefined), [adding]);
 
-  async function add(create: () => Promise<NewSigner | null>) {
+  /** Every path ends in a fresh session for the chosen signer. */
+  async function run(choose: () => Promise<RememberedSigner | null>) {
     setBusy(true);
     setError(null);
     try {
-      const created = await create();
-      if (!created) throw Object.assign(new Error("unknown passkey"), { code: "passkey-unknown" });
-      const { signerId, ...fields } = created;
-      const signer_id =
-        signerId ?? (await portalApi.registerSigner({ profile: created.profile })).signer_id;
-      const signer = { ...fields, signer_id, lastUsedAt: Date.now() };
+      const signer = await choose();
+      if (!signer) throw Object.assign(new Error("unknown passkey"), { code: "passkey-unknown" });
       rememberSigner(signer);
       onChosen(signer);
     } catch (failure) {
@@ -227,11 +239,32 @@ function SignerStep({
     }
   }
 
+  async function signIn(signer: RememberedSigner, wallet: AnnouncedWallet | null = null) {
+    if (signer.profile.kind === "ecdsa")
+      await signInWallet(signer.signer_id, signer.profile.address, wallet, signer.rdns);
+    else await signInPasskey(signer.signer_id, signer);
+    return { ...signer, lastUsedAt: Date.now() };
+  }
+
+  async function add(create: () => Promise<NewSigner>, wallet: AnnouncedWallet | null = null) {
+    const created = await create();
+    const { signer_id } = await portalApi.registerSigner({ profile: created.profile });
+    return signIn({ ...created, signer_id, lastUsedAt: Date.now() }, wallet);
+  }
+
+  async function recognise() {
+    const found = await signInUnknownPasskey();
+    if (!found) return null;
+    const { signerId, ...fields } = found;
+    return { ...fields, signer_id: signerId, lastUsedAt: Date.now() };
+  }
+
   return (
     <section aria-labelledby="signer-heading">
       <h1 id="signer-heading" ref={heading} tabIndex={-1}>
         Sign in with…
       </h1>
+      <p className="quiet">Your passkey or wallet confirms it's you. This approves nothing.</p>
       {signers.length === 0 ? (
         <p className="quiet">No signers on this browser yet. Add one to continue.</p>
       ) : (
@@ -242,7 +275,7 @@ function SignerStep({
                 type="button"
                 className="choice"
                 disabled={busy}
-                onClick={() => onChosen(signer)}
+                onClick={() => run(() => signIn(signer))}
               >
                 <span className={`badge badge-${signer.kind}`} aria-hidden="true" />
                 <span className="choice-text">
@@ -264,7 +297,7 @@ function SignerStep({
         Add signer
       </button>
       <p>
-        <button type="button" className="link" disabled={busy} onClick={() => add(identifyPasskey)}>
+        <button type="button" className="link" disabled={busy} onClick={() => run(recognise)}>
           Use a passkey from another device or browser
         </button>
       </p>
@@ -275,7 +308,7 @@ function SignerStep({
               type="button"
               className="choice"
               disabled={busy}
-              onClick={() => add(() => createPasskey(signers))}
+              onClick={() => run(() => add(() => createPasskey(signers)))}
             >
               <span className="badge badge-passkey" aria-hidden="true" />
               <span className="choice-text">
@@ -293,12 +326,12 @@ function SignerStep({
                   type="button"
                   className="choice"
                   disabled={busy}
-                  onClick={() => add(() => connectWallet(wallet))}
+                  onClick={() => run(() => add(() => connectWallet(wallet), wallet))}
                 >
                   <span className="badge badge-wallet" aria-hidden="true" />
                   <span className="choice-text">
                     <span className="choice-title">{wallet.info.name}</span>
-                    <span className="choice-detail">Connect wallet (no signature)</span>
+                    <span className="choice-detail">Sign in with your wallet</span>
                   </span>
                 </button>
               </li>
@@ -316,6 +349,11 @@ function SignerStep({
             </button>
           </li>
         </ul>
+      )}
+      {busy && (
+        <p className="quiet" aria-live="polite">
+          Confirm the sign-in with your passkey or wallet…
+        </p>
       )}
       {error && (
         <p className="error" role="alert">

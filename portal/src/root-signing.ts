@@ -9,7 +9,6 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { p256 } from "@noble/curves/nist.js";
 import {
   hashGrantPolicy,
   hashOwnerSigningRequest,
@@ -30,7 +29,8 @@ import {
   prepareDerivedAccountPermissionApproval,
 } from "@oaath/sdk/kernel";
 import type { GrantDetail, PortalAccount, PrepareGrantResponse } from "./api.js";
-import { type AnnouncedWallet, type RememberedSigner, watchWallets } from "./signers.js";
+import { assertionFields, bytesFromBase64Url, findWallet } from "./session.js";
+import type { RememberedSigner } from "./signers.js";
 
 /** A refusal with a closed code the screen turns into copy. */
 export class RootSigningError extends Error {
@@ -83,37 +83,6 @@ export function reviewedRequest(input: {
   return request;
 }
 
-/** The remembered wallet, once it announces itself again (EIP-6963). */
-function findWallet(rdns: string | null): Promise<AnnouncedWallet> {
-  return new Promise((resolve, reject) => {
-    let stop = () => {};
-    const timer = setTimeout(() => {
-      stop();
-      reject(new RootSigningError("wallet-unavailable"));
-    }, 3_000);
-    stop = watchWallets((wallets) => {
-      const wallet = wallets.find((entry) => entry.info.rdns === rdns);
-      if (!wallet) return;
-      clearTimeout(timer);
-      queueMicrotask(() => stop());
-      resolve(wallet);
-    });
-  });
-}
-
-function bytesFromBase64Url(value: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(value.replace(/-/gu, "+").replace(/_/gu, "/"));
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-}
-
-function hex(bytes: Uint8Array): `0x${string}` {
-  return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-}
-
-function word(value: bigint): `0x${string}` {
-  return `0x${value.toString(16).padStart(64, "0")}`;
-}
-
 /** A key profile for the account root, signing only through the user's own device. */
 async function rootKey(signer: RememberedSigner, typedData: unknown) {
   const profile = signer.profile;
@@ -159,16 +128,7 @@ async function rootKey(signer: RememberedSigner, typedData: unknown) {
           },
         })) as PublicKeyCredential | null;
         if (!credential) return refuse("passkey-cancelled");
-        const response = credential.response as AuthenticatorAssertionResponse;
-        const signature = p256.Signature.fromDER(new Uint8Array(response.signature));
-        const clientDataJSON = new TextDecoder().decode(response.clientDataJSON);
-        return {
-          authenticatorData: hex(new Uint8Array(response.authenticatorData)),
-          clientDataJSON,
-          responseTypeLocation: String(clientDataJSON.indexOf('"type":"webauthn.get"')),
-          r: word(signature.r),
-          s: word(signature.s),
-        };
+        return assertionFields(credential);
       },
     });
   }

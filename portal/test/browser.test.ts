@@ -1,6 +1,7 @@
 /**
  * The built portal in headless Chrome against a stub relay whose responses are
- * the typed `src/api.ts` shapes. The real relay end-to-end is a later proof.
+ * the typed `src/api.ts` shapes. The stub accepts any sign-in proof; the real
+ * relay verifies them in `login.e2e.ts`.
  */
 import { generateKeyPairSync } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
@@ -10,8 +11,10 @@ import { fileURLToPath } from "node:url";
 import { hashPermissionRequest, parsePermissionRequest } from "@oaath/protocol";
 import { prepareDerivedAccountPermissionApproval } from "@oaath/sdk/kernel";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import { keccak256 } from "viem";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
+  ChallengeResponse,
   CreateAccountResponse,
   DecisionRequest,
   GrantDetail,
@@ -22,6 +25,7 @@ import type {
   RedirectResponse,
   RegisterSignerResponse,
   SignerAccountsResponse,
+  SignInResponse,
 } from "../src/api.js";
 import type { RememberedSigner } from "../src/signers.js";
 
@@ -115,22 +119,8 @@ const ROOT_ACCOUNT: PortalAccount = {
   },
 };
 const GRANT_SIGNER: RememberedSigner = { ...WALLET_SIGNER, signer_id: "signer-grant" };
-const PHONE_SIGNER: RememberedSigner = {
-  ...WALLET_SIGNER,
-  signer_id: "signer-phone",
-  kind: "phone",
-  label: "Phone",
-  profile: {
-    version: "oaath.owner-credential-profile/v1",
-    kind: "p256",
-    publicKey: KNOWN_PUBLIC_KEY,
-  },
-};
-const PHONE_ACCOUNT: PortalAccount = {
-  ...ROOT_ACCOUNT,
-  account_id: "account-phone-root",
-  profile: { ...ROOT_ACCOUNT.profile, ownerCredential: PHONE_SIGNER.profile },
-};
+const NONCE = "ab".repeat(32);
+const SIWE_MESSAGE = "oaath sign-in message";
 
 function grantPreparation(account: PortalAccount): PrepareGrantResponse {
   const request = parsePermissionRequest({
@@ -183,10 +173,7 @@ async function stubRelay(path: string, method: string, body: unknown) {
   const grant = /^\/portal\/transactions\/(par-grant(?:-tampered)?)(\/prepare)?$/u.exec(path);
   if (grant?.[1] && !grant[2] && method === "GET") return grantTransaction(grant[1]);
   if (grant?.[1] && grant[2] && method === "POST") {
-    const selection = body as { account_id: string };
-    const prepared = grantPreparation(
-      selection.account_id === PHONE_ACCOUNT.account_id ? PHONE_ACCOUNT : ROOT_ACCOUNT,
-    );
+    const prepared = grantPreparation(ROOT_ACCOUNT);
     return grant[1] === "par-grant-tampered"
       ? {
           ...prepared,
@@ -203,6 +190,17 @@ async function stubRelay(path: string, method: string, body: unknown) {
       authorization_details: [],
       expires_at: Math.floor(Date.now() / 1000) + 600,
     } satisfies PortalTransaction;
+  if (path === "/portal/sessions/challenge" && method === "POST")
+    return {
+      nonce: NONCE,
+      expires_at: NOW + 300,
+      ...((body as { signer_id?: string }).signer_id ? { message: SIWE_MESSAGE } : {}),
+    } satisfies ChallengeResponse;
+  if (path === "/portal/sessions" && method === "POST")
+    return {
+      signer_id: (body as { signer_id: string }).signer_id,
+      expires_at: NOW + 1800,
+    } satisfies SignInResponse;
   if (path === "/portal/signers" && method === "POST")
     return { signer_id: "signer-passkey" } satisfies RegisterSignerResponse;
   const listed = /^\/portal\/signers\/([\w-]+)\/accounts$/u.exec(path);
@@ -241,7 +239,7 @@ async function stubRelay(path: string, method: string, body: unknown) {
         version: "oaath.owner-credential-profile/v1",
         kind: "webauthn",
         publicKey: KNOWN_PUBLIC_KEY,
-        authenticatorIdHash: `0x${"77".repeat(32)}`,
+        authenticatorIdHash: keccak256(KNOWN_CREDENTIAL_BYTES),
       },
     } satisfies IdentifiedSigner;
   return null;
@@ -258,7 +256,6 @@ beforeAll(async () => {
       role: "permission",
     },
   ]);
-  accounts.set(PHONE_SIGNER.signer_id, [PHONE_ACCOUNT]);
   server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     let raw = "";
@@ -322,9 +319,53 @@ afterAll(async () => {
   await new Promise((resolve) => server?.close(resolve));
 });
 
+/**
+ * An EIP-6963 wallet in every document of `page`, recording each method and
+ * `personal_sign` request. It signs nothing real: the stub relay accepts any proof.
+ */
+async function installWallet(page: Page, name = "Test Wallet", rdns = "test.wallet") {
+  await page.evaluateOnNewDocument(
+    (wallet: { name: string; rdns: string; address: string }) => {
+      const methods: string[] = [];
+      const signed: unknown[] = [];
+      Object.assign(window, { walletMethods: methods, walletSigned: signed });
+      const provider = {
+        request: async ({ method, params }: { method: string; params?: unknown }) => {
+          methods.push(method);
+          if (method === "personal_sign") {
+            signed.push(params);
+            return `0x${"99".repeat(65)}`;
+          }
+          return [wallet.address];
+        },
+      };
+      window.addEventListener("eip6963:requestProvider", () =>
+        window.dispatchEvent(
+          new CustomEvent("eip6963:announceProvider", {
+            detail: Object.freeze({
+              info: { uuid: wallet.rdns, name: wallet.name, icon: "", rdns: wallet.rdns },
+              provider,
+            }),
+          }),
+        ),
+      );
+    },
+    {
+      name,
+      rdns,
+      address: `0x${(rdns === "test.wallet" ? "11" : "22").repeat(20)}`,
+    },
+  );
+}
+
+function walletMethods(page: Page) {
+  return page.evaluate(() => (window as unknown as { walletMethods: string[] }).walletMethods);
+}
+
 async function openPortal(seed: readonly RememberedSigner[], transaction = "par-1"): Promise<Page> {
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 844 });
+  await installWallet(page);
   await page.evaluateOnNewDocument((signers: string) => {
     localStorage.setItem("oaath.portal.signers/v1", signers);
   }, JSON.stringify(seed));
@@ -367,9 +408,20 @@ describe("portal in Chrome", () => {
     await clickText(page, "Create account");
     await page.waitForSelector("::-p-text(0xabab…abab)");
     await capture(page, "3-account-created");
+    expect(await walletMethods(page)).toEqual(["eth_requestAccounts", "personal_sign"]);
     await Promise.all([page.waitForNavigation(), clickText(page, "0xabab…abab")]);
     expect(page.url()).toBe(`${origin}/dapp/callback?code=code-1&state=s`);
     expect(calls.filter((call) => call.method === "POST")).toEqual([
+      {
+        method: "POST",
+        path: "/portal/sessions/challenge",
+        body: { signer_id: "signer-wallet" },
+      },
+      {
+        method: "POST",
+        path: "/portal/sessions",
+        body: { signer_id: "signer-wallet", nonce: NONCE, signature: `0x${"99".repeat(65)}` },
+      },
       { method: "POST", path: "/portal/accounts", body: { root_signer_id: "signer-wallet" } },
       {
         method: "POST",
@@ -384,7 +436,7 @@ describe("portal in Chrome", () => {
     await page.close();
   });
 
-  it("adds a passkey signer without signing anything, and offers the phone as coming soon", async () => {
+  it("adds a passkey signer and signs it in with an assertion over the relay's nonce", async () => {
     calls.length = 0;
     const page = await openPortal([]);
     const session = await page.createCDPSession();
@@ -407,6 +459,12 @@ describe("portal in Chrome", () => {
     await capture(page, "4-add-signer");
     await clickText(page, "New passkey");
     await page.waitForSelector("#account-heading");
+    const signIn = calls.find((call) => call.path === "/portal/sessions");
+    expect(signIn?.body).toMatchObject({
+      signer_id: "signer-passkey",
+      nonce: NONCE,
+      signature: expect.stringMatching(/^0x[0-9a-f]+$/u),
+    });
     const [register] = calls.filter((call) => call.path === "/portal/signers");
     if (!register) throw new Error("the passkey signer was not registered");
     const profile = (register.body as { profile: Record<string, string> }).profile;
@@ -421,38 +479,24 @@ describe("portal in Chrome", () => {
     await page.close();
   });
 
-  it("connects an EIP-6963 wallet with eth_requestAccounts only", async () => {
+  it("connects an EIP-6963 wallet and signs in with personal_sign of the relay's message", async () => {
     calls.length = 0;
     const page = await browser.newPage();
-    await page.evaluateOnNewDocument(() => {
-      const methods: string[] = [];
-      Object.assign(window, { walletMethods: methods });
-      const provider = {
-        request: async ({ method }: { method: string }) => {
-          methods.push(method);
-          return [`0x${"22".repeat(20)}`];
-        },
-      };
-      window.addEventListener("eip6963:requestProvider", () =>
-        window.dispatchEvent(
-          new CustomEvent("eip6963:announceProvider", {
-            detail: Object.freeze({
-              info: { uuid: "wallet-1", name: "Fixture Wallet", icon: "", rdns: "test.fixture" },
-              provider,
-            }),
-          }),
-        ),
-      );
-    });
+    await installWallet(page, "Fixture Wallet", "test.fixture");
     await page.goto(
       `${origin}/authorize?client_id=client-1&request_uri=urn:ietf:params:oauth:request_uri:par-1`,
     );
     await clickText(page, "Add signer");
     await clickText(page, "Fixture Wallet");
     await page.waitForSelector("#account-heading");
+    expect(await walletMethods(page)).toEqual([
+      "eth_requestAccounts",
+      "eth_requestAccounts",
+      "personal_sign",
+    ]);
     expect(
-      await page.evaluate(() => (window as unknown as { walletMethods: string[] }).walletMethods),
-    ).toEqual(["eth_requestAccounts"]);
+      await page.evaluate(() => (window as unknown as { walletSigned: unknown[] }).walletSigned),
+    ).toEqual([[`0x${Buffer.from(SIWE_MESSAGE).toString("hex")}`, `0x${"22".repeat(20)}`]]);
     const [register] = calls.filter((call) => call.path === "/portal/signers");
     expect(register?.body).toEqual({
       profile: {
@@ -497,9 +541,12 @@ describe("portal in Chrome", () => {
     await withResidentPasskey(page, KNOWN_CREDENTIAL_BYTES);
     await clickText(page, "Use a passkey from another device or browser");
     await page.waitForSelector("#account-heading");
+    // One assertion both names the passkey and signs the relay's nonce.
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
       "GET /portal/transactions/par-1",
+      "POST /portal/sessions/challenge",
       `GET /portal/signers/by-credential/${KNOWN_CREDENTIAL}`,
+      "POST /portal/sessions",
       "GET /portal/signers/signer-known-passkey/accounts",
     ]);
     const remembered = await page.evaluate(() => localStorage.getItem("oaath.portal.signers/v1"));
@@ -572,66 +619,16 @@ describe("portal in Chrome", () => {
 
   it("refuses a signing request whose digest it did not derive, before any wallet prompt", async () => {
     calls.length = 0;
-    const page = await browser.newPage();
-    await page.evaluateOnNewDocument(
-      (signers: string) => {
-        localStorage.setItem("oaath.portal.signers/v1", signers);
-        const methods: string[] = [];
-        Object.assign(window, { walletMethods: methods });
-        const provider = {
-          request: async ({ method }: { method: string }) => {
-            methods.push(method);
-            return [`0x${"11".repeat(20)}`];
-          },
-        };
-        window.addEventListener("eip6963:requestProvider", () =>
-          window.dispatchEvent(
-            new CustomEvent("eip6963:announceProvider", {
-              detail: Object.freeze({
-                info: { uuid: "w", name: "Test Wallet", icon: "", rdns: "test.wallet" },
-                provider,
-              }),
-            }),
-          ),
-        );
-      },
-      JSON.stringify([GRANT_SIGNER]),
-    );
-    await page.goto(
-      `${origin}/authorize?client_id=client-1&request_uri=urn:ietf:params:oauth:request_uri:par-grant-tampered`,
-    );
+    const page = await openPortal([GRANT_SIGNER], "par-grant-tampered");
     await clickText(page, "Test Wallet");
     await clickText(page, "0xabab…abab");
     await page.waitForSelector("::-p-text(Approve and sign):not([disabled])");
     await clickText(page, "Approve and sign");
     const alert = await page.waitForSelector("[role=alert]");
     expect(await alert?.evaluate((node) => node.textContent)).toContain("will not sign it");
-    expect(
-      await page.evaluate(() => (window as unknown as { walletMethods: string[] }).walletMethods),
-    ).toEqual([]);
+    // Only the sign-in was signed; the grant typed data never reached the wallet.
+    expect(await walletMethods(page)).toEqual(["eth_requestAccounts", "personal_sign"]);
     expect(calls.some((call) => call.path.endsWith("/decision"))).toBe(false);
-    await page.close();
-  });
-
-  it("offers a phone root approval only as coming soon, and cancels with access_denied", async () => {
-    calls.length = 0;
-    const page = await openPortal([PHONE_SIGNER], "par-grant");
-    await clickText(page, "Phone");
-    await clickText(page, "0xabab…abab");
-    await page.waitForSelector(".review");
-    expect(
-      await page.$eval(
-        "::-p-text(Approve on your phone)",
-        (node) => (node as HTMLButtonElement).disabled,
-      ),
-    ).toBe(true);
-    await Promise.all([page.waitForNavigation(), clickText(page, "Cancel and return to the app")]);
-    expect(new URL(page.url()).searchParams.get("error")).toBe("access_denied");
-    expect(calls.at(-1)).toEqual({
-      method: "POST",
-      path: "/portal/transactions/par-grant/decision",
-      body: { outcome: "cancelled" },
-    });
     await page.close();
   });
 });

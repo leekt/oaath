@@ -25,6 +25,9 @@
 //! DELETE /portal/sessions                            portal  sign out, clear cookie
 //! ```
 //!
+//! A signer's accounts, account creation, and grant prepare and approved
+//! decisions require that signer's portal session (`session.rs`).
+//!
 //! Later stages: `/grants/{grantId}/revocations/{chainId}`, `/chains/...`,
 //! `/session-signers...`, and `/native/...` answer `relay_not_found` here,
 //! exactly as the TypeScript relay does when those surfaces are unconfigured.
@@ -72,7 +75,10 @@ use crate::portal::{
 use crate::records::{
     bounded_text, canonical_identifier, canonical_str, is_lowercase_hash, limits,
 };
-use crate::session::{cleared_session_cookie, issue_challenge, session_cookie, sign_in, sign_out};
+use crate::session::{
+    cleared_session_cookie, issue_challenge, require_signer, session_cookie, session_signer,
+    sign_in, sign_out,
+};
 use crate::store::RelayStore;
 
 const DEFAULT_REQUEST_TTL_MS: u64 = 300_000;
@@ -435,7 +441,7 @@ impl Relay {
             return Err(RelayErrorCode::NotFound);
         }
 
-        // Unauthenticated portal registry routes; same-origin only.
+        // Portal routes; same-origin only.
         if head == Some("portal") {
             assert_same_origin(headers)?;
             let store = self.store.as_ref();
@@ -478,12 +484,14 @@ impl Relay {
             if count == 4 && group == Some("signers") && fourth == Some("accounts") {
                 require_method(method, &Method::GET)?;
                 let signer_id = canonical_str(third.unwrap_or_default(), INVALID)?;
+                require_signer(store, clock, headers, signer_id).await?;
                 return reply(200, &signer_accounts(store, signer_id).await?);
             }
             if count == 2 && group == Some("accounts") {
                 require_method(method, &Method::POST)?;
+                let session = session_signer(store, clock, headers).await?;
                 let body = body_record(headers, body, self.max_body_bytes).await?;
-                return reply(201, &create_account(store, clock, &body).await?);
+                return reply(201, &create_account(store, clock, &body, &session).await?);
             }
             if group == Some("transactions") && (count == 3 || count == 4) {
                 let oauth = self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?;
@@ -498,6 +506,11 @@ impl Relay {
                         require_method(method, &Method::POST)?;
                         let body = body_record(headers, body, self.max_body_bytes).await?;
                         let decision = login_decision(&body)?;
+                        if let LoginDecision::Approved { signer_id, .. }
+                        | LoginDecision::Grant { signer_id, .. } = &decision
+                        {
+                            require_signer(store, clock, headers, signer_id).await?;
+                        }
                         if let LoginDecision::Grant {
                             signer_id,
                             account_id,
@@ -532,8 +545,10 @@ impl Relay {
                     }
                     Some("prepare") => {
                         require_method(method, &Method::POST)?;
+                        let session = session_signer(store, clock, headers).await?;
                         let body = body_record(headers, body, self.max_body_bytes).await?;
-                        return reply(200, &prepare_grant(store, clock, id, &body).await?);
+                        let prepared = prepare_grant(store, clock, id, &body, &session).await?;
+                        return reply(200, &prepared);
                     }
                     Some("redirect") => {
                         require_method(method, &Method::GET)?;

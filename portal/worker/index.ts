@@ -5,11 +5,13 @@
  * - `/`, `/authorize`, `/assets/*`: built assets (GET/HEAD only).
  * - `/oauth/*`, `/.well-known/*`: public OAuth surface; cross-site allowed with
  *   credential-free CORS, because dapps call it from their own origins.
- * - `/portal/*`: the portal's private API; same-origin only.
+ * - `/portal/*`: the portal's private API; same-origin only. Its session
+ *   cookie (`Path=/portal`) is forwarded both ways.
  *
  * Only an allow-list of request headers reaches the relay, so client-supplied
  * forwarding headers (`x-forwarded-*`, `forwarded`, `cf-*`) never do, and
- * request bodies are capped before they are forwarded.
+ * request bodies are capped before they are forwarded. The OAuth surface never
+ * carries a cookie in either direction.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -100,12 +102,13 @@ async function cappedBody(request: Request): Promise<Uint8Array<ArrayBuffer> | n
   return body;
 }
 
+/** `cors` marks the public OAuth surface; anything else is the portal API. */
 async function forward(request: Request, url: URL, env: Env, cors: boolean): Promise<Response> {
   const reading = request.method === "GET" || request.method === "HEAD";
   const body = reading ? undefined : await cappedBody(request);
   if (body === null) return failure(413, "Request too large", cors);
   const headers = new Headers();
-  for (const name of FORWARDED_HEADERS) {
+  for (const name of cors ? FORWARDED_HEADERS : [...FORWARDED_HEADERS, "cookie"]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
@@ -126,7 +129,12 @@ async function forward(request: Request, url: URL, env: Env, cors: boolean): Pro
   }
   if (upstream.status >= 300 && upstream.status < 400)
     return failure(502, "Unexpected relay redirect", cors);
-  return secured(upstream, { "Cache-Control": "no-store", ...(cors ? CORS_HEADERS : {}) });
+  const response = secured(upstream, {
+    "Cache-Control": "no-store",
+    ...(cors ? CORS_HEADERS : {}),
+  });
+  if (cors) response.headers.delete("set-cookie");
+  return response;
 }
 
 export default {
@@ -148,7 +156,8 @@ export default {
         return failure(403, "Cross-site request refused");
       if (!reading && request.headers.get("origin") !== ORIGIN)
         return failure(403, "Request origin does not match");
-      if (!reading && request.method !== "POST") return failure(405, "Unsupported method");
+      if (!reading && request.method !== "POST" && request.method !== "DELETE")
+        return failure(405, "Unsupported method");
       return forward(request, url, env, false);
     }
 

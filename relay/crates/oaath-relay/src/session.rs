@@ -419,6 +419,21 @@ pub async fn session_signer(
     Ok(session.signer_id)
 }
 
+/// Requires the request's active session to be `signer_id`'s: no session is
+/// `relay_unauthenticated`, another signer's is `relay_forbidden`.
+pub async fn require_signer(
+    store: &dyn RelayStore,
+    clock: &dyn RelayClock,
+    headers: &HeaderMap,
+    signer_id: &str,
+) -> RelayResult<()> {
+    if session_signer(store, clock, headers).await? == signer_id {
+        Ok(())
+    } else {
+        Err(RelayErrorCode::Forbidden)
+    }
+}
+
 /// Ends the request's session, if it carries an active one.
 pub async fn sign_out(
     store: &dyn RelayStore,

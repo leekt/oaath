@@ -282,10 +282,22 @@ fn portal_request(
     path: &str,
     body: Option<Value>,
 ) -> axum::http::Request<axum::body::Body> {
-    let builder = axum::http::Request::builder()
+    portal_as(method, path, None, body)
+}
+
+fn portal_as(
+    method: &str,
+    path: &str,
+    cookie: Option<&str>,
+    body: Option<Value>,
+) -> axum::http::Request<axum::body::Body> {
+    let mut builder = axum::http::Request::builder()
         .method(method)
         .uri(path)
         .header("sec-fetch-site", "same-origin");
+    if let Some(cookie) = cookie {
+        builder = builder.header("cookie", cookie);
+    }
     match body {
         Some(body) => builder
             .header("content-type", "application/json")
@@ -314,11 +326,26 @@ async fn register(h: &Harness, profile: Value) -> String {
     text(reply.ok(200), "signer_id").to_owned()
 }
 
+/// Creates an account in the signer's own session (setup: the fixture signer
+/// has no key; sign-in is proven below and in `session.rs`).
 async fn create_account(h: &Harness, signer_id: &str) -> Reply {
-    h.send(portal_request(
+    let cookie = h.session_for(signer_id).await;
+    h.send(portal_as(
         "POST",
         "/portal/accounts",
+        Some(&cookie),
         Some(json!({ "root_signer_id": signer_id })),
+    ))
+    .await
+}
+
+async fn signer_accounts(h: &Harness, signer_id: &str) -> Reply {
+    let cookie = h.session_for(signer_id).await;
+    h.send(portal_as(
+        "GET",
+        &format!("/portal/signers/{signer_id}/accounts"),
+        Some(&cookie),
+        None,
     ))
     .await
 }
@@ -342,15 +369,7 @@ async fn keeps_signers_and_accounts_across_restarts() {
     shutdown(second).await;
 
     let third = fixture.process(clock).await;
-    let listed = third
-        .send(portal_request(
-            "GET",
-            &format!("/portal/signers/{signer}/accounts"),
-            None,
-        ))
-        .await
-        .ok(200)
-        .clone();
+    let listed = signer_accounts(&third, &signer).await.ok(200).clone();
     let ids: Vec<&Value> = listed["accounts"]
         .as_array()
         .unwrap()
@@ -485,13 +504,9 @@ async fn reads_a_tampered_account_address_or_validator_as_unreadable() {
         let pool = fixture.pool().await;
         sqlx::raw_sql(&tamper).execute(&pool).await.unwrap();
         pool.close().await;
-        h.send(portal_request(
-            "GET",
-            &format!("/portal/signers/{signer}/accounts"),
-            None,
-        ))
-        .await
-        .failure(E::RecordUnreadable);
+        signer_accounts(&h, &signer)
+            .await
+            .failure(E::RecordUnreadable);
         shutdown(h).await;
     }
 }
@@ -604,10 +619,12 @@ async fn keeps_a_login_transaction_and_its_code_across_restarts() {
         ))
         .await;
     assert_eq!(read.ok(200)["client_id"], json!(client_id));
+    let cookie = second.session_for(&signer).await;
     let decided = second
-        .send(portal_request(
+        .send(portal_as(
             "POST",
             &format!("/portal/transactions/{id}/decision"),
+            Some(&cookie),
             Some(json!({ "outcome": "approved", "signer_id": signer, "account_id": account["account_id"] })),
         ))
         .await;
@@ -715,10 +732,12 @@ async fn keeps_a_grant_transaction_preparable_across_a_restart() {
         ))
         .await;
     assert_eq!(read.ok(200)["authorization_details"].to_string(), detail);
+    let cookie = second.session_for(&signer).await;
     let prepared = second
-        .send(portal_request(
+        .send(portal_as(
             "POST",
             &format!("/portal/transactions/{id}/prepare"),
+            Some(&cookie),
             Some(json!({ "signer_id": signer, "account_id": account["account_id"] })),
         ))
         .await;
@@ -750,7 +769,7 @@ fn bearer(
 
 #[tokio::test]
 async fn keeps_a_root_approved_grant_and_its_token_across_restarts() {
-    use support::grant::{Root, address_of, approval, detail, root_key};
+    use support::grant::{Root, approval, detail, root_key, sign_in};
     let Some(url) = database() else { return };
     let fixture = Fixture::create(url).await;
     let clock = TestClock::new();
@@ -786,21 +805,23 @@ async fn keeps_a_root_approved_grant_and_its_token_across_restarts() {
         .next()
         .unwrap()
         .to_owned();
-    let signer = register(
-        &first,
-        json!({
-            "version": "oaath.owner-credential-profile/v1",
-            "kind": "ecdsa",
-            "address": address_of(&root_key()),
-        }),
-    )
-    .await;
-    let account = create_account(&first, &signer).await.ok(201).clone();
+    let (signer, cookie) = sign_in(&first, &root).await;
+    let account = first
+        .send(portal_as(
+            "POST",
+            "/portal/accounts",
+            Some(&cookie),
+            Some(json!({ "root_signer_id": signer })),
+        ))
+        .await
+        .ok(201)
+        .clone();
     let selection = json!({ "signer_id": signer, "account_id": account["account_id"] });
     let prepared = first
-        .send(portal_request(
+        .send(portal_as(
             "POST",
             &format!("/portal/transactions/{id}/prepare"),
+            Some(&cookie),
             Some(selection),
         ))
         .await
@@ -808,9 +829,10 @@ async fn keeps_a_root_approved_grant_and_its_token_across_restarts() {
         .clone();
     let artifact = approval(&prepared, &root);
     let decided = first
-        .send(portal_request(
+        .send(portal_as(
             "POST",
             &format!("/portal/transactions/{id}/decision"),
+            Some(&cookie),
             Some(json!({
                 "outcome": "approved",
                 "signer_id": signer,
@@ -903,11 +925,14 @@ async fn prove(h: &Harness, root: &support::grant::Root, signer: &str, issued: &
     .await
 }
 
-/// The signer of the session `cookie` names, as the session owner reads it.
-async fn session_of(h: &Harness, cookie: &str) -> Result<String, E> {
-    let mut headers = axum::http::HeaderMap::new();
-    headers.insert("cookie", cookie.parse().unwrap());
-    oaath_relay::session::session_signer(h.store.as_ref(), h.clock.as_ref(), &headers).await
+async fn list_as(h: &Harness, signer: &str, cookie: &str) -> Reply {
+    h.send(portal_as(
+        "GET",
+        &format!("/portal/signers/{signer}/accounts"),
+        Some(cookie),
+        None,
+    ))
+    .await
 }
 
 #[tokio::test]
@@ -927,23 +952,28 @@ async fn keeps_sessions_and_refuses_consumed_nonces_across_restarts() {
 
     // A new process keeps the session and the nonce's consumption.
     let second = fixture.process(clock.clone()).await;
-    assert_eq!(session_of(&second, &cookie).await, Ok(signer.clone()));
+    list_as(&second, &signer, &cookie).await.ok(200);
     prove(&second, &root, &signer, &used)
         .await
         .failure(E::Unauthenticated);
     let fresh = prove(&second, &root, &signer, &unused).await;
     fresh.ok(200);
     let fresh = cookie_of(&fresh);
-    let mut out = portal_request("DELETE", "/portal/sessions", None);
-    out.headers_mut().insert("cookie", cookie.parse().unwrap());
-    second.send(out).await.ok(200);
+    second
+        .send(portal_as("DELETE", "/portal/sessions", Some(&cookie), None))
+        .await
+        .ok(200);
     shutdown(second).await;
 
     // Sign-out and expiry are durable too.
     let third = fixture.process(clock.clone()).await;
-    assert_eq!(session_of(&third, &cookie).await, Err(E::Unauthenticated));
-    assert_eq!(session_of(&third, &fresh).await, Ok(signer));
+    list_as(&third, &signer, &cookie)
+        .await
+        .failure(E::Unauthenticated);
+    list_as(&third, &signer, &fresh).await.ok(200);
     clock.advance(oaath_relay::session::SESSION_TTL_MS);
-    assert_eq!(session_of(&third, &fresh).await, Err(E::Unauthenticated));
+    list_as(&third, &signer, &fresh)
+        .await
+        .failure(E::Unauthenticated);
     shutdown(third).await;
 }

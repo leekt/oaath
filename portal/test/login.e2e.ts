@@ -31,10 +31,10 @@ import worker, { type Env, ORIGIN } from "../worker/index.js";
 
 const DIST = fileURLToPath(new URL("../dist", import.meta.url));
 const RELAY_DIR = fileURLToPath(new URL("../../relay", import.meta.url));
-/** The fixture wallet's key: it signs only a grant's EIP-712 root approval. */
+/** The fixture wallet's key: it signs in (SIWE) and signs a grant's root approval. */
 const WALLET = privateKeyToAccount(`0x${"5a".repeat(32)}`);
 const WALLET_ADDRESS = WALLET.address.toLowerCase() as `0x${string}`;
-/** Every signature the fixture wallet produced: logins ask for none. */
+/** Every EIP-712 approval the fixture wallet signed: logins ask for none. */
 let walletSignatures = 0;
 const EXAMPLE = fileURLToPath(new URL("../../examples/oauth-login/server.mjs", import.meta.url));
 
@@ -217,13 +217,17 @@ async function startDapp(grants = false) {
 
 /**
  * An EIP-6963 wallet in every document of `page`. It answers eth_requestAccounts,
- * and eth_signTypedData_v4 with the fixture key; it records every method asked.
+ * and personal_sign and eth_signTypedData_v4 with the fixture key; it records
+ * every method asked.
  */
 async function installWallet(page: Page) {
   await page.exposeFunction("e2eWalletSignTypedData", (json: string) => {
     walletSignatures += 1;
     return WALLET.sign({ hash: hashTypedData(JSON.parse(json)) });
   });
+  await page.exposeFunction("e2eWalletPersonalSign", (raw: `0x${string}`) =>
+    WALLET.signMessage({ message: { raw } }),
+  );
   await page.evaluateOnNewDocument((address: string) => {
     const methods: string[] = [];
     Object.assign(window, { walletMethods: methods });
@@ -233,6 +237,10 @@ async function installWallet(page: Page) {
       request: async ({ method, params }: { method: string; params?: [string, string] }) => {
         methods.push(method);
         if (method === "eth_requestAccounts") return [address];
+        if (method === "personal_sign" && params?.[1] === address)
+          return (
+            window as unknown as { e2eWalletPersonalSign(raw: string): Promise<string> }
+          ).e2eWalletPersonalSign(params[0]);
         if (method === "eth_signTypedData_v4" && params?.[0] === address)
           return (
             window as unknown as { e2eWalletSignTypedData: typeof sign }
@@ -367,9 +375,11 @@ describe("Login with OAAth from the SDK against the real relay", () => {
     const label = await account?.evaluate((node) => node.getAttribute("aria-label"));
     const shown = /0x[0-9a-f]{40}/u.exec(label ?? "")?.[0];
     expect(shown).toBeDefined();
+    // Connecting asks for the account; signing in asks for one SIWE signature.
     expect(
       await popup.evaluate(() => (window as unknown as { walletMethods: string[] }).walletMethods),
-    ).toEqual(["eth_requestAccounts"]);
+    ).toEqual(["eth_requestAccounts", "eth_requestAccounts", "personal_sign"]);
+    expect(walletSignatures).toBe(0);
     await account?.click();
 
     expect(await outcome(dappPage.page)).toBe("signed-in");
@@ -381,7 +391,7 @@ describe("Login with OAAth from the SDK against the real relay", () => {
       return { ...value, clientId: clientKey ? localStorage.getItem(clientKey) : null };
     });
     expect(login.account).toBe(shown);
-    expect(login.verified).toBe(false);
+    expect(login.verified).toBe(true);
     expect(login.signer).toMatchObject({
       kind: "ecdsa",
       profile: { kind: "ecdsa", address: WALLET_ADDRESS },
@@ -394,7 +404,12 @@ describe("Login with OAAth from the SDK against the real relay", () => {
     );
     expect(protectedHeader.kid).toBe(idTokenKid);
     expect(payload.sub).toBe(shown);
-    expect(payload.verified).toBe(false);
+    expect(payload.verified).toBe(true);
+    // The signer's accounts are private: without its session cookie, refused.
+    const signerId = (login.signer as { id: string }).id;
+    const anonymous = await fetch(`${portal}/portal/signers/${signerId}/accounts`);
+    expect(anonymous.status).toBe(401);
+    expect(await anonymous.json()).toEqual({ error: { code: "relay_unauthenticated" } });
     await dappPage.page.close();
   });
 
@@ -598,32 +613,47 @@ describe("dapp grants approved by the account root against the real relay", () =
         isUserVerified: true,
       },
     });
-    await click(popup, "::-p-text(Add signer)");
-    await click(popup, "::-p-text(New passkey)");
-    await popup.waitForSelector("::-p-text(This signer owns no account yet.)");
-
-    // The passkey is not the wallet account's root: the relay refuses to prepare.
-    const refused = await popup.evaluate(async (transactionId: string) => {
+    // The browser still holds the wallet signer's session from the previous test.
+    const wallet = await popup.evaluate(async () => {
       const signers = JSON.parse(localStorage.getItem("oaath.portal.signers/v1") ?? "[]") as {
         signer_id: string;
         kind: string;
       }[];
-      const passkey = signers.find((signer) => signer.kind === "passkey");
-      const wallet = signers.find((signer) => signer.kind === "wallet");
-      const owned = (await (
-        await fetch(`/portal/signers/${wallet?.signer_id}/accounts`)
-      ).json()) as { accounts: { account_id: string }[] };
-      const response = await fetch(`/portal/transactions/${transactionId}/prepare`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          signer_id: passkey?.signer_id,
-          account_id: owned.accounts[0]?.account_id,
-        }),
-      });
-      return response.status;
-    }, pushed.requestUri.split(":").pop() ?? "");
-    expect(refused).toBe(403);
+      const signerId = signers.find((signer) => signer.kind === "wallet")?.signer_id;
+      const owned = (await (await fetch(`/portal/signers/${signerId}/accounts`)).json()) as {
+        accounts: { account_id: string }[];
+      };
+      return { signerId, accountId: owned.accounts[0]?.account_id };
+    });
+    expect(wallet.accountId).toBeDefined();
+    await click(popup, "::-p-text(Add signer)");
+    await click(popup, "::-p-text(New passkey)");
+    await popup.waitForSelector("::-p-text(This signer owns no account yet.)");
+
+    // Signing the passkey in replaced the wallet's session: the wallet's accounts
+    // are another signer's, and the passkey is not the wallet account's root.
+    const refused = await popup.evaluate(
+      async (input: { transactionId: string; walletId: string; accountId: string }) => {
+        const signers = JSON.parse(localStorage.getItem("oaath.portal.signers/v1") ?? "[]") as {
+          signer_id: string;
+          kind: string;
+        }[];
+        const passkey = signers.find((signer) => signer.kind === "passkey");
+        const listed = await fetch(`/portal/signers/${input.walletId}/accounts`);
+        const prepared = await fetch(`/portal/transactions/${input.transactionId}/prepare`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ signer_id: passkey?.signer_id, account_id: input.accountId }),
+        });
+        return [listed.status, prepared.status];
+      },
+      {
+        transactionId: pushed.requestUri.split(":").pop() ?? "",
+        walletId: wallet.signerId ?? "",
+        accountId: wallet.accountId ?? "",
+      },
+    );
+    expect(refused).toEqual([403, 403]);
 
     await click(popup, "::-p-text(Create account)");
     const account = await popup.waitForSelector("button[aria-label^='Smart account 0x']");

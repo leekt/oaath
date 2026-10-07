@@ -121,7 +121,7 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
     const { installApproval, ...rest } = decision;
     const idToken = await new SignJWT({
       nonce: par.get("nonce"),
-      verified: false,
+      verified: true,
       oaath_account: accountProfile,
       signer: { id: "root-signer", kind: "ecdsa", profile: root.credential },
     })

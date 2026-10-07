@@ -1,6 +1,8 @@
 //! Portal signer/account registry over the memory store: idempotent signer
 //! registration, smallest-unused account indices at the fixture-pinned
-//! addresses, one root per account, and same-origin enforcement.
+//! addresses, one root per account, and same-origin enforcement. The fixture
+//! signers have no keys, so their sessions are setup (`session_for`); sign-in
+//! itself is proven in `session.rs`.
 
 mod support;
 
@@ -28,9 +30,22 @@ fn address_case(name: &str) -> (Value, String) {
 }
 
 fn portal(method: &str, path: &str, site: Option<&str>, body: Option<Value>) -> Request<Body> {
+    portal_as(method, path, site, None, body)
+}
+
+fn portal_as(
+    method: &str,
+    path: &str,
+    site: Option<&str>,
+    cookie: Option<&str>,
+    body: Option<Value>,
+) -> Request<Body> {
     let mut builder = Request::builder().method(method).uri(path);
     if let Some(site) = site {
         builder = builder.header("sec-fetch-site", site);
+    }
+    if let Some(cookie) = cookie {
+        builder = builder.header("cookie", cookie);
     }
     match body {
         Some(body) => builder
@@ -55,21 +70,27 @@ async fn register(h: &Harness, profile: &Value) -> String {
     text(body, "signer_id").to_owned()
 }
 
+/// Creates an account in the signer's own session.
 async fn create_account(h: &Harness, signer_id: &str) -> Reply {
-    h.send(portal(
+    let cookie = h.session_for(signer_id).await;
+    h.send(portal_as(
         "POST",
         "/portal/accounts",
         Some("same-origin"),
+        Some(&cookie),
         Some(json!({ "root_signer_id": signer_id })),
     ))
     .await
 }
 
+/// Lists the signer's accounts in its own session.
 async fn accounts(h: &Harness, signer_id: &str) -> Reply {
-    h.send(portal(
+    let cookie = h.session_for(signer_id).await;
+    h.send(portal_as(
         "GET",
         &format!("/portal/signers/{signer_id}/accounts"),
         Some("same-origin"),
+        Some(&cookie),
         None,
     ))
     .await
@@ -191,22 +212,44 @@ async fn derives_p256_and_webauthn_roots_at_their_pinned_addresses() {
 #[tokio::test]
 async fn refuses_an_unknown_signer_and_malformed_requests() {
     let h = harness();
-    create_account(&h, "unknown-signer")
-        .await
-        .failure(E::NotFound);
-    accounts(&h, "unknown-signer").await.failure(E::NotFound);
-    accounts(&h, "not%20canonical")
-        .await
-        .failure(E::RequestInvalid);
+    // An unknown signer has no session.
+    h.send(portal(
+        "POST",
+        "/portal/accounts",
+        Some("same-origin"),
+        Some(json!({ "root_signer_id": "unknown-signer" })),
+    ))
+    .await
+    .failure(E::Unauthenticated);
+    h.send(portal(
+        "GET",
+        "/portal/signers/unknown-signer/accounts",
+        Some("same-origin"),
+        None,
+    ))
+    .await
+    .failure(E::Unauthenticated);
+    h.send(portal(
+        "GET",
+        "/portal/signers/not%20canonical/accounts",
+        Some("same-origin"),
+        None,
+    ))
+    .await
+    .failure(E::RequestInvalid);
+    let (ecdsa, _) = address_case("ecdsa index 0");
+    let signer = register(&h, &ecdsa).await;
+    let cookie = h.session_for(&signer).await;
     for body in [
         json!({}),
         json!({ "root_signer_id": 7 }),
         json!({ "root_signer_id": "a", "account_index": 0 }),
     ] {
-        h.send(portal(
+        h.send(portal_as(
             "POST",
             "/portal/accounts",
             Some("same-origin"),
+            Some(&cookie),
             Some(body),
         ))
         .await
@@ -255,11 +298,13 @@ async fn refuses_cross_site_requests() {
         json!({ "accounts": [] })
     );
     // Direct navigation and non-browser clients are not cross-site.
+    let cookie = h.session_for(&signer).await;
     for site in [Some("none"), None] {
-        h.send(portal(
+        h.send(portal_as(
             "GET",
             &format!("/portal/signers/{signer}/accounts"),
             site,
+            Some(&cookie),
             None,
         ))
         .await

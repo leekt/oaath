@@ -64,37 +64,11 @@ fn transaction_id(reply: &Reply) -> String {
         .to_owned()
 }
 
-/// A registered root signer for `key` and its first account.
-async fn root_account(h: &Harness, address: &str) -> (String, Value) {
-    let profile = json!({
-        "version": "oaath.owner-credential-profile/v1",
-        "kind": "ecdsa",
-        "address": address,
-    });
-    let signer = h
-        .send(post(
-            "/portal/signers",
-            None,
-            Some(json!({ "profile": profile })),
-        ))
-        .await;
-    let signer_id = text(signer.ok(200), "signer_id").to_owned();
-    let account = h
-        .send(post(
-            "/portal/accounts",
-            None,
-            Some(json!({ "root_signer_id": signer_id })),
-        ))
-        .await
-        .ok(201)
-        .clone();
-    (signer_id, account)
-}
-
-async fn prepare(h: &Harness, id: &str, body: Value) -> Reply {
-    h.send(post(
+async fn prepare(h: &Harness, id: &str, body: Value, cookie: &str) -> Reply {
+    h.send(portal_call(
+        "POST",
         &format!("/portal/transactions/{id}/prepare"),
-        None,
+        Some(cookie),
         Some(body),
     ))
     .await
@@ -154,9 +128,12 @@ async fn prepares_what_the_root_signs_and_admits_its_signature() {
     let client_id = client(&h).await;
     let id = transaction_id(&par(&h, &client_id, Some(&json!([detail()]))).await);
     let key = root_key();
-    let (signer_id, account) = root_account(&h, &address_of(&key)).await;
+    let (signer_id, account, cookie) = register_root(&h, &Root::Ecdsa(key.clone())).await;
     let selection = json!({ "signer_id": signer_id, "account_id": account["account_id"] });
-    let prepared = prepare(&h, &id, selection.clone()).await.ok(200).clone();
+    let prepared = prepare(&h, &id, selection.clone(), &cookie)
+        .await
+        .ok(200)
+        .clone();
 
     let request = &prepared["permission_request"];
     assert_eq!(request["requestId"], json!(id));
@@ -173,7 +150,10 @@ async fn prepares_what_the_root_signs_and_admits_its_signature() {
     assert_eq!(signing["purpose"], json!("kernel-enable"));
     assert_eq!(signing["signer"]["account"], account["address"]);
     // Deterministic: preparing again composes the same request.
-    assert_eq!(*prepare(&h, &id, selection).await.ok(200), prepared);
+    assert_eq!(
+        *prepare(&h, &id, selection, &cookie).await.ok(200),
+        prepared
+    );
 
     // The root signs the prepared digest; the verifier admits the artifact.
     let digest: B256 = signing["expectedDigest"].as_str().unwrap().parse().unwrap();
@@ -236,7 +216,7 @@ async fn narrows_but_never_widens_and_refuses_a_non_root() {
     let h = harness();
     let client_id = client(&h).await;
     let id = transaction_id(&par(&h, &client_id, Some(&json!([detail()]))).await);
-    let (signer_id, account) = root_account(&h, &address_of(&root_key())).await;
+    let (signer_id, account, cookie) = register_root(&h, &Root::Ecdsa(root_key())).await;
     let selection = |policy: Option<Value>| {
         let mut body = json!({ "signer_id": signer_id, "account_id": account["account_id"] });
         if let Some(policy) = policy {
@@ -244,25 +224,29 @@ async fn narrows_but_never_widens_and_refuses_a_non_root() {
         }
         body
     };
-    let full = prepare(&h, &id, selection(None)).await.ok(200).clone();
-    let narrowed = prepare(&h, &id, selection(Some(policy("1"))))
+    let full = prepare(&h, &id, selection(None), &cookie)
+        .await
+        .ok(200)
+        .clone();
+    let narrowed = prepare(&h, &id, selection(Some(policy("1"))), &cookie)
         .await
         .ok(200)
         .clone();
     assert_eq!(narrowed["approved_policy"], policy("1"));
     assert_eq!(narrowed["permission_request"], full["permission_request"]);
     assert_ne!(narrowed["signing_request"], full["signing_request"]);
-    prepare(&h, &id, selection(Some(policy("1001"))))
+    prepare(&h, &id, selection(Some(policy("1001"))), &cookie)
         .await
         .failure(E::RequestInvalid);
 
     // Another signer's account, an unknown account, a stray field.
-    let (other_signer, other_account) =
-        root_account(&h, "0x2222222222222222222222222222222222222222").await;
+    let other = Root::Ecdsa(SigningKey::from_slice(&[0x22; 32]).unwrap());
+    let (other_signer, other_account, other_cookie) = register_root(&h, &other).await;
     prepare(
         &h,
         &id,
         json!({ "signer_id": other_signer, "account_id": account["account_id"] }),
+        &other_cookie,
     )
     .await
     .failure(E::Forbidden);
@@ -270,6 +254,7 @@ async fn narrows_but_never_widens_and_refuses_a_non_root() {
         &h,
         &id,
         json!({ "signer_id": signer_id, "account_id": other_account["account_id"] }),
+        &cookie,
     )
     .await
     .failure(E::Forbidden);
@@ -277,6 +262,7 @@ async fn narrows_but_never_widens_and_refuses_a_non_root() {
         &h,
         &id,
         json!({ "signer_id": signer_id, "account_id": account["account_id"], "x": 1 }),
+        &cookie,
     )
     .await
     .failure(E::RequestInvalid);
@@ -286,19 +272,20 @@ async fn narrows_but_never_widens_and_refuses_a_non_root() {
 async fn keeps_login_and_grant_transactions_apart() {
     let h = harness();
     let client_id = client(&h).await;
-    let (signer_id, account) = root_account(&h, &address_of(&root_key())).await;
+    let (signer_id, account, cookie) = register_root(&h, &Root::Ecdsa(root_key())).await;
     let selection = json!({ "signer_id": signer_id, "account_id": account["account_id"] });
     // A login transaction has nothing to prepare.
     let login = transaction_id(&par(&h, &client_id, None).await);
-    prepare(&h, &login, selection.clone())
+    prepare(&h, &login, selection.clone(), &cookie)
         .await
         .failure(E::RequestInvalid);
     // A grant is never approved as a bare login; it can still be cancelled.
     let grant = transaction_id(&par(&h, &client_id, Some(&json!([detail()]))).await);
     let decide = |body: Value| {
-        h.send(post(
+        h.send(portal_call(
+            "POST",
             &format!("/portal/transactions/{grant}/decision"),
-            None,
+            Some(&cookie),
             Some(body),
         ))
     };
@@ -306,34 +293,31 @@ async fn keeps_login_and_grant_transactions_apart() {
     approved["outcome"] = json!("approved");
     decide(approved).await.failure(E::RequestInvalid);
     decide(json!({ "outcome": "cancelled" })).await.ok(200);
-    prepare(&h, &grant, selection.clone())
+    prepare(&h, &grant, selection.clone(), &cookie)
         .await
         .failure(E::AlreadyDecided);
     // An expired grant is refused.
     let late = transaction_id(&par(&h, &client_id, Some(&json!([detail()]))).await);
     h.clock.advance(300_000);
-    prepare(&h, &late, selection).await.failure(E::Expired);
+    prepare(&h, &late, selection, &cookie)
+        .await
+        .failure(E::Expired);
 }
 
-async fn register_root(h: &Harness, root: &Root) -> (String, Value) {
-    let signer = h
-        .send(post(
-            "/portal/signers",
-            None,
-            Some(json!({ "profile": root.profile() })),
-        ))
-        .await;
-    let signer_id = text(signer.ok(200), "signer_id").to_owned();
+/// A signed-in root, its first account, and its session cookie.
+async fn register_root(h: &Harness, root: &Root) -> (String, Value, String) {
+    let (signer_id, cookie) = sign_in(h, root).await;
     let account = h
-        .send(post(
+        .send(portal_call(
+            "POST",
             "/portal/accounts",
-            None,
+            Some(&cookie),
             Some(json!({ "root_signer_id": signer_id })),
         ))
         .await
         .ok(201)
         .clone();
-    (signer_id, account)
+    (signer_id, account, cookie)
 }
 
 async fn decide_grant(
@@ -342,10 +326,12 @@ async fn decide_grant(
     signer_id: &str,
     account: &Value,
     artifact: &Value,
+    cookie: &str,
 ) -> Reply {
-    h.send(post(
+    h.send(portal_call(
+        "POST",
         &format!("/portal/transactions/{id}/decision"),
-        None,
+        Some(cookie),
         Some(json!({
             "outcome": "approved",
             "signer_id": signer_id,
@@ -403,17 +389,18 @@ fn bearer_post(path: &str, token: &str, body: Value) -> Request<Body> {
 async fn approved_grant(h: &Harness, root: &Root) -> (String, String, Value, Value, Value) {
     let client_id = client(h).await;
     let id = transaction_id(&par(h, &client_id, Some(&json!([detail()]))).await);
-    let (signer_id, account) = register_root(h, root).await;
+    let (signer_id, account, cookie) = register_root(h, root).await;
     let prepared = prepare(
         h,
         &id,
         json!({ "signer_id": signer_id, "account_id": account["account_id"] }),
+        &cookie,
     )
     .await
     .ok(200)
     .clone();
     let artifact = approval(&prepared, root);
-    let code = code_of(&decide_grant(h, &id, &signer_id, &account, &artifact).await);
+    let code = code_of(&decide_grant(h, &id, &signer_id, &account, &artifact, &cookie).await);
     let tokens = token(h, &client_id, &code).await.ok(200).clone();
     (id, client_id, prepared, artifact, tokens)
 }
@@ -483,8 +470,14 @@ async fn lists_the_dapp_signer_under_the_account_as_a_permission_signer() {
         ))
         .await;
     let dapp_id = text(dapp.ok(200), "signer_id").to_owned();
+    let cookie = h.session_for(&dapp_id).await;
     let accounts = h
-        .send(get(&format!("/portal/signers/{dapp_id}/accounts"), None))
+        .send(portal_call(
+            "GET",
+            &format!("/portal/signers/{dapp_id}/accounts"),
+            Some(&cookie),
+            None,
+        ))
         .await
         .ok(200)
         .clone();
@@ -498,9 +491,9 @@ async fn refuses_an_approval_the_root_did_not_sign_for_this_grant() {
     let root = Root::Ecdsa(root_key());
     let client_id = client(&h).await;
     let id = transaction_id(&par(&h, &client_id, Some(&json!([detail()]))).await);
-    let (signer_id, account) = register_root(&h, &root).await;
+    let (signer_id, account, cookie) = register_root(&h, &root).await;
     let selection = json!({ "signer_id": signer_id, "account_id": account["account_id"] });
-    let prepared = prepare(&h, &id, selection).await.ok(200).clone();
+    let prepared = prepare(&h, &id, selection, &cookie).await.ok(200).clone();
     let artifact = approval(&prepared, &root);
 
     let mut tampered = Vec::new();
@@ -522,23 +515,27 @@ async fn refuses_an_approval_the_root_did_not_sign_for_this_grant() {
     other_account["installApproval"]["account"] = json!(format!("0x{}", "ce".repeat(20)));
     tampered.push(other_account);
     for artifact in &tampered {
-        decide_grant(&h, &id, &signer_id, &account, artifact)
+        decide_grant(&h, &id, &signer_id, &account, artifact, &cookie)
             .await
             .failure(E::RequestInvalid);
     }
     // A non-root signer of the account may not approve.
-    let (stranger, _) = register_root(
+    let (stranger, _, stranger_cookie) = register_root(
         &h,
         &Root::Ecdsa(SigningKey::from_slice(&[0x77; 32]).unwrap()),
     )
     .await;
-    decide_grant(&h, &id, &stranger, &account, &artifact)
+    decide_grant(&h, &id, &stranger, &account, &artifact, &stranger_cookie)
+        .await
+        .failure(E::Forbidden);
+    // Nor may another signer's session decide in the root's name.
+    decide_grant(&h, &id, &signer_id, &account, &artifact, &stranger_cookie)
         .await
         .failure(E::Forbidden);
 
     // The genuine approval decides once; a replay refuses.
-    let code = code_of(&decide_grant(&h, &id, &signer_id, &account, &artifact).await);
-    decide_grant(&h, &id, &signer_id, &account, &artifact)
+    let code = code_of(&decide_grant(&h, &id, &signer_id, &account, &artifact, &cookie).await);
+    decide_grant(&h, &id, &signer_id, &account, &artifact, &cookie)
         .await
         .failure(E::AlreadyDecided);
     // The redirect recovers the same code.
@@ -548,7 +545,7 @@ async fn refuses_an_approval_the_root_did_not_sign_for_this_grant() {
     assert_eq!(code_of(&recovered), code);
     // The same artifact replayed onto another grant transaction refuses.
     let other = transaction_id(&par(&h, &client_id, Some(&json!([detail()]))).await);
-    decide_grant(&h, &other, &signer_id, &account, &artifact)
+    decide_grant(&h, &other, &signer_id, &account, &artifact, &cookie)
         .await
         .failure(E::RequestInvalid);
 }

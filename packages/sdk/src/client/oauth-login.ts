@@ -14,8 +14,9 @@
  * ```
  *
  * The result names the account and signer the user chose. It is identity, not
- * authority: `verified` is false because login carries no signature, and a
- * Grant still needs its own owner approval.
+ * authority: `verified` is true because the signer proved control of its
+ * credential to OAAth and is a member of the account, and a Grant still needs
+ * its own owner approval.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -56,8 +57,8 @@ export interface OaathLogin {
   readonly accountProfile: Readonly<KernelAccountProfile>;
   /** The signer the user signed in with. */
   readonly signer: Readonly<OaathLoginSigner>;
-  /** Always false: login proves no key possession. */
-  readonly verified: false;
+  /** Always true: the signer proved control and is a member of the account. */
+  readonly verified: true;
   /** The verified ES256 id_token, for the dapp's own backend. */
   readonly idToken: string;
 }
@@ -277,7 +278,7 @@ async function verifyIdToken(
   } catch (cause) {
     return invalid(cause);
   }
-  if (payload.nonce !== nonce || payload.verified !== false) return invalid();
+  if (payload.nonce !== nonce || payload.verified !== true) return invalid();
   const signer = payload.signer as { id?: unknown; profile?: unknown } | undefined;
   try {
     const accountProfile = parseKernelAccountProfile(payload.oaath_account);
@@ -292,7 +293,7 @@ async function verifyIdToken(
       account: payload.sub as `0x${string}`,
       accountProfile,
       signer: Object.freeze({ id: signer.id, kind: profile.kind, profile }),
-      verified: false,
+      verified: true,
       idToken,
     });
   } catch (cause) {
