@@ -27,6 +27,7 @@ export type PendingPhase =
 export interface PendingAuthorization {
   readonly phase: PendingPhase;
   readonly request: Readonly<PermissionRequest>;
+  readonly redirectUri: string;
   readonly verifier: string;
   readonly matchCode: string | null;
   readonly expiresAt: number;
@@ -132,7 +133,16 @@ export function createPendingAuthorizationJournal(input: {
   function payload(value: unknown): Readonly<PendingAuthorization> {
     const record = exactClientRecord(
       value,
-      ["phase", "request", "verifier", "matchCode", "expiresAt", "artifactId", "artifact"],
+      [
+        "phase",
+        "request",
+        "redirectUri",
+        "verifier",
+        "matchCode",
+        "expiresAt",
+        "artifactId",
+        "artifact",
+      ],
       "pending authorization",
       new WeakSet(),
     );
@@ -140,6 +150,7 @@ export function createPendingAuthorizationJournal(input: {
     const binding = input.binding;
     if (
       !phases.includes(record.phase) ||
+      record.redirectUri !== binding.redirectUri ||
       typeof record.verifier !== "string" ||
       !/^[A-Za-z0-9_-]{43}$/u.test(record.verifier) ||
       (record.matchCode !== null &&
@@ -178,6 +189,7 @@ export function createPendingAuthorizationJournal(input: {
     return Object.freeze({
       phase: record.phase as PendingPhase,
       request,
+      redirectUri: binding.redirectUri,
       verifier: record.verifier as string,
       matchCode: record.matchCode as string | null,
       expiresAt: record.expiresAt as number,

@@ -805,6 +805,7 @@ export function createConnection(
     let snapshot = await pending.write(previous, {
       phase: "creating",
       request: parsePermissionRequest({ ...scope, requestId: crypto.randomUUID() }),
+      redirectUri: input.binding.redirectUri,
       verifier: newCodeVerifier(),
       matchCode: null,
       expiresAt: scope.expiresAt * 1_000,

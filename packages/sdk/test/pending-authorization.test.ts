@@ -8,6 +8,8 @@ import {
   createClock,
   createOwnerAuthorization,
   createUrlRealm,
+  ISSUER_URL,
+  OWNER_TOKEN,
   permissionInput,
   sendCallsInput,
 } from "./support/browser.js";
@@ -86,6 +88,31 @@ async function park(fixture: Awaited<ReturnType<typeof pendingFixture>>) {
 }
 
 describe("durable pending authorization", () => {
+  it("reports the owner's rejection after reload without attempting redemption", async () => {
+    const fixture = await pendingFixture();
+    const requestId = await park(fixture);
+    const response = await fixture.upstream.relay(
+      new Request(`${ISSUER_URL}/native/decisions/${requestId}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${OWNER_TOKEN}`, "content-type": "application/json" },
+        body: JSON.stringify({ command: "reject" }),
+      }),
+    );
+    expect(response.ok).toBe(true);
+    const current = await fixture.life();
+    expect(await current.connection.resumePendingPermission()).toMatchObject({
+      requestId,
+      status: "rejected",
+      grant: null,
+    });
+    expect(fixture.paths.some((path) => path.includes("/consume") || path.endsWith("/claim"))).toBe(
+      false,
+    );
+    await current.realm.oaath.close();
+    await current.owner.close();
+    await fixture.upstream.oaath.close();
+  });
+
   it.each([1, 2])(
     "requires durable write %s before exposing the approval handoff",
     async (failWrite) => {
@@ -273,6 +300,7 @@ describe("durable pending authorization", () => {
     expect(((await stores.keys.get(retained.envelope.keyId)) as CryptoKey).extractable).toBe(false);
     for (const changed of [
       { ...binding, bindingId: `0x${"ff".repeat(32)}` as const },
+      { ...binding, redirectUri: "https://another.example/callback" },
       { ...binding, context: { ...binding.context, accountId: "another" } },
       {
         ...binding,
