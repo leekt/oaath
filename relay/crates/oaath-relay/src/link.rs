@@ -57,6 +57,7 @@
 
 use alloy_primitives::{Address, B256};
 use alloy_sol_types::{Eip712Domain, SolStruct, eip712_domain, sol};
+use oaath_protocol::permission::PermissionRequest;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
@@ -66,8 +67,14 @@ use crate::authorization::invalidation::invalidate;
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::signature::{RelyingParty, verify_root_signature};
-use crate::kms::RelayKms;
+use crate::kms::{RelayKms, seal_artifact};
+use crate::member_grant::{
+    MemberGrant, compose_member_request, prepared, record_member_grant, template_selection,
+    verify_member_approval,
+};
+use crate::oauth::PreparedGrant;
 use crate::oauth::grant::{granted_capability, relying_party};
+use crate::policy::root_template;
 use crate::records::{bounded_text, canonical_identifier, canonical_str, exact_record, timestamp};
 use crate::registry::{
     ACCOUNT_SIGNER_RECORD_VERSION, AccountRecord, AccountSignerRecord, MembershipRole,
@@ -75,7 +82,7 @@ use crate::registry::{
 };
 use crate::store::{RelayStore, RelayTransaction, settle};
 
-pub const LINK_REQUEST_RECORD_VERSION: &str = "oaath.link-request-record/v1";
+pub const LINK_REQUEST_RECORD_VERSION: &str = "oaath.link-request-record/v2";
 pub const LINK_TTL_MS: u64 = 3_600_000;
 /// The role a link admits a signer with.
 pub const LINK_ROLE: &str = "permission";
@@ -121,9 +128,11 @@ pub struct LinkRequestRecord {
     pub expires_at: u64,
     pub outcome: Option<LinkOutcome>,
     pub decided_at: Option<u64>,
-    /// The root's signature over the membership approval; set exactly when
-    /// the outcome is `approved`.
+    /// An approval's evidence, exactly one of: the root's signature over the
+    /// membership approval (login only), or the grant whose enable the root
+    /// signed (named by the link id; `member_grant.rs`).
     pub approval_signature: Option<String>,
+    pub grant_id: Option<String>,
     /// Set once, by the root's removal of an approved member.
     pub removed_at: Option<u64>,
 }
@@ -161,6 +170,7 @@ impl LinkRequestRecord {
                 "outcome",
                 "decidedAt",
                 "approvalSignature",
+                "grantId",
                 "removedAt",
             ],
             UNREADABLE,
@@ -190,12 +200,22 @@ impl LinkRequestRecord {
             outcome,
             decided_at: nullable_timestamp(r.get("decidedAt"))?,
             approval_signature,
+            grant_id: match r.get("grantId") {
+                Some(Value::Null) => None,
+                other => Some(canonical_identifier(other, UNREADABLE)?.to_owned()),
+            },
             removed_at: nullable_timestamp(r.get("removedAt"))?,
         };
         let approved = record.outcome == Some(LinkOutcome::Approved);
         if record.expires_at <= record.created_at
             || record.outcome.is_some() != record.decided_at.is_some()
-            || approved != record.approval_signature.is_some()
+            || usize::from(approved)
+                != usize::from(record.approval_signature.is_some())
+                    + usize::from(record.grant_id.is_some())
+            || record
+                .grant_id
+                .as_ref()
+                .is_some_and(|id| *id != record.link_id)
             || (record.removed_at.is_some() && !approved)
         {
             return Err(UNREADABLE);
@@ -321,6 +341,7 @@ pub async fn create_link(
             outcome: None,
             decided_at: None,
             approval_signature: None,
+            grant_id: None,
             removed_at: None,
         };
         if !transaction.insert_link_request(&link).await? {
@@ -371,6 +392,8 @@ pub struct LinkView {
     /// What the root signs: the `eth_signTypedData_v4` payload and its digest.
     pub typed_data: Value,
     pub digest: String,
+    /// The member's grant, when the root approved with a policy template.
+    pub grant_id: Option<String>,
 }
 
 struct Locked {
@@ -420,6 +443,7 @@ async fn locked(
         expires_at: link.expires_at / 1_000,
         typed_data: typed_data(&approval),
         digest: format!("{:#x}", approval_digest(&approval)),
+        grant_id: link.grant_id.clone(),
     };
     Ok(Locked {
         link,
@@ -442,23 +466,43 @@ pub async fn read_link(
 
 /// The account's root decides a pending, unexpired link: an approval must be
 /// its signature over the link's membership approval.
+#[allow(clippy::too_many_arguments)]
 pub async fn decide_link(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
+    kms: &dyn RelayKms,
     issuer: &str,
     link_id: &str,
     body: &Map<String, Value>,
     session: &str,
     outcome: LinkOutcome,
 ) -> RelayResult<LinkView> {
-    let signature = match outcome {
-        LinkOutcome::Approved => {
+    let approval = match outcome {
+        LinkOutcome::Approved if body.contains_key("signature") => {
             exact_record(&Value::Object(body.clone()), &["signature"], INVALID)?;
             let text = body
                 .get("signature")
                 .and_then(Value::as_str)
                 .ok_or(INVALID)?;
-            Some((text.to_owned(), signature_hex(text).ok_or(INVALID)?))
+            Some(LinkApproval::Membership(
+                text.to_owned(),
+                signature_hex(text).ok_or(INVALID)?,
+            ))
+        }
+        LinkOutcome::Approved => {
+            exact_record(
+                &Value::Object(body.clone()),
+                &["template_id", "artifact"],
+                INVALID,
+            )?;
+            Some(LinkApproval::Grant {
+                template_id: canonical_identifier(body.get("template_id"), INVALID)?.to_owned(),
+                artifact: body
+                    .get("artifact")
+                    .and_then(Value::as_str)
+                    .ok_or(INVALID)?
+                    .to_owned(),
+            })
         }
         LinkOutcome::Rejected => {
             exact_record(&Value::Object(body.clone()), &[], INVALID)?;
@@ -467,36 +511,84 @@ pub async fn decide_link(
     };
     let (rp_id, origin) = relying_party(issuer)?;
     let now = relay_now(clock)?;
+    // A policy approval is verified, and its artifact sealed, before the write.
+    let sealed = match &approval {
+        Some(LinkApproval::Grant {
+            template_id,
+            artifact,
+        }) => {
+            let mut transaction = store.begin().await?;
+            let result = link_grant_request(
+                &mut *transaction,
+                issuer,
+                link_id,
+                template_id,
+                session,
+                now,
+            )
+            .await;
+            let (request, account) = settle(transaction, result).await?;
+            verify_member_approval(issuer, &request, &account, artifact, now)?;
+            Some((request, seal_artifact(kms, artifact).await?))
+        }
+        _ => None,
+    };
     let mut transaction = store.begin().await?;
     let result = async {
         let Locked {
             link,
             account,
             mut view,
-        } = locked(&mut *transaction, link_id, session, now).await?;
-        if session != account.root_signer_id {
-            return Err(RelayErrorCode::Forbidden);
-        }
-        if link.outcome.is_some() {
-            return Err(RelayErrorCode::AlreadyDecided);
-        }
-        if now >= link.expires_at {
-            return Err(RelayErrorCode::Expired);
-        }
-        if let Some((_, bytes)) = &signature {
-            let root = transaction
-                .lock_signer(&account.root_signer_id)
-                .await?
-                .ok_or(UNREADABLE)?;
-            let digest: B256 = view.digest.parse().map_err(|_| RelayErrorCode::Internal)?;
-            let relying_party = RelyingParty {
-                rp_id: &rp_id,
-                origin: &origin,
-            };
-            if !verify_root_signature(&root.credential()?, digest, bytes, &relying_party) {
-                return Err(RelayErrorCode::Forbidden);
+        } = pending_for_root(&mut *transaction, link_id, session, now).await?;
+        match &approval {
+            None => {}
+            Some(LinkApproval::Membership(_, bytes)) => {
+                let root = transaction
+                    .lock_signer(&account.root_signer_id)
+                    .await?
+                    .ok_or(UNREADABLE)?;
+                let digest: B256 = view.digest.parse().map_err(|_| RelayErrorCode::Internal)?;
+                let relying_party = RelyingParty {
+                    rp_id: &rp_id,
+                    origin: &origin,
+                };
+                if !verify_root_signature(&root.credential()?, digest, bytes, &relying_party) {
+                    return Err(RelayErrorCode::Forbidden);
+                }
             }
-            if is_member(&mut *transaction, &link.signer_id, &account.account_id).await? {
+            Some(LinkApproval::Grant { template_id, .. }) => {
+                let (request, artifact_ref) = sealed.as_ref().ok_or(RelayErrorCode::Internal)?;
+                // The template may have changed since verification: recompose.
+                let (recomposed, _) = link_grant_request(
+                    &mut *transaction,
+                    issuer,
+                    link_id,
+                    template_id,
+                    session,
+                    now,
+                )
+                .await?;
+                if recomposed.hash() != request.hash() {
+                    return Err(INVALID);
+                }
+                if is_member(&mut *transaction, &link.signer_id, &account.account_id).await? {
+                    return Err(RelayErrorCode::AlreadyDecided);
+                }
+                record_member_grant(
+                    &mut *transaction,
+                    request,
+                    &account,
+                    &link.signer_id,
+                    artifact_ref,
+                    now,
+                )
+                .await?;
+            }
+        }
+        if approval.is_some() {
+            if approval_is_membership(&approval)
+                && is_member(&mut *transaction, &link.signer_id, &account.account_id).await?
+            {
                 return Err(RelayErrorCode::AlreadyDecided);
             }
             let joined = transaction
@@ -517,13 +609,13 @@ pub async fn decide_link(
                 return Err(RelayErrorCode::Internal);
             }
         }
+        let (signature, grant_id) = match &approval {
+            Some(LinkApproval::Membership(text, _)) => (Some(text.as_str()), None),
+            Some(LinkApproval::Grant { .. }) => (None, Some(link.link_id.as_str())),
+            None => (None, None),
+        };
         let decided = transaction
-            .decide_link_request(
-                &link.link_id,
-                outcome,
-                signature.as_ref().map(|(text, _)| text.as_str()),
-                now,
-            )
+            .decide_link_request(&link.link_id, outcome, signature, grant_id, now)
             .await?;
         if !decided {
             return Err(RelayErrorCode::AlreadyDecided);
@@ -532,10 +624,99 @@ pub async fn decide_link(
             LinkOutcome::Approved => "approved",
             LinkOutcome::Rejected => "rejected",
         };
+        view.grant_id = grant_id.map(str::to_owned);
         Ok(view)
     }
     .await;
     settle(transaction, result).await
+}
+
+/// How the root approves a link: the membership approval (login only), or
+/// a template's grant whose enable is the root's one signature.
+enum LinkApproval {
+    Membership(String, Vec<u8>),
+    Grant {
+        template_id: String,
+        artifact: String,
+    },
+}
+
+fn approval_is_membership(approval: &Option<LinkApproval>) -> bool {
+    matches!(approval, Some(LinkApproval::Membership(..)))
+}
+
+/// The link, locked for its account's root while still pending.
+async fn pending_for_root(
+    transaction: &mut dyn RelayTransaction,
+    link_id: &str,
+    session: &str,
+    now: u64,
+) -> RelayResult<Locked> {
+    let locked = locked(transaction, link_id, session, now).await?;
+    if session != locked.account.root_signer_id {
+        return Err(RelayErrorCode::Forbidden);
+    }
+    if locked.link.outcome.is_some() {
+        return Err(RelayErrorCode::AlreadyDecided);
+    }
+    if now >= locked.link.expires_at {
+        return Err(RelayErrorCode::Expired);
+    }
+    Ok(locked)
+}
+
+/// The grant request a template approval of this link signs: the link's id
+/// and creation time, the new signer, and the template.
+async fn link_grant_request(
+    transaction: &mut dyn RelayTransaction,
+    issuer: &str,
+    link_id: &str,
+    template_id: &str,
+    session: &str,
+    now: u64,
+) -> RelayResult<(PermissionRequest, AccountRecord)> {
+    let Locked { link, account, .. } = pending_for_root(transaction, link_id, session, now).await?;
+    let template = root_template(transaction, &account.account_id, template_id, session).await?;
+    let member = transaction
+        .lock_signer(&link.signer_id)
+        .await?
+        .ok_or(UNREADABLE)?;
+    let request = compose_member_request(
+        issuer,
+        &MemberGrant {
+            request_id: &link.link_id,
+            requested_at: link.created_at / 1_000,
+            account: &account,
+            member: &member,
+            template: &template,
+        },
+    )?;
+    Ok((request, account))
+}
+
+/// What the root signs to approve this link with `{template_id}`.
+pub async fn prepare_link_grant(
+    store: &dyn RelayStore,
+    clock: &dyn RelayClock,
+    issuer: &str,
+    link_id: &str,
+    body: &Map<String, Value>,
+    session: &str,
+) -> RelayResult<PreparedGrant> {
+    let template_id = template_selection(body)?;
+    let now = relay_now(clock)?;
+    let mut transaction = store.begin().await?;
+    let result = link_grant_request(
+        &mut *transaction,
+        issuer,
+        link_id,
+        template_id,
+        session,
+        now,
+    )
+    .await;
+    let (request, account) = settle(transaction, result).await?;
+    prepared(&request, &account.address)
 }
 
 #[derive(Debug, Serialize)]

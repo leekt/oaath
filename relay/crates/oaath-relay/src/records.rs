@@ -317,8 +317,9 @@ impl AuthorizationDecisionRecord {
         )?;
         let outcome = DecisionOutcome::parse(r.get("outcome"))?;
         let code_ref_null = matches!(r.get("codeRef"), Some(Value::Null));
-        // The sealed code exists exactly when a code was released.
-        if (outcome == DecisionOutcome::Approved) == code_ref_null {
+        // A sealed code exists only for an approval. The portal's own grants
+        // (`member_grant.rs`) are approved without releasing one.
+        if outcome != DecisionOutcome::Approved && !code_ref_null {
             return Err(UNREADABLE);
         }
         if code_ref_null != matches!(r.get("codeExpiresAt"), Some(Value::Null)) {
@@ -539,9 +540,13 @@ mod tests {
             AuthorizationDecisionRecord::parse(&decision("withdrawn", json!(null), json!(null)))
                 .is_ok()
         );
+        // The portal's own grants are approved without a released code.
+        assert!(
+            AuthorizationDecisionRecord::parse(&decision("approved", json!(null), json!(null)))
+                .is_ok()
+        );
         for value in [
             decision("maybe", json!(null), json!(null)),
-            decision("approved", json!(null), json!(null)),
             decision("rejected", json!("ref"), json!(5)),
             decision("approved", json!("ref"), json!(null)),
         ] {

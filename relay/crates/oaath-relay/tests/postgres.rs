@@ -250,11 +250,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v12 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v13 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v12");
+    assert_eq!(version, "oaath.relay-postgres-schema/v13");
     pool.close().await;
 }
 
@@ -1111,5 +1111,112 @@ async fn keeps_a_link_approval_single_use_and_its_removal_across_restarts() {
         "removed"
     );
     assert_eq!(h.send(accounts()).await.ok(200)["accounts"], json!([]));
+    shutdown(h).await;
+}
+
+#[tokio::test]
+async fn keeps_templates_and_a_template_approved_member_grant_across_restarts() {
+    use support::grant::{Root, approval, root_key, sign_in};
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let root = Root::Ecdsa(root_key());
+    let passkey = Root::WebAuthn(
+        p256::ecdsa::SigningKey::from_slice(&[0x44; 32]).unwrap(),
+        b"second-device".to_vec(),
+    );
+    let template = json!({
+        "name": "Payments",
+        "lifetime_seconds": 3_600,
+        "policy": {
+            "calls": [{ "target": format!("0x{}", "aa".repeat(20)), "selector": "0xa9059cbb", "valueLimit": "0" }],
+            "perChainOperationLimit": { "count": 3, "intervalSeconds": null },
+        },
+    });
+
+    let h = fixture.process(clock.clone()).await;
+    let (root_id, root_cookie) = sign_in(&h, &root).await;
+    let account = h
+        .send(portal_call(
+            "POST",
+            "/portal/accounts",
+            Some(&root_cookie),
+            Some(json!({ "root_signer_id": root_id })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    let policies = format!("/portal/accounts/{}/policies", text(&account, "account_id"));
+    let created = h
+        .send(portal_call(
+            "POST",
+            &policies,
+            Some(&root_cookie),
+            Some(template),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    let (member_id, member_cookie) = sign_in(&h, &passkey).await;
+    let link_id = text(
+        h.send(portal_call(
+            "POST",
+            "/portal/links",
+            Some(&member_cookie),
+            Some(
+                json!({ "signer_id": member_id, "account": account["address"], "label": "Laptop" }),
+            ),
+        ))
+        .await
+        .ok(201),
+        "link_id",
+    )
+    .to_owned();
+    shutdown(h).await;
+
+    let h = fixture.process(clock.clone()).await;
+    let listed = h
+        .send(portal_call("GET", &policies, Some(&root_cookie), None))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(listed, json!({ "policies": [created] }));
+    let selection = json!({ "template_id": created["template_id"] });
+    let prepared = h
+        .send(portal_call(
+            "POST",
+            &format!("/portal/links/{link_id}/prepare"),
+            Some(&root_cookie),
+            Some(selection),
+        ))
+        .await
+        .ok(200)
+        .clone();
+    h.send(portal_call(
+        "POST",
+        &format!("/portal/links/{link_id}/approve"),
+        Some(&root_cookie),
+        Some(json!({
+            "template_id": created["template_id"],
+            "artifact": approval(&prepared, &root).to_string(),
+        })),
+    ))
+    .await
+    .ok(200);
+    shutdown(h).await;
+
+    let h = fixture.process(clock).await;
+    let grant = h
+        .send(portal_call(
+            "GET",
+            &format!("/portal/grants/{link_id}"),
+            Some(&member_cookie),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(grant["status"], "approved");
+    assert_eq!(grant["permission_request"], prepared["permission_request"]);
     shutdown(h).await;
 }

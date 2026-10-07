@@ -30,6 +30,10 @@
 //! DELETE /portal/accounts/{accountId}/members/{id}   portal  the root removes a member
 //! POST /portal/accounts/{a}/members/{id}/suspend     portal  the root suspends a member
 //! POST /portal/accounts/{a}/members/{id}/restore     portal  the root restores a member
+//! POST /portal/accounts/{a}/members/{id}/grants(/prepare) portal  the root grants a template
+//! GET|POST|PUT|DELETE /portal/accounts/{a}/policies(/{t})  portal  the root's templates
+//! POST /portal/links/{linkId}/prepare                portal  what a template approval signs
+//! GET  /portal/grants/{grantId}                      portal  a member grant (root, member)
 //! ```
 //!
 //! A signer's accounts, account creation, and grant prepare and approved
@@ -72,14 +76,16 @@ use crate::clock::RelayClock;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::kms::RelayKms;
 use crate::link::{
-    LinkOutcome, create_link, decide_link, identifier_segment, list_members, read_link,
-    remove_member, set_member_status,
+    LinkOutcome, create_link, decide_link, identifier_segment, list_members, prepare_link_grant,
+    read_link, remove_member, set_member_status,
 };
+use crate::member_grant::{assign_grant, member_grant_view, prepare_assignment};
 use crate::oauth::{
     LoginDecision, OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, grant,
     login_decision, parse_form, prepare_grant, push_authorization_request, read_transaction,
     recover_redirect, register_client,
 };
+use crate::policy::{delete_template, list_templates, save_template};
 use crate::portal::{
     assert_same_origin, create_account, register_signer, signer_accounts, signer_by_credential,
 };
@@ -513,23 +519,67 @@ impl Relay {
                     return reply(201, &create_link(store, clock, &body, &session).await?);
                 }
                 let link_id = identifier_segment(third)?;
+                let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
                 let outcome = match fourth {
                     None => {
                         require_method(method, &Method::GET)?;
                         return reply(200, &read_link(store, clock, link_id, &session).await?);
+                    }
+                    Some("prepare") => {
+                        require_method(method, &Method::POST)?;
+                        let body = body_record(headers, body, self.max_body_bytes).await?;
+                        let prepared =
+                            prepare_link_grant(store, clock, issuer, link_id, &body, &session)
+                                .await?;
+                        return reply(200, &prepared);
                     }
                     Some("approve") => LinkOutcome::Approved,
                     Some("reject") => LinkOutcome::Rejected,
                     Some(_) => return Err(RelayErrorCode::NotFound),
                 };
                 require_method(method, &Method::POST)?;
-                let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
                 let body = body_record(headers, body, self.max_body_bytes).await?;
+                let kms = self.kms.as_ref();
                 let view =
-                    decide_link(store, clock, issuer, link_id, &body, &session, outcome).await?;
+                    decide_link(store, clock, kms, issuer, link_id, &body, &session, outcome)
+                        .await?;
                 return reply(200, &view);
             }
-            if group == Some("accounts") && fourth == Some("members") && (4..=6).contains(&count) {
+            if group == Some("accounts") && fourth == Some("policies") && (count == 4 || count == 5)
+            {
+                let session = session_signer(store, clock, headers).await?;
+                let account_id = identifier_segment(third)?;
+                if count == 4 {
+                    if method == Method::GET {
+                        return reply(200, &list_templates(store, account_id, &session).await?);
+                    }
+                    require_method(method, &Method::POST)?;
+                    let body = body_record(headers, body, self.max_body_bytes).await?;
+                    let saved = save_template(store, clock, account_id, None, &body, &session);
+                    return reply(201, &saved.await?);
+                }
+                let template_id = identifier_segment(segment(4))?;
+                if method == Method::DELETE {
+                    let deleted = delete_template(store, account_id, template_id, &session);
+                    return reply(200, &deleted.await?);
+                }
+                require_method(method, &Method::PUT)?;
+                let body = body_record(headers, body, self.max_body_bytes).await?;
+                let saved =
+                    save_template(store, clock, account_id, Some(template_id), &body, &session);
+                return reply(200, &saved.await?);
+            }
+            if group == Some("grants") && count == 3 {
+                require_method(method, &Method::GET)?;
+                let session = session_signer(store, clock, headers).await?;
+                let grant_id = identifier_segment(third)?;
+                let kms = self.kms.as_ref();
+                return reply(
+                    200,
+                    &member_grant_view(store, kms, grant_id, &session).await?,
+                );
+            }
+            if group == Some("accounts") && fourth == Some("members") && (4..=7).contains(&count) {
                 let session = session_signer(store, clock, headers).await?;
                 let account_id = identifier_segment(third)?;
                 if count == 4 {
@@ -538,6 +588,26 @@ impl Relay {
                 }
                 let signer_id = identifier_segment(segment(4))?;
                 let kms = self.kms.as_ref();
+                if segment(5) == Some("grants") {
+                    require_method(method, &Method::POST)?;
+                    let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
+                    let body = body_record(headers, body, self.max_body_bytes).await?;
+                    return match (count, segment(6)) {
+                        (7, Some("prepare")) => {
+                            let prepared = prepare_assignment(
+                                store, clock, issuer, account_id, signer_id, &body, &session,
+                            );
+                            reply(200, &prepared.await?)
+                        }
+                        (6, None) => {
+                            let assigned = assign_grant(
+                                store, clock, kms, issuer, account_id, signer_id, &body, &session,
+                            );
+                            reply(201, &assigned.await?)
+                        }
+                        _ => Err(RelayErrorCode::NotFound),
+                    };
+                }
                 if count == 6 {
                     require_method(method, &Method::POST)?;
                     let status = match segment(5) {
