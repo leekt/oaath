@@ -15,5 +15,10 @@
       "service_id": "01a115c3-9a1a-7141-8dc6-306a0311b266"
     }
   ],
+  // Per-IP budget for `/rpc/421614`: 240 chain reads a minute. RPC_UPSTREAM_421614
+  // (a secret) may replace the public Arbitrum Sepolia endpoint.
+  "ratelimits": [
+    { "name": "RPC_LIMIT", "namespace_id": "4216140", "simple": { "limit": 240, "period": 60 } }
+  ],
   "observability": { "enabled": true }
 }

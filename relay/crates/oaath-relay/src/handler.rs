@@ -82,8 +82,8 @@ use crate::link::{
 use crate::member_grant::{assign_grant, member_grant_view, prepare_assignment};
 use crate::oauth::{
     LoginDecision, OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, grant,
-    login_decision, parse_form, prepare_grant, push_authorization_request, read_transaction,
-    recover_redirect, register_client,
+    login_decision, operation, parse_form, prepare_grant, push_authorization_request,
+    read_transaction, recover_redirect, register_client,
 };
 use crate::policy::{delete_template, list_templates, save_template};
 use crate::portal::{
@@ -651,6 +651,21 @@ impl Relay {
                             artifact,
                         } = &decision
                         {
+                            if operation::is_operation_transaction(store, id).await? {
+                                let redirect = operation::decide_operation(
+                                    store,
+                                    clock,
+                                    kms,
+                                    oauth,
+                                    self.code_ttl_ms,
+                                    id,
+                                    signer_id,
+                                    account_id,
+                                    artifact,
+                                )
+                                .await?;
+                                return reply(200, &redirect);
+                            }
                             let redirect = grant::decide_grant(
                                 store,
                                 clock,

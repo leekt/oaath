@@ -29,6 +29,7 @@
 
 pub mod grant;
 pub mod id_token;
+pub mod operation;
 pub mod records;
 
 use oaath_protocol::capture::parse_json;
@@ -307,11 +308,20 @@ pub async fn push_authorization_request(
     }
     let created_at = relay_now(clock)?;
     let par_id = random_identifier();
-    let authorization_details = match param(form, "authorization_details") {
+    let invalid_details = || OAuthFailure::new(400, "invalid_authorization_details", INVALID);
+    let operation = match param(form, "authorization_details") {
         None => None,
-        Some(details) => Some(
+        Some(details) => {
+            operation::operation_request(&parse_json(details).map_err(|_| invalid_details())?)
+                .map_err(|_| invalid_details())?
+        }
+    };
+    let authorization_details = match (param(form, "authorization_details"), &operation) {
+        (None, _) => None,
+        (Some(_), Some(request)) => Some(operation::stored_details(request)),
+        (Some(details), None) => Some(
             grant_details(details, &par_id, client_id, redirect_uri, created_at)
-                .map_err(|_| OAuthFailure::new(400, "invalid_authorization_details", INVALID))?,
+                .map_err(|_| invalid_details())?,
         ),
     };
     let record = ParRecord {
@@ -328,7 +338,19 @@ pub async fn push_authorization_request(
         expires_at: created_at + request_ttl_ms,
     };
     let mut transaction = store.begin().await?;
-    match push(&mut *transaction, &record).await {
+    // An owner operation names its account: it must be a registry account.
+    let bound = match &operation {
+        Some(request) => operation::bound_account(&mut *transaction, request)
+            .await
+            .map(|_| ())
+            .map_err(|_| invalid_details()),
+        None => Ok(()),
+    };
+    let pushed = match bound {
+        Ok(()) => push(&mut *transaction, &record).await,
+        Err(failure) => Err(failure),
+    };
+    match pushed {
         Ok(()) => transaction.commit().await?,
         Err(failure) => {
             transaction.rollback().await;
@@ -793,8 +815,8 @@ pub async fn exchange_code(
     let (par, account, signer, grant, memberships) = settle(transaction, result).await?;
     // A grant's sealed approval is released once, with the token.
     let authorization_details = match grant {
-        None => None,
-        Some(permission_request) => {
+        Released::Login => None,
+        Released::Grant(permission_request) => {
             let claimed =
                 claim_encrypted_artifact(store, clock, kms, &caller, &consumed.artifact_id).await?;
             Some(vec![grant::grant_detail(
@@ -802,6 +824,11 @@ pub async fn exchange_code(
                 &permission_request,
                 &claimed.artifact,
             )?])
+        }
+        Released::Operation => {
+            let claimed =
+                claim_encrypted_artifact(store, clock, kms, &caller, &consumed.artifact_id).await?;
+            Some(vec![operation::operation_detail(&claimed.artifact)?])
         }
     };
     let access_token = grant::issue_access_token(store, clock, client_id, &par.par_id).await?;
@@ -835,6 +862,14 @@ pub async fn exchange_code(
     })
 }
 
+/// What a redeemed code releases besides the login.
+enum Released {
+    Login,
+    /// The composed permission request of a grant.
+    Grant(Value),
+    Operation,
+}
+
 async fn login_claims(
     transaction: &mut dyn RelayTransaction,
     request_id: &str,
@@ -842,7 +877,7 @@ async fn login_claims(
     ParRecord,
     crate::registry::AccountRecord,
     crate::registry::SignerRecord,
-    Option<Value>,
+    Released,
     Vec<Value>,
 )> {
     // Only a login's or an OAuth grant's code redeems here; any other code
@@ -852,9 +887,11 @@ async fn login_claims(
         .await?
         .ok_or(RelayErrorCode::CodeInvalid)?;
     let grant = if request.requested_scope == LOGIN_SELECTION_SCOPE {
-        None
+        Released::Login
+    } else if request.requested_scope == operation::OPERATION_SCOPE {
+        Released::Operation
     } else {
-        Some(
+        Released::Grant(
             stored_permission_request(&request.requested_scope, request_id)
                 .ok_or(RelayErrorCode::CodeInvalid)?
                 .to_json(),

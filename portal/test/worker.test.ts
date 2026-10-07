@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import worker, { type Env, MAX_BODY_BYTES, ORIGIN } from "../worker/index.js";
 
 interface Recorded {
@@ -219,5 +219,132 @@ describe("portal worker", () => {
     };
     const response = await worker.fetch(new Request(`${ORIGIN}/oauth/jwks`), env);
     expect(response.status).toBe(502);
+  });
+});
+
+describe("portal worker chain reads", () => {
+  function rpcEnvironment(budget = 100) {
+    const upstream: { headers: Headers; body: unknown[] }[] = [];
+    let remaining = budget;
+    const env: Env = {
+      ...environment().env,
+      RPC_LIMIT: { limit: async () => ({ success: remaining-- > 0 }) },
+      RPC_UPSTREAM_421614: "http://provider.invalid/secret-key",
+    };
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      expect(url).toBe("http://provider.invalid/secret-key");
+      const body = JSON.parse(String(init.body)) as { id: unknown }[];
+      upstream.push({ headers: new Headers(init.headers), body });
+      return Response.json(
+        body.map((call) => ({ jsonrpc: "2.0", id: call.id, result: "0x1" })),
+        { headers: { "set-cookie": "provider=1" } },
+      );
+    });
+    return { env, upstream };
+  }
+
+  function rpc(env: Env, body: unknown, headers: Record<string, string> = {}) {
+    return worker.fetch(
+      new Request(`${ORIGIN}/rpc/421614`, {
+        method: "POST",
+        headers: {
+          origin: ORIGIN,
+          "sec-fetch-site": "same-origin",
+          "content-type": "application/json",
+          cookie: "oaath_portal_session=secret",
+          ...headers,
+        },
+        body: JSON.stringify(body),
+      }),
+      env,
+    );
+  }
+
+  const call = (method: string, params: unknown[] = [], id: number | string = 1) => ({
+    jsonrpc: "2.0",
+    id,
+    method,
+    params,
+  });
+  const account = `0x${"ab".repeat(20)}`;
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("forwards allow-listed reads with no cookie or client header, and returns no cookie", async () => {
+    const { env, upstream } = rpcEnvironment();
+    const response = await rpc(env, call("eth_getCode", [account, "latest"]));
+    expect(await response.json()).toEqual({ jsonrpc: "2.0", id: 1, result: "0x1" });
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(upstream).toHaveLength(1);
+    expect([...(upstream[0]?.headers.keys() ?? [])]).toEqual(["content-type"]);
+    const batch = await rpc(env, [
+      call("eth_chainId", [], "a"),
+      call("eth_call", [{ to: account, data: "0x12345678" }, "0x10"], "b"),
+    ]);
+    expect(await batch.json()).toEqual([
+      { jsonrpc: "2.0", id: "a", result: "0x1" },
+      { jsonrpc: "2.0", id: "b", result: "0x1" },
+    ]);
+  });
+
+  it("refuses writes, unknown methods and unbounded reads without reaching the provider", async () => {
+    const { env, upstream } = rpcEnvironment();
+    const refused = [
+      call("eth_sendRawTransaction", ["0x00"]),
+      call("eth_call", [{ to: account, data: "0x", value: "0x1" }, "latest"]),
+      call("eth_call", [{ to: account, data: "0x" }, "latest", {}]),
+      call("eth_getBlockByNumber", ["latest", true]),
+      call("eth_getLogs", [{ fromBlock: "0x0", toBlock: "0x10" }]),
+      call("eth_getLogs", [{ address: account, fromBlock: "earliest", toBlock: "latest" }]),
+    ];
+    for (const entry of refused) {
+      const body = (await (await rpc(env, entry)).json()) as { error: { code: number } };
+      expect(body.error.code, entry.method).toBeLessThan(0);
+    }
+    const wide = (await (
+      await rpc(
+        env,
+        call("eth_getLogs", [{ address: account, fromBlock: "0x0", toBlock: "0x989680" }]),
+      )
+    ).json()) as { error: { code: number; message: string } };
+    // A range error readers split on, rather than a provider call.
+    expect(wide.error).toEqual({
+      code: -32005,
+      message: "log block range exceeds the 10000000 limit",
+    });
+    expect(upstream).toHaveLength(0);
+  });
+
+  it("caps the batch, the body and the per-IP budget, and refuses other origins", async () => {
+    const { env, upstream } = rpcEnvironment(3);
+    const nine = Array.from({ length: 9 }, (_, index) => call("eth_chainId", [], index));
+    expect((await rpc(env, nine)).status).toBe(413);
+    expect((await rpc(env, call("eth_chainId", ["x".repeat(20_000)]))).status).toBe(413);
+    expect((await rpc(env, call("eth_chainId"), { origin: "https://dapp.example" })).status).toBe(
+      403,
+    );
+    expect((await rpc(env, call("eth_chainId"), { "sec-fetch-site": "cross-site" })).status).toBe(
+      403,
+    );
+    expect(upstream).toHaveLength(0);
+    // Three units of budget: a batch of two, then one, then exhausted.
+    expect((await rpc(env, [call("eth_chainId", [], 1), call("eth_chainId", [], 2)])).status).toBe(
+      200,
+    );
+    expect((await rpc(env, call("eth_chainId"))).status).toBe(200);
+    expect((await rpc(env, call("eth_chainId"))).status).toBe(429);
+    expect(upstream).toHaveLength(2);
+    const { RPC_LIMIT: _limit, ...unbudgeted } = env;
+    expect((await rpc(unbudgeted, call("eth_chainId"))).status).toBe(503);
+  });
+
+  it("answers a lost or malformed provider reply with an HTTP error, never a JSON-RPC result", async () => {
+    const { env } = rpcEnvironment();
+    vi.stubGlobal("fetch", async () => {
+      throw new Error("timeout");
+    });
+    expect((await rpc(env, call("eth_chainId"))).status).toBe(504);
+    vi.stubGlobal("fetch", async () => Response.json({ jsonrpc: "2.0", id: 9, result: "0x1" }));
+    expect((await rpc(env, call("eth_chainId"))).status).toBe(502);
   });
 });
