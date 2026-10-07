@@ -1,0 +1,25 @@
+[package]
+name = "oaath-relay"
+description = "OAAth authorization relay."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+oaath-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+base64.workspace = true
+rand.workspace = true
+hex.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+axum.workspace = true
+sqlx.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+async-trait = "0.1"
+aes-gcm = "0.10"

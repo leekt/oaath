@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/oaath-protocol"]
+members = ["crates/oaath-protocol", "crates/oaath-relay"]
 
 [workspace.package]
 version = "0.3.4"
