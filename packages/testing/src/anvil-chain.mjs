@@ -19,7 +19,6 @@
 import { encodeKernelNonceKey, encodeKernelNonceRead } from "@oaath/sdk/advanced";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import { kernelDeployment } from "@oaath/sdk/kernel";
-import { parseEther } from "viem";
 import {
   createLocalAnvilObservation,
   readLocalOperationReceipt,
@@ -39,7 +38,7 @@ const GAS = {
 
 /**
  * @param {number} chainId
- * @param {{ p256?: boolean, existingOwner?: import("viem").Hex | null }} [options]
+ * @param {{ p256?: boolean, existingOwner?: import("cetane").Hex | null }} [options]
  */
 export async function createAnvilChain(chainId, options = {}) {
   const { p256 = false, existingOwner = null } = options;
@@ -103,7 +102,7 @@ export async function createAnvilChain(chainId, options = {}) {
           : kernelDeployment({ chainId, kernelVersion: "0.3.3" }).ecdsaValidator,
       existingAccount,
       sends,
-      fund: (account) => stack.fund(account, parseEther("1")),
+      fund: (account) => stack.fund(account, 10n ** 18n),
       /** Pure local deployment quote. The retained approval supplies the permission identity. */
       async quoteRevocation(approval) {
         const signer = approval.packages.find((entry) => entry.moduleType === 6);
@@ -183,7 +182,7 @@ export async function createAnvilChain(chainId, options = {}) {
           // The quote is the first port that learns the exact account address, so
           // it is where this example prefunds it. A deployment funds accounts out
           // of band, or uses a paymaster.
-          await stack.fund(request.account, parseEther("1"));
+          await stack.fund(request.account, 10n ** 18n);
           return nonceQuote(request);
         },
         // Complete usage evidence anchored to the node's own finalized tag: the

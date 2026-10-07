@@ -20,8 +20,8 @@ import {
   sessionOperator,
 } from "@oaath/sdk/kernel";
 import { createMemoryRelayStore, createRelayHandler, type RelayCaller } from "@oaath/server";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
 import { IDBFactory } from "fake-indexeddb";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { LOCAL_ISSUER, LOCAL_REDIRECT, localClientBinding } from "./anvil-binding.js";
 import { createAnvilChain } from "./anvil-chain.mjs";
 import { captureLocalAnvilRecovery, type LocalAnvilRecovery } from "./anvil-recovery.js";

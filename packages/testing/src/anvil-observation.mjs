@@ -1,9 +1,14 @@
+import { entryPointAbi } from "@oaath/protocol";
 import { encodeKernelInstallNonceRead } from "@oaath/sdk/advanced";
-import { decodeEventLog, encodeFunctionData, toEventSelector, toHex } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { decodeEventLog, encodeFunctionData, keccak256, toHex } from "cetane/utils";
 
-const USER_OPERATION_EVENT = toEventSelector(
-  "UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)",
+const eventAbi = entryPointAbi.find(
+  (item) => item.type === "event" && item.name === "UserOperationEvent",
+);
+const USER_OPERATION_EVENT = keccak256(
+  new TextEncoder().encode(
+    `${eventAbi.name}(${eventAbi.inputs.map(({ type }) => type).join(",")})`,
+  ),
 );
 /** Only the keys the observer accepts: extra fields fail its exact capture. */
 const blockEvidence = (raw) =>
@@ -49,7 +54,7 @@ export async function readLocalOperationReceipt(chain, entryPoint, userOperation
       entry.topics[1] === userOperationHash,
   );
   if (!log) return null;
-  const { args } = decodeEventLog({ abi: entryPoint07Abi, data: log.data, topics: log.topics });
+  const { args } = decodeEventLog({ abi: entryPointAbi, data: log.data, topics: log.topics });
   return {
     userOperationHash,
     entryPoint,
@@ -150,7 +155,7 @@ export function createLocalAnvilObservation(chain, entryPoint) {
         // The node's own EntryPoint.getNonce for the operation's 192-bit
         // key, read at the anchored block the observer names.
         const data = encodeFunctionData({
-          abi: entryPoint07Abi,
+          abi: entryPointAbi,
           functionName: "getNonce",
           args: [request.account, BigInt(request.nonce) >> 64n],
         });

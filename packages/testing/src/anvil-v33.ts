@@ -3,7 +3,12 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { kernelDeployment } from "@oaath/sdk/kernel";
-import { concat, encodeFunctionData, type Hex, parseAbi, zeroAddress, zeroHash } from "viem";
+import type { Hex } from "cetane";
+import { concatHex, encodeFunctionData, parseAbi } from "cetane/utils";
+
+const zeroAddress = `0x${"00".repeat(20)}` as const;
+const zeroHash = `0x${"00".repeat(32)}` as const;
+
 import v33 from "../../sdk/test/fixtures/kernel-v33-deployments.json" with { type: "json" };
 import type { deployKernelStack, startAnvil } from "./anvil-process.mjs";
 
@@ -18,9 +23,8 @@ export async function deployLocalV33Account(
   );
   const entryPointHash = await stack.wallet.sendTransaction({
     account: stack.submitter,
-    chain: null,
     to: deployment.create2Deployer,
-    data: concat([v33.entryPoint.deploymentSalt as Hex, entryPoint.bytecode as Hex]),
+    data: concatHex([v33.entryPoint.deploymentSalt as Hex, entryPoint.bytecode as Hex]),
     gas: 10_000_000n,
   });
   if ((await chain.client.waitForTransactionReceipt({ hash: entryPointHash })).status !== "success")
@@ -28,7 +32,6 @@ export async function deployLocalV33Account(
   for (const module of [v33.kernel, v33.factory, v33.ecdsaValidator]) {
     const hash = await stack.wallet.sendTransaction({
       account: stack.submitter,
-      chain: null,
       to: deployment.create2Deployer,
       data: module.deploymentInput as Hex,
       gas: 10_000_000n,
@@ -57,7 +60,6 @@ export async function deployLocalV33Account(
   ).toLowerCase() as Hex;
   const creation = await stack.wallet.writeContract({
     account: stack.submitter,
-    chain: null,
     address: deployment.factory,
     abi: factoryAbi,
     functionName: "createAccount",

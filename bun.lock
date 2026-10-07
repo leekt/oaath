@@ -107,11 +107,12 @@
         "@oaath/protocol": "workspace:*",
         "@oaath/sdk": "workspace:*",
         "@oaath/server": "workspace:*",
+        "cetane": "file:../../vendor/cetane-0.0.2-9862f7c.tgz",
         "fake-indexeddb": "6.2.5",
-        "viem": "2.55.8",
       },
       "devDependencies": {
         "@types/node": "22.13.0",
+        "viem": "2.55.8",
       },
     },
   },

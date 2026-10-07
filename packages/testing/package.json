@@ -59,10 +59,11 @@
     "@oaath/sdk": "workspace:*",
     "@oaath/server": "workspace:*",
     "fake-indexeddb": "6.2.5",
-    "viem": "2.55.8"
+    "cetane": "file:../../vendor/cetane-0.0.2-9862f7c.tgz"
   },
   "devDependencies": {
-    "@types/node": "22.13.0"
+    "@types/node": "22.13.0",
+    "viem": "2.55.8"
   },
   "publishConfig": {
     "access": "public"
