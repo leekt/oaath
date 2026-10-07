@@ -30,7 +30,7 @@ import {
   createClock,
   createMemoryStores,
   createRealm,
-  createRelay,
+  type createRelay,
   createUrlRealm,
   permissionInput,
   type RealmStores,
@@ -267,10 +267,9 @@ describe("durable ID uniqueness", () => {
   it("rejects the same application ID from another Grant in one provider scope", async () => {
     const stores = reopenableMemoryStores();
     const clock = createClock();
-    const relay = createRelay(clock);
     const chain = createChainFixture();
-    const firstRealm = createRealm({ stores, clock, relay, chain });
-    const secondRealm = createRealm({ stores, clock, relay, chain });
+    const firstRealm = createRealm({ stores, clock, chain });
+    const secondRealm = createRealm({ stores, clock, chain });
     const firstConnection = await firstRealm.oaath.connect();
     const secondConnection = await secondRealm.oaath.connect();
     const firstGrant = await firstConnection.requestPermission(permissionInput());
@@ -373,9 +372,8 @@ describe("durable ID uniqueness", () => {
       }),
     };
     const clock = createClock();
-    const relay = createRelay(clock);
-    const realm = createRealm({ chain, stores: gatedStores, clock, relay });
-    const competingRealm = createRealm({ chain, stores: gatedStores, clock, relay });
+    const realm = createRealm({ chain, stores: gatedStores, clock });
+    const competingRealm = createRealm({ chain, stores: gatedStores, clock });
     const connection = await realm.oaath.connect();
     const grant = await connection.requestPermission(permissionInput());
     const competingConnection = await competingRealm.oaath.connect();
@@ -597,22 +595,19 @@ describe("durable ID uniqueness", () => {
   it("isolates the same ID by provider binding and sender account", async () => {
     const stores = reopenableMemoryStores();
     const clock = createClock();
-    const relay = createRelay(clock);
     const firstChain = createChainFixture();
     const otherBindingChain = createChainFixture();
     const otherAccountChain = createChainFixture({ account: OTHER_ACCOUNT });
-    const first = createRealm({ stores, clock, relay, chain: firstChain });
+    const first = createRealm({ stores, clock, chain: firstChain });
     const otherBinding = createRealm({
       stores,
       clock,
-      relay,
       chain: otherBindingChain,
       binding: { ...bindingInput, deviceId: "device-b" },
     });
     const otherAccount = createRealm({
       stores,
       clock,
-      relay,
       chain: otherAccountChain,
       binding: {
         ...bindingInput,
@@ -1105,10 +1100,9 @@ describe("durable crash boundaries", () => {
   it("observes one send/return ambiguity after full recreation and never submits again", async () => {
     const stores = reopenableMemoryStores();
     const clock = createClock();
-    const relay = createRelay(clock);
     let crash = true;
     const chain = createChainFixture({ crashOnSend: () => crash });
-    const before = createRealm({ stores, clock, relay, chain });
+    const before = createRealm({ stores, clock, chain });
     const firstConnection = await before.oaath.connect();
     const firstGrant = await firstConnection.requestPermission(permissionInput());
     const account = await firstGrant.account(CHAIN_ID);
@@ -1123,7 +1117,7 @@ describe("durable crash boundaries", () => {
     await firstConnection.close();
     crash = false;
 
-    const after = createRealm({ stores, clock, relay, chain });
+    const after = createRealm({ stores, clock, chain });
     const secondConnection = await after.oaath.connect();
     const secondGrant = await secondConnection.resume();
     if (secondGrant === null) throw new Error("expected the ambiguous Grant to resume");

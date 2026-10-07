@@ -413,7 +413,6 @@ describe("wallet prepared-call ERC-7902 validity", () => {
     const afterReload = createRealm({
       stores: secondStores.stores,
       clock,
-      relay: before.relay,
       chain: policy.chain,
     });
     const secondConnection = await afterReload.oaath.connect();

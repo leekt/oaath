@@ -155,11 +155,11 @@ describe("explicit Grant signer auto", () => {
     let realm = createRealm({ chain, stores: owned.stores as unknown as RealmStores });
     let grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
     const operation = await grant.sendCalls(autoCalls());
-    const { relay, clock } = realm;
+    const { clock } = realm;
     await realm.oaath.close();
     await owned.close();
     owned = await openStores(captureStores(undefined, STORE_NAMES), STORE_NAMES);
-    realm = createRealm({ stores: owned.stores as unknown as RealmStores, relay, clock, chain });
+    realm = createRealm({ stores: owned.stores as unknown as RealmStores, clock, chain });
     grant = (await (await realm.oaath.connect()).resume())!;
     await expect(grant.sendCalls(autoCalls())).rejects.toMatchObject({
       code: "oaath_client_state_conflict",

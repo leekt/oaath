@@ -432,7 +432,6 @@ describe("wallet_sendCalls orchestration", () => {
     const statusRealm = createRealm({
       stores: racedStores,
       clock: statusClock,
-      relay: senderRealm.relay,
       chain,
     });
     const statusConnection = await statusRealm.oaath.connect();

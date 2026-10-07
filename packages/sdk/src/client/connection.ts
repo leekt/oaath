@@ -1228,6 +1228,8 @@ export function createConnection(
       (record.value.state === "expired" &&
         (record.value.terminal.from === "active" || record.value.terminal.from === "revoking"));
     if (!resumesOperations) return null;
+    // Every read above awaited: a Connection closed meanwhile returns nothing.
+    assertUsable();
     return handle(record, context.request, context.approvedPolicy, context.installApproval);
   }
 

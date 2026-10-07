@@ -29,7 +29,6 @@ import {
   createClock,
   createMemoryStores,
   createRealm,
-  createRelay,
   permissionInput,
   sendCallsInput,
   withBundler,
@@ -1036,7 +1035,6 @@ describe("private Grant provider port", () => {
 
   it("never lets a stale retry fence authorize a replacement past a supersession that lands while probing", async () => {
     const clock = createClock();
-    const relay = createRelay(clock);
     const stores = createMemoryStores();
     let withhold = false;
     let supersede = false;
@@ -1084,7 +1082,7 @@ describe("private Grant provider port", () => {
       },
     });
 
-    const first = createRealm({ clock, relay, stores, chain });
+    const first = createRealm({ clock, stores, chain });
     const firstConnection = await first.oaath.connect();
     const grant = await firstConnection.requestPermission(permissionInput());
     const installation = await grant.sendCalls(sendCallsInput());
@@ -1101,7 +1099,7 @@ describe("private Grant provider port", () => {
     // chain. It proves the submitted uninstall superseded while the first
     // instance is paused inside bundler probing — after that instance already
     // decided its retry was positively safe.
-    const second = createRealm({ clock, relay, stores, chain });
+    const second = createRealm({ clock, stores, chain });
     const secondConnection = await second.oaath.connect();
     const resumed = await secondConnection.resume();
     if (!resumed) throw new Error("expected the Grant to resume");

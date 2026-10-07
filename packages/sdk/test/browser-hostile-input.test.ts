@@ -554,41 +554,4 @@ describe("hostile input at the client boundary", () => {
       database.transact(["grants"], "readonly", async () => undefined),
     ).rejects.toMatchObject({ code: "persistence_unavailable" });
   });
-
-  it("refuses an issuer response that is not a structured envelope", async () => {
-    const realm = createRealm({
-      relay: async () => new Response("not json", { status: 200 }),
-    });
-    const connection = await realm.oaath.connect();
-    await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
-      code: "oaath_client_issuer_unavailable",
-    });
-    await connection.close();
-  });
-
-  it("reports a structured issuer refusal without prose", async () => {
-    const realm = createRealm({
-      relay: async () =>
-        new Response(JSON.stringify({ error: { code: "relay_unauthorized" } }), { status: 401 }),
-    });
-    const connection = await realm.oaath.connect();
-    await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
-      code: "oaath_client_issuer_rejected",
-      source: "relay_unauthorized",
-    });
-    await connection.close();
-  });
-
-  it("refuses an unreachable issuer", async () => {
-    const realm = createRealm({
-      relay: async () => {
-        throw new Error("network down");
-      },
-    });
-    const connection = await realm.oaath.connect();
-    await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
-      code: "oaath_client_issuer_unavailable",
-    });
-    await connection.close();
-  });
 });

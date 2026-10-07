@@ -59,9 +59,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
         const harness = await createHarness(local);
         const deployment = kernelDeployment({ chainId: CHAIN_ID, kernelVersion: version });
         const clock = createClock(Math.floor(Date.now() / 1000));
-        let realm:
-          | { oaath: Readonly<Oaath>; relay: ReturnType<typeof createRealm>["relay"] | null }
-          | undefined;
+        let realm: { oaath: Readonly<Oaath> } | undefined;
         const ownerAccount = privateKeyToAccount(generatePrivateKey());
         const ownerOffset = mode === "local" ? 1 : 0;
         let approvalPrompts = 0;
@@ -297,11 +295,10 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
                     ownerCredential,
                   },
                 };
-          function newRealm(relay?: ReturnType<typeof createRealm>["relay"] | null) {
+          function newRealm() {
             if (mode === "local") {
               if (!existing || !ports) throw new Error("local account unavailable");
               return {
-                relay: null,
                 oaath: createOAAth({
                   approvals: { kind: "wallet", owner: wallet },
                   account: existing.address,
@@ -328,7 +325,6 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             return createRealm({
               binding,
               stores: stores(),
-              ...(relay ? { relay } : {}),
               validator,
               clock,
               chain: {
@@ -352,13 +348,12 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
           }
           async function reopenGrant() {
             if (!realm) throw new Error("realm unavailable");
-            const relay = realm.relay;
             await realm.oaath.close();
             database.close();
             database = await openOaathDatabase({ factory });
             ports = chainPorts()[0];
             if (!ports) throw new Error("chain missing");
-            realm = newRealm(relay);
+            realm = newRealm();
             const restored = await (await realm.oaath.connect()).resume();
             if (restored === null) throw new Error("Grant was not restored");
             return restored;
