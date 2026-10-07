@@ -30,8 +30,8 @@ use crate::error::{RelayErrorCode, RelayResult};
 use crate::records::canonical_str;
 use crate::registry::{
     ACCOUNT_RECORD_VERSION, ACCOUNT_SIGNER_RECORD_VERSION, AccountRecord, AccountSignerRecord,
-    MembershipRole, SIGNER_RECORD_VERSION, SignerRecord, derive_account_address, hex_hash,
-    owner_validator_for,
+    MembershipRole, MembershipStatus, SIGNER_RECORD_VERSION, SignerRecord, derive_account_address,
+    hex_hash, owner_validator_for,
 };
 use crate::store::{RelayStore, RelayTransaction, settle};
 
@@ -157,6 +157,8 @@ pub struct SignerAccount {
     pub account_id: String,
     pub address: String,
     pub role: MembershipRole,
+    /// A suspended membership cannot sign in as the account.
+    pub status: MembershipStatus,
     pub profile: Value,
 }
 
@@ -183,6 +185,7 @@ pub async fn signer_accounts(
                 account_id: account.account_id.clone(),
                 address: account.address.clone(),
                 role: membership.role,
+                status: membership.status,
                 profile: account_profile_json(account)?,
             })
         })
@@ -284,6 +287,9 @@ async fn create(
         request_id: None,
         link_id: None,
         created_at: now,
+        status: MembershipStatus::Active,
+        suspended_at: None,
+        restored_at: None,
     };
     if !transaction.insert_account(&account).await?
         || !transaction.insert_account_signer(&root).await?

@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { kernelDeployment } from "@oaath/sdk/kernel";
 import { calculateJwkThumbprint, createRemoteJWKSet, type JWK, jwtVerify } from "jose";
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type Page, type Protocol } from "puppeteer-core";
 import { decodeEventLog, encodeFunctionData, hashTypedData, recoverAddress, toHex } from "viem";
 import {
   entryPoint07Abi,
@@ -1003,8 +1003,34 @@ describe("the live Grant demo, rehearsed on a local Arbitrum Sepolia", () => {
   });
 });
 
+/** A CDP virtual authenticator in `page`: user present and verified. */
+async function addAuthenticator(page: Page) {
+  const session = await page.createCDPSession();
+  await session.send("WebAuthn.enable");
+  const { authenticatorId } = await session.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+    },
+  });
+  return { session, id: authenticatorId };
+}
+
+/** The device's existing passkey, in a new popup's authenticator. */
+async function withCredential(page: Page, credentials: readonly Protocol.WebAuthn.Credential[]) {
+  const authenticator = await addAuthenticator(page);
+  for (const credential of credentials)
+    await authenticator.session.send("WebAuthn.addCredential", {
+      authenticatorId: authenticator.id,
+      credential,
+    });
+}
+
 describe("adding a passkey on a second device to an existing account", () => {
-  it("links, the wallet root approves with one signature, and the passkey logs in as the account", async () => {
+  it("links, the root approves, the passkey logs in, and suspension refuses it until restored", async () => {
     // The root device: its remembered wallet signer owns an account.
     const root = await browser.newPage();
     await root.setViewport({ width: 390, height: 844 });
@@ -1021,20 +1047,14 @@ describe("adding a passkey on a second device to an existing account", () => {
     const device = await browser.createBrowserContext();
     const dappPage = await openDapp(dapp, "#login:not([disabled])", device);
     const popup = await startLogin(dappPage);
-    const session = await popup.createCDPSession();
-    await session.send("WebAuthn.enable");
-    await session.send("WebAuthn.addVirtualAuthenticator", {
-      options: {
-        protocol: "ctap2",
-        transport: "internal",
-        hasResidentKey: true,
-        hasUserVerification: true,
-        isUserVerified: true,
-      },
-    });
+    const authenticator = await addAuthenticator(popup);
     await click(popup, "::-p-text(Add signer)");
     await click(popup, "::-p-text(New passkey)");
     await popup.waitForSelector("::-p-text(This signer has no account yet.)");
+    // The device keeps its passkey; each later popup gets the same credential.
+    const { credentials } = await authenticator.session.send("WebAuthn.getCredentials", {
+      authenticatorId: authenticator.id,
+    });
     await click(popup, "::-p-text(Link to an existing account)");
     await popup.type("#link-account", address);
     await popup.$eval("#link-label", (node) => {
@@ -1059,7 +1079,7 @@ describe("adding a passkey on a second device to an existing account", () => {
     await click(root, "::-p-text(Approve and sign)");
     await root.waitForSelector("::-p-text(Signer added)");
     expect(walletSignatures).toBe(signatures + 1);
-    await root.waitForSelector("::-p-text(Second device)");
+    await root.waitForSelector("button[aria-label='Suspend Second device']");
 
     // The second device sees the approval and signs in as the account.
     const linked = await popup.waitForSelector(
@@ -1082,6 +1102,58 @@ describe("adding a passkey on a second device to an existing account", () => {
     expect(payload.sub).toBe(address);
     expect(payload.verified).toBe(true);
     expect(payload.signer).toMatchObject({ kind: "webauthn", profile: { kind: "webauthn" } });
+    expect(payload.oaath_accounts).toEqual([{ address, role: "permission", status: "active" }]);
+
+    // The owner suspends the member: its next login is refused.
+    await click(root, "button[aria-label='Suspend Second device']");
+    await click(root, "::-p-text(Confirm suspension)");
+    await root.waitForSelector("::-p-text(Suspended)");
+    const again = await openDapp(dapp, "#login:not([disabled])", device);
+    let retry = await startLogin(again);
+    await withCredential(retry, credentials);
+    await click(retry, "::-p-text(Passkey)");
+    const suspended = await retry.waitForSelector(
+      `button[aria-label='Smart account ${address}, Signer, suspended']`,
+    );
+    expect(await suspended?.evaluate((node) => (node as HTMLButtonElement).disabled)).toBe(true);
+    // The relay refuses the decision itself, not only the screen.
+    const refused = await retry.evaluate(async (account: string) => {
+      const transaction = new URLSearchParams(location.search).get("request_uri")?.split(":").pop();
+      const [signer] = JSON.parse(localStorage.getItem("oaath.portal.signers/v1") ?? "[]") as {
+        signer_id: string;
+      }[];
+      const { accounts } = (await (
+        await fetch(`/portal/signers/${signer?.signer_id}/accounts`)
+      ).json()) as { accounts: { account_id: string; address: string }[] };
+      const response = await fetch(`/portal/transactions/${transaction}/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          outcome: "approved",
+          signer_id: signer?.signer_id,
+          account_id: accounts.find((entry) => entry.address === account)?.account_id,
+        }),
+      });
+      return { status: response.status, body: await response.json() };
+    }, address);
+    expect(refused).toEqual({
+      status: 403,
+      body: { error: { code: "relay_membership_suspended" } },
+    });
+    await click(retry, "::-p-text(Cancel and return to the app)");
+    expect(await outcome(again.page)).toBe("oaath_client_access_denied");
+
+    // Restored, the member logs in again.
+    await click(root, "button[aria-label='Restore Second device']");
+    await click(root, "::-p-text(Confirm restore)");
+    await root.waitForSelector("button[aria-label='Suspend Second device']");
+    retry = await startLogin(again);
+    await withCredential(retry, credentials);
+    await click(retry, "::-p-text(Passkey)");
+    await click(retry, `button[aria-label='Smart account ${address}, Signer']`);
+    // The page still shows the cancelled attempt until this login lands.
+    await again.page.waitForSelector("#result[data-outcome='signed-in']");
+    await again.page.close();
 
     // The owner removes the member; nothing happens on-chain.
     await click(root, "button[aria-label='Remove Second device']");

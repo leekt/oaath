@@ -28,6 +28,8 @@
 //! POST /portal/links/{linkId}/approve|reject         portal  the root decides a link
 //! GET  /portal/accounts/{accountId}/members          portal  the root lists members
 //! DELETE /portal/accounts/{accountId}/members/{id}   portal  the root removes a member
+//! POST /portal/accounts/{a}/members/{id}/suspend     portal  the root suspends a member
+//! POST /portal/accounts/{a}/members/{id}/restore     portal  the root restores a member
 //! ```
 //!
 //! A signer's accounts, account creation, and grant prepare and approved
@@ -71,7 +73,7 @@ use crate::error::{RelayErrorCode, RelayResult};
 use crate::kms::RelayKms;
 use crate::link::{
     LinkOutcome, create_link, decide_link, identifier_segment, list_members, read_link,
-    remove_member,
+    remove_member, set_member_status,
 };
 use crate::oauth::{
     LoginDecision, OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, grant,
@@ -84,6 +86,7 @@ use crate::portal::{
 use crate::records::{
     bounded_text, canonical_identifier, canonical_str, is_lowercase_hash, limits,
 };
+use crate::registry::MembershipStatus;
 use crate::session::{
     cleared_session_cookie, issue_challenge, require_signer, session_cookie, session_signer,
     sign_in, sign_out,
@@ -526,17 +529,30 @@ impl Relay {
                     decide_link(store, clock, issuer, link_id, &body, &session, outcome).await?;
                 return reply(200, &view);
             }
-            if group == Some("accounts") && fourth == Some("members") && (count == 4 || count == 5)
-            {
+            if group == Some("accounts") && fourth == Some("members") && (4..=6).contains(&count) {
                 let session = session_signer(store, clock, headers).await?;
                 let account_id = identifier_segment(third)?;
                 if count == 4 {
                     require_method(method, &Method::GET)?;
                     return reply(200, &list_members(store, account_id, &session).await?);
                 }
-                require_method(method, &Method::DELETE)?;
                 let signer_id = identifier_segment(segment(4))?;
                 let kms = self.kms.as_ref();
+                if count == 6 {
+                    require_method(method, &Method::POST)?;
+                    let status = match segment(5) {
+                        Some("suspend") => MembershipStatus::Suspended,
+                        Some("restore") => MembershipStatus::Active,
+                        _ => return Err(RelayErrorCode::NotFound),
+                    };
+                    exact_body(&body_record(headers, body, self.max_body_bytes).await?, &[])?;
+                    let standing = set_member_status(
+                        store, clock, kms, account_id, signer_id, &session, status,
+                    )
+                    .await?;
+                    return reply(200, &standing);
+                }
+                require_method(method, &Method::DELETE)?;
                 let removed =
                     remove_member(store, clock, kms, account_id, signer_id, &session).await?;
                 return reply(200, &removed);

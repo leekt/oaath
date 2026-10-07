@@ -24,10 +24,10 @@ use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
-use crate::registry::{AccountRecord, AccountSignerRecord, SignerRecord};
+use crate::registry::{AccountRecord, AccountSignerRecord, MembershipStatus, SignerRecord};
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v11";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v12";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -36,13 +36,13 @@ const MAX_SAFE_INTEGER: &str = "9007199254740991";
 pub fn schema_statements() -> Vec<String> {
     let max = MAX_SAFE_INTEGER;
     vec![
-        "CREATE TABLE oaath_relay_schema_v11 (
+        "CREATE TABLE oaath_relay_schema_v12 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )"
         .to_owned(),
         format!(
-            "INSERT INTO oaath_relay_schema_v11 (schema_id, version)
+            "INSERT INTO oaath_relay_schema_v12 (schema_id, version)
    VALUES ('oaath', '{RELAY_POSTGRES_SCHEMA_VERSION}')"
         ),
         format!(
@@ -169,7 +169,7 @@ pub fn schema_statements() -> Vec<String> {
   )"
         ),
         format!(
-            "CREATE TABLE oaath_account_signer_v2 (
+            "CREATE TABLE oaath_account_signer_v3 (
     account_id text NOT NULL REFERENCES oaath_account_v1 (account_id),
     signer_id text NOT NULL REFERENCES oaath_signer_v1 (signer_id),
     record_version text NOT NULL,
@@ -178,17 +178,23 @@ pub fn schema_statements() -> Vec<String> {
     link_id text REFERENCES oaath_link_request_v1 (link_id),
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     CHECK ((role = 'root') = (request_id IS NULL AND link_id IS NULL)),
-    CHECK (request_id IS NULL OR link_id IS NULL)
+    CHECK (request_id IS NULL OR link_id IS NULL),
+    status text NOT NULL CHECK (status IN ('active', 'suspended')),
+    suspended_at bigint CHECK (suspended_at >= 0 AND suspended_at <= {max}),
+    restored_at bigint CHECK (restored_at >= 0 AND restored_at <= {max}),
+    CHECK (role = 'permission' OR (status = 'active' AND suspended_at IS NULL)),
+    CHECK (status = 'active' OR suspended_at IS NOT NULL),
+    CHECK (restored_at IS NULL OR suspended_at IS NOT NULL)
   )"
         ),
-        "CREATE UNIQUE INDEX oaath_account_signer_root_v2 ON oaath_account_signer_v2 (account_id)
+        "CREATE UNIQUE INDEX oaath_account_signer_root_v3 ON oaath_account_signer_v3 (account_id)
     WHERE role = 'root'"
             .to_owned(),
-        "CREATE UNIQUE INDEX oaath_account_signer_grant_v2
-    ON oaath_account_signer_v2 (account_id, signer_id, request_id) WHERE request_id IS NOT NULL"
+        "CREATE UNIQUE INDEX oaath_account_signer_grant_v3
+    ON oaath_account_signer_v3 (account_id, signer_id, request_id) WHERE request_id IS NOT NULL"
             .to_owned(),
-        "CREATE UNIQUE INDEX oaath_account_signer_link_v2
-    ON oaath_account_signer_v2 (account_id, signer_id, link_id) WHERE link_id IS NOT NULL"
+        "CREATE UNIQUE INDEX oaath_account_signer_link_v3
+    ON oaath_account_signer_v3 (account_id, signer_id, link_id) WHERE link_id IS NOT NULL"
             .to_owned(),
         format!(
             "CREATE TABLE oauth_client_v1 (
@@ -444,7 +450,7 @@ const ACCOUNT_FIELDS: [(&str, &str, bool); 8] = [
     ("createdAt", "account_created_at", true),
 ];
 
-const MEMBERSHIP_FIELDS: [(&str, &str, bool); 7] = [
+const MEMBERSHIP_FIELDS: [(&str, &str, bool); 10] = [
     ("version", "membership_version", false),
     ("accountId", "account_id", false),
     ("signerId", "signer_id", false),
@@ -452,6 +458,9 @@ const MEMBERSHIP_FIELDS: [(&str, &str, bool); 7] = [
     ("requestId", "request_id", false),
     ("linkId", "link_id", false),
     ("createdAt", "membership_created_at", true),
+    ("status", "status", false),
+    ("suspendedAt", "suspended_at", true),
+    ("restoredAt", "restored_at", true),
 ];
 
 const SIGNER_FIELDS: [(&str, &str, bool); 5] = [
@@ -910,8 +919,9 @@ impl RelayTransaction for PostgresTransaction {
              account.created_at AS account_created_at, \
              membership.record_version AS membership_version, membership.signer_id, \
              membership.role, membership.request_id, membership.link_id, \
-             membership.created_at AS membership_created_at \
-             FROM oaath_account_signer_v2 AS membership \
+             membership.created_at AS membership_created_at, membership.status, \
+             membership.suspended_at, membership.restored_at \
+             FROM oaath_account_signer_v3 AS membership \
              JOIN oaath_account_v1 AS account ON account.account_id = membership.account_id \
              WHERE membership.signer_id = $1 \
              ORDER BY account.created_at, account.account_id COLLATE \"C\"",
@@ -950,9 +960,10 @@ impl RelayTransaction for PostgresTransaction {
         // the partial unique index refuses a second root.
         self.applied(
             sqlx::query(
-                "INSERT INTO oaath_account_signer_v2 (\
-                 account_id, signer_id, record_version, role, request_id, link_id, created_at\
-                 ) SELECT $1, $2, $3, $4, $5, $6, $7 \
+                "INSERT INTO oaath_account_signer_v3 (\
+                 account_id, signer_id, record_version, role, request_id, link_id, created_at, \
+                 status, suspended_at, restored_at\
+                 ) SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 \
                  WHERE EXISTS (SELECT 1 FROM oaath_account_v1 WHERE account_id = $1) \
                  AND EXISTS (SELECT 1 FROM oaath_signer_v1 WHERE signer_id = $2) \
                  ON CONFLICT DO NOTHING",
@@ -963,7 +974,10 @@ impl RelayTransaction for PostgresTransaction {
             .bind(record.role.as_str())
             .bind(&record.request_id)
             .bind(&record.link_id)
-            .bind(bigint(record.created_at)),
+            .bind(bigint(record.created_at))
+            .bind(record.status.as_str())
+            .bind(record.suspended_at.map(bigint))
+            .bind(record.restored_at.map(bigint)),
         )
         .await
     }
@@ -999,8 +1013,9 @@ impl RelayTransaction for PostgresTransaction {
              signer.profile_hash, signer.profile, signer.created_at AS signer_created_at, \
              membership.record_version AS membership_version, membership.account_id, \
              membership.role, membership.request_id, membership.link_id, \
-             membership.created_at AS membership_created_at \
-             FROM oaath_account_signer_v2 AS membership \
+             membership.created_at AS membership_created_at, membership.status, \
+             membership.suspended_at, membership.restored_at \
+             FROM oaath_account_signer_v3 AS membership \
              JOIN oaath_signer_v1 AS signer ON signer.signer_id = membership.signer_id \
              WHERE membership.account_id = $1 \
              ORDER BY membership.role <> 'root', membership.created_at, signer.signer_id COLLATE \"C\" FOR UPDATE",
@@ -1026,7 +1041,7 @@ impl RelayTransaction for PostgresTransaction {
     ) -> RelayResult<bool> {
         // One signer may hold several permission memberships (a link and grants).
         let result = sqlx::query(
-            "DELETE FROM oaath_account_signer_v2 \
+            "DELETE FROM oaath_account_signer_v3 \
              WHERE account_id = $1 AND signer_id = $2 AND role = 'permission'",
         )
         .bind(account_id)
@@ -1034,6 +1049,36 @@ impl RelayTransaction for PostgresTransaction {
         .execute(&mut *self.transaction)
         .await
         .map_err(|_| RelayErrorCode::StoreUnavailable)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn set_account_signer_status(
+        &mut self,
+        account_id: &str,
+        signer_id: &str,
+        status: MembershipStatus,
+        at: u64,
+    ) -> RelayResult<bool> {
+        // Guarded on the current status, so a repeated move changes nothing.
+        let sql = match status {
+            MembershipStatus::Suspended => {
+                "UPDATE oaath_account_signer_v3 SET status = 'suspended', suspended_at = $3 \
+                 WHERE account_id = $1 AND signer_id = $2 AND role = 'permission' \
+                 AND status = 'active'"
+            }
+            MembershipStatus::Active => {
+                "UPDATE oaath_account_signer_v3 SET status = 'active', restored_at = $3 \
+                 WHERE account_id = $1 AND signer_id = $2 AND role = 'permission' \
+                 AND status = 'suspended'"
+            }
+        };
+        let result = sqlx::query(sql)
+            .bind(account_id)
+            .bind(signer_id)
+            .bind(bigint(at))
+            .execute(&mut *self.transaction)
+            .await
+            .map_err(|_| RelayErrorCode::StoreUnavailable)?;
         Ok(result.rows_affected() > 0)
     }
 

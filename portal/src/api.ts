@@ -94,10 +94,14 @@ export interface SignInResponse {
 /** `root`: the signer owns the account; `permission`: a scoped signer on it. */
 export type AccountRole = "root" | "permission";
 
+/** A suspended membership cannot sign in as the account. */
+export type MembershipStatus = "active" | "suspended";
+
 export interface PortalAccount {
   readonly account_id: string;
   readonly address: `0x${string}`;
   readonly role: AccountRole;
+  readonly status: MembershipStatus;
   readonly profile: KernelAccountProfile;
 }
 
@@ -206,6 +210,9 @@ export interface PortalMember {
   /** A dapp signer's grant. */
   readonly grant_id: string | null;
   readonly joined_at: number;
+  readonly status: MembershipStatus;
+  /** Unix seconds of the latest suspension. */
+  readonly suspended_at: number | null;
 }
 export interface MembersResponse {
   readonly members: readonly PortalMember[];
@@ -302,6 +309,12 @@ export const portalApi = {
     call<PortalLink>(`/portal/links/${segment(id)}/reject`, { method: "POST", body: {} }),
   members: (accountId: string) =>
     call<MembersResponse>(`/portal/accounts/${segment(accountId)}/members`),
+  /** Suspending also invalidates the member's grants; restoring revives none. */
+  setMemberStatus: (accountId: string, signerId: string, action: "suspend" | "restore") =>
+    call<{ readonly signer_id: string; readonly status: MembershipStatus }>(
+      `/portal/accounts/${segment(accountId)}/members/${segment(signerId)}/${action}`,
+      { method: "POST", body: {} },
+    ),
   removeMember: (accountId: string, signerId: string) =>
     call<{ readonly removed: number }>(
       `/portal/accounts/${segment(accountId)}/members/${segment(signerId)}`,

@@ -23,7 +23,9 @@ use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
     CapabilityInvalidationRecord, EncryptedArtifactRecord, to_value,
 };
-use crate::registry::{AccountRecord, AccountSignerRecord, MembershipRole, SignerRecord};
+use crate::registry::{
+    AccountRecord, AccountSignerRecord, MembershipRole, MembershipStatus, SignerRecord,
+};
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
 #[derive(Clone, Default)]
@@ -464,6 +466,34 @@ impl RelayTransaction for MemoryTransaction {
         }
         self.staged.memberships = kept;
         Ok(deleted)
+    }
+
+    async fn set_account_signer_status(
+        &mut self,
+        account_id: &str,
+        signer_id: &str,
+        status: MembershipStatus,
+        at: u64,
+    ) -> RelayResult<bool> {
+        let mut moved = false;
+        for value in &mut self.staged.memberships {
+            let mut stored = AccountSignerRecord::parse(value)?;
+            if stored.account_id != account_id
+                || stored.signer_id != signer_id
+                || stored.role != MembershipRole::Permission
+                || stored.status == status
+            {
+                continue;
+            }
+            match status {
+                MembershipStatus::Suspended => stored.suspended_at = Some(at),
+                MembershipStatus::Active => stored.restored_at = Some(at),
+            }
+            stored.status = status;
+            *value = to_value(&stored);
+            moved = true;
+        }
+        Ok(moved)
     }
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>> {
