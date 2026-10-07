@@ -71,6 +71,7 @@ try {
   assert.equal(inventory.permissions[0].status, "state-confirmed");
   assert.ok(inventory.permissions[0].policies.length >= 2);
   assert.ok(inventory.requests <= 64);
+  assert.equal(inventory.complete, true);
   // An exhausted scan is not evidence that no other authority exists.
   const partial = await readKernelModules(reader, { address: reference.account, version: "4", blockNumber: inventory.blockNumber, budget: { maxRequests: 1, timeout: 5000 } });
   assert.equal(partial.complete, false);

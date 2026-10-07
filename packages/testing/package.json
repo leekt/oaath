@@ -59,7 +59,7 @@
     "@oaath/sdk": "workspace:*",
     "@oaath/server": "workspace:*",
     "fake-indexeddb": "6.2.5",
-    "cetane": "0.0.3"
+    "cetane": "0.0.4"
   },
   "devDependencies": {
     "@types/node": "22.13.0",
