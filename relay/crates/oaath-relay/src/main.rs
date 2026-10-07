@@ -22,11 +22,9 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use oaath_relay::authentication::{DevTokenAuthentication, NoAuthentication};
-use oaath_relay::authorization::request::{NoOwnerRouting, StaticOwnerRouting};
-use oaath_relay::bootstrap::{BootstrapConfiguration, StaticBootstrapResolver};
+use oaath_relay::Relay;
 use oaath_relay::clock::SystemClock;
-use oaath_relay::config::DevConfig;
+use oaath_relay::config::{DevConfig, compose};
 use oaath_relay::kms::AesGcmKms;
 use oaath_relay::oauth::OAuthConfiguration;
 use oaath_relay::oauth::id_token::IdTokenKey;
@@ -35,7 +33,6 @@ use oaath_relay::store::memory::MemoryRelayStore;
 use oaath_relay::store::postgres::{
     PostgresRelayStore, RELAY_POSTGRES_SCHEMA_VERSION, create_relay_schema,
 };
-use oaath_relay::{Relay, RelayOptions};
 use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::EnvFilter;
 
@@ -105,33 +102,13 @@ async fn run() -> Result<(), String> {
         }
     };
 
-    let mut options = RelayOptions {
-        store: store.clone(),
-        authentication: Arc::new(NoAuthentication),
-        owner_routing: Arc::new(NoOwnerRouting),
-        kms: Arc::new(kms),
-        clock: Arc::new(SystemClock),
-        rate_limit: None,
-        request_ttl_ms: None,
-        code_ttl_ms: None,
-        max_body_bytes: None,
-        bootstrap: None,
+    let options = compose(
+        store.clone(),
+        Arc::new(kms),
+        Arc::new(SystemClock),
         oauth,
-    };
-    if let Some(config) = config {
-        tracing::warn!("authentication: DEV static bearer tokens; never deploy this configuration");
-        options.authentication = Arc::new(DevTokenAuthentication::new(config.tokens));
-        options.owner_routing = Arc::new(StaticOwnerRouting(config.owner_route));
-        options.request_ttl_ms = config.request_ttl_ms;
-        options.code_ttl_ms = config.code_ttl_ms;
-        options.max_body_bytes = config.max_body_bytes;
-        options.bootstrap = config.bootstrap.map(|bootstrap| BootstrapConfiguration {
-            resolver: Arc::new(StaticBootstrapResolver(bootstrap.selection)),
-            chains: bootstrap.chains,
-        });
-    } else {
-        tracing::info!("authentication: none; caller-authenticated relay routes refuse");
-    }
+        config,
+    );
     let relay =
         Relay::new(options).map_err(|code| format!("relay configuration is invalid ({code})"))?;
 
