@@ -10,7 +10,8 @@
  * value that text parses to. The output is deterministic: no clock, no
  * randomness, fixed keys.
  *
- * Run: bun scripts/export-protocol-fixtures.mjs
+ * Run: bun run fixtures:protocol (the `oaath-source` condition resolves the
+ * server's `@oaath/protocol` imports to the same sources, never a stale build)
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -431,6 +432,12 @@ const EXISTING_ACCOUNT = {
   entryPoint: { version: "0.7" },
   ownerCredential: OWNER_ECDSA,
 };
+const EXISTING_WEBAUTHN_ACCOUNT = {
+  ...EXISTING_ACCOUNT,
+  kernelVersion: "0.4.0",
+  entryPoint: { version: "0.9" },
+  ownerCredential: OWNER_WEBAUTHN,
+};
 
 {
   const fn = "parseKernelAccountProfile";
@@ -483,6 +490,15 @@ const EXISTING_ACCOUNT = {
     kernelVersion: "0.4.0",
     entryPoint: { version: "0.9" },
     ownerCredential: OWNER_WEBAUTHN,
+  });
+  record(fn, "existing 0.3.3 webauthn", { ...EXISTING_ACCOUNT, ownerCredential: OWNER_WEBAUTHN });
+  record(fn, "existing 0.4.0 webauthn checksummed address", {
+    ...EXISTING_WEBAUTHN_ACCOUNT,
+    address: checksum(MIXED_ADDRESS),
+  });
+  record(fn, "existing 0.4.0 webauthn invalid authenticatorIdHash", {
+    ...EXISTING_WEBAUTHN_ACCOUNT,
+    ownerCredential: { ...OWNER_WEBAUTHN, authenticatorIdHash: hex("AB", 32) },
   });
   record(fn, "existing 0.3.3 entryPoint 0.9", {
     ...EXISTING_ACCOUNT,
@@ -827,6 +843,15 @@ const P256_BOOTSTRAP = {
   record(fn, "ecdsa owner with validator", BOOTSTRAP);
   record(fn, "p256 owner without validator", P256_BOOTSTRAP);
   record(fn, "existing account", { ...BOOTSTRAP, account: EXISTING_ACCOUNT });
+  record(fn, "existing webauthn owner without validator", {
+    ...BOOTSTRAP,
+    account: EXISTING_WEBAUTHN_ACCOUNT,
+    ownerValidator: null,
+  });
+  record(fn, "existing webauthn owner with validator", {
+    ...BOOTSTRAP,
+    account: EXISTING_WEBAUTHN_ACCOUNT,
+  });
   record(fn, "ecdsa owner without validator", { ...BOOTSTRAP, ownerValidator: null });
   record(fn, "p256 owner with validator", { ...P256_BOOTSTRAP, ownerValidator: hex("22", 20) });
   record(fn, "zero validator", { ...BOOTSTRAP, ownerValidator: ZERO_ADDRESS });
@@ -1138,6 +1163,7 @@ const REQUEST_VARIANTS = [
       policy: { ...REQUEST.policy, perChainOperationLimit: { count: 2, intervalSeconds: 86_400 } },
     },
   ],
+  ["existing 0.4.0 webauthn owner", { ...REQUEST, logicalAccount: EXISTING_WEBAUTHN_ACCOUNT }],
 ];
 
 for (const fn of ["parsePermissionRequest", "hashPermissionRequest"]) {
@@ -1423,6 +1449,13 @@ for (const fn of ["parsePermissionDecision", "hashPermissionDecision"]) {
   const existingApproval = { ...APPROVE, requestHash: P.hashPermissionRequest(existing) };
   record(fn, "existing account request", approved(text(existingApproval), 120_000, existing));
   record(fn, "decision for another request", approved(text(APPROVE), 120_000, existing));
+  const webauthn = { ...REQUEST, logicalAccount: EXISTING_WEBAUTHN_ACCOUNT };
+  const webauthnApproval = { ...APPROVE, requestHash: P.hashPermissionRequest(webauthn) };
+  record(
+    fn,
+    "existing webauthn account request",
+    approved(text(webauthnApproval), 120_000, webauthn),
+  );
 }
 
 // ------------------------------------------------------ owner signing request
@@ -2303,6 +2336,11 @@ for (const fn of ["parseOwnerSigningArtifact", "serializeOwnerSigningArtifact"])
     fn,
     "permission request existing account",
     classify(JSON.stringify({ ...scope, logicalAccount: EXISTING_ACCOUNT })),
+  );
+  record(
+    fn,
+    "permission request existing webauthn account",
+    classify(JSON.stringify({ ...scope, logicalAccount: EXISTING_WEBAUTHN_ACCOUNT })),
   );
   record(fn, "kernel p256 request", classify(JSON.stringify(KERNEL_REQUEST)));
   record(fn, "kernel golden request", classify(JSON.stringify(GOLDEN_KERNEL)));

@@ -92,7 +92,8 @@ pub struct KernelDerivedAccountProfile {
     pub owner_credential: OwnerCredentialProfile,
 }
 
-/// An existing account at its address. The owner is ECDSA, or P-256 on 0.4.0.
+/// An existing account at its address. The owner is ECDSA, or P-256 or
+/// WebAuthn through the reviewed validators on 0.4.0.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KernelExistingAccountProfile {
     pub kernel_version: KernelExistingAccountVersion,
@@ -272,13 +273,8 @@ pub(crate) fn capture_kernel_account(
     if existing {
         // Only a root owner the account's validator exposes is provable onchain.
         ensure(
-            match owner_credential {
-                OwnerCredentialProfile::Ecdsa { .. } => true,
-                OwnerCredentialProfile::P256 { .. } => {
-                    kernel_version == KernelExistingAccountVersion::V0_4_0
-                }
-                OwnerCredentialProfile::WebAuthn { .. } => false,
-            },
+            matches!(owner_credential, OwnerCredentialProfile::Ecdsa { .. })
+                || kernel_version == KernelExistingAccountVersion::V0_4_0,
             code,
         )?;
         return Ok(KernelAccountProfile::Existing(
