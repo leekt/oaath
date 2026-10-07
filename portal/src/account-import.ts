@@ -249,6 +249,19 @@ export function attributeModules(input: {
   };
 }
 
+/** Hard cap for one imported account's approval preparation (binding reads). */
+const APPROVAL_REQUESTS = 48;
+
+/** Budgeted chain reads through the portal's proxy, for preparing an approval. */
+export function importChainReads(rpcUrl: string) {
+  const [ports] = createCetaneChainPorts(
+    { [IMPORT_CHAIN_ID]: { publicRpcUrls: [rpcUrl] } },
+    { timeoutMs: TIMEOUT_MS, maxRequests: APPROVAL_REQUESTS, retry: { attempts: 1 } },
+  );
+  if (!ports) throw new Error("chain reads unavailable");
+  return ports.reads;
+}
+
 /**
  * Checks, in order, that `value` is a deployed reviewed Kernel v4 account whose
  * root is `signer`, then lists its modules. The first failure stops the checks.

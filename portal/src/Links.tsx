@@ -45,6 +45,8 @@ function linkMessage(error: unknown): string {
     case "grant-invalid":
     case "digest-mismatch":
       return "OAAth sent a request that doesn't match what you were shown. Nothing was signed.";
+    case "account-unreadable":
+      return "The account could not be read on Arbitrum Sepolia, so nothing was signed. Try again.";
     case "passkey-cancelled":
       return "The passkey prompt was dismissed.";
     case "root-unsupported":
@@ -307,9 +309,7 @@ function LinkReview({
     );
   }, [signer.signer_id, link.account_id]);
   // A raw P-256 key has no operator kind: it can only sign in.
-  // Grants for imported accounts need chain reads to prepare; they come later.
-  const imported = account !== null && "address" in account.profile;
-  const policyCapable = link.signer.kind !== "p256" && !imported;
+  const policyCapable = link.signer.kind !== "p256";
 
   async function approve(): Promise<PortalLink> {
     const template = templates.find((entry) => entry.template_id === access);
@@ -407,11 +407,7 @@ function LinkReview({
           </p>
         )}
         {!policyCapable && templates.length > 0 && (
-          <p className="choice-detail">
-            {imported
-              ? "Policies for imported accounts are coming soon."
-              : "This kind of key can only sign in."}
-          </p>
+          <p className="choice-detail">This kind of key can only sign in.</p>
         )}
       </fieldset>
       <p className="quiet">
@@ -586,7 +582,6 @@ function Members({ account, signer }: { account: PortalAccount; signer: Remember
                 member.role !== "root" &&
                 member.status === "active" &&
                 member.kind !== "p256" &&
-                !("address" in account.profile) &&
                 templates.length > 0;
               return (
                 <li key={signer_id}>
