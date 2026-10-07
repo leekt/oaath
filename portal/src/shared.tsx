@@ -210,12 +210,22 @@ export function CancelButton({ onCancel, disabled }: { onCancel: () => void; dis
 
 export function Frame({ children }: { children: React.ReactNode }) {
   return (
-    <main className="frame">
-      <div className="mark" aria-hidden="true">
-        OAAth
+    <>
+      <div className="masthead" aria-hidden="true">
+        <span className="mark">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle className="mark-bow" cx="7" cy="12" r="5.5" />
+            <circle className="mark-cut" cx="7" cy="12" r="2" />
+            <path
+              className="mark-blade"
+              d="M12 10.75h10v2.5h-1V16h-1.75v-2.75h-1.75v3.75h-1.75v-3.75H12z"
+            />
+          </svg>
+          OAAth
+        </span>
       </div>
-      {children}
-    </main>
+      <main className="frame">{children}</main>
+    </>
   );
 }
 
