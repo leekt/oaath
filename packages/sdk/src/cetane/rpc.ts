@@ -3,13 +3,13 @@ import {
   captureRecord,
   captureValidationGasDiagnostic,
   classifyUserOperationError,
+  entryPointAbi,
   type OaathUserOperationError,
   type UserOperationFailureStage,
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
-import { decodeErrorResult, encodeErrorResult } from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+import { decodeErrorResult, encodeErrorResult } from "cetane/utils";
 
 export type OaathRpcErrorCode =
   | "oaath_rpc_config_invalid"
@@ -51,7 +51,7 @@ function validationDiagnostic(
   if (method !== "eth_estimateUserOperationGas" && method !== "eth_sendUserOperation") return null;
   try {
     if (typeof data !== "string" || !/^0x(?:[0-9a-f]{2})+$/iu.test(data)) return null;
-    const decoded = decodeErrorResult({ abi: entryPoint07Abi, data: data as `0x${string}` });
+    const decoded = decodeErrorResult({ abi: entryPointAbi, data: data as `0x${string}` });
     if (
       decoded.errorName !== "FailedOpWithRevert" ||
       decoded.args[0] !== 0n ||
@@ -78,7 +78,7 @@ export function isAccountValidationRejection(error: unknown): boolean {
 function accountValidationReverted(data: unknown): boolean {
   try {
     if (typeof data !== "string" || !/^0x(?:[0-9a-f]{2})+$/iu.test(data)) return false;
-    const decoded = decodeErrorResult({ abi: entryPoint07Abi, data: data as `0x${string}` });
+    const decoded = decodeErrorResult({ abi: entryPointAbi, data: data as `0x${string}` });
     // The ABI-encoded EntryPoint error identifies account validation. Arbitrary
     // RPC prose, other operation indices and signature placeholders do not.
     return (
@@ -86,7 +86,7 @@ function accountValidationReverted(data: unknown): boolean {
       decoded.args[0] === 0n &&
       decoded.args[1] === "AA23 reverted" &&
       encodeErrorResult({
-        abi: entryPoint07Abi,
+        abi: entryPointAbi,
         errorName: decoded.errorName,
         args: decoded.args,
       }).toLowerCase() === data.toLowerCase()
@@ -157,7 +157,7 @@ export function quantity(value: unknown): bigint {
   return BigInt(value);
 }
 
-export interface ViemChainPortOptions {
+export interface CetaneChainPortOptions {
   /** Cancels this instance’s requests and retry waits; cancellation never permits resubmission. */
   readonly signal?: AbortSignal;
   readonly retry?: Readonly<{ attempts: number; delayMs?: number }>;
@@ -176,7 +176,7 @@ export type RpcRequest = (
 ) => Promise<unknown>;
 
 /** One budget and concurrency owner shared by all pools in one configuration. */
-export function rpcOwner(input: ViemChainPortOptions) {
+export function rpcOwner(input: CetaneChainPortOptions) {
   const options = record(input, [
     "retry",
     "timeoutMs",

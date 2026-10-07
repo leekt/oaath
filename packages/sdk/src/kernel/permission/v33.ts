@@ -7,15 +7,14 @@
  * and observation still use the actual chain's EntryPoint hash.
  */
 import {
-  concat,
+  concatHex,
   encodeAbiParameters,
   hashMessage,
   hashTypedData,
   keccak256,
-  pad,
+  padHex,
   recoverAddress,
-  size,
-} from "viem";
+} from "cetane/utils";
 import {
   captureKernelV4Installs,
   encodeKernelV4SignerData,
@@ -79,7 +78,7 @@ function captureScope(record: Record<string, unknown>): Readonly<KernelV33Permis
   const packages = captureKernelV4Installs(record.packages);
   if (packages.length < 2 || packages.length > 254)
     return inputInvalid("Kernel v3.3 permission requires policies and one signer");
-  const prefix = pad(permissionId, { size: 32, dir: "right" });
+  const prefix = padHex(permissionId, { size: 32, dir: "right" });
   for (const [index, install] of packages.entries()) {
     const last = index === packages.length - 1;
     if (
@@ -124,7 +123,7 @@ function typedData(scope: Readonly<KernelV33PermissionScope>) {
     },
     primaryType: "Enable",
     message: {
-      validationId: concat(["0x02", pad(scope.permissionId, { size: 20, dir: "right" })]),
+      validationId: concatHex(["0x02", padHex(scope.permissionId, { size: 20, dir: "right" })]),
       nonce: Number(scope.nonce),
       hook: NO_HOOK,
       validatorData: encodeAbiParameters(
@@ -132,7 +131,7 @@ function typedData(scope: Readonly<KernelV33PermissionScope>) {
         [
           scope.packages.map((install) =>
             // All policies run for operations; ERC-1271 message signing is disabled.
-            concat(["0x0002", install.module, `0x${install.moduleData.slice(66)}`]),
+            concatHex(["0x0002", install.module, `0x${install.moduleData.slice(66)}`]),
           ),
         ],
       ),
@@ -362,7 +361,8 @@ export async function checkKernelV33PermissionApproval(
         ? "reordered"
         : "different",
     );
-  if (size(approval.enableSignature) !== 65) return mismatch("enableSignature", "unrecoverable");
+  if ((approval.enableSignature.length - 2) / 2 !== 65)
+    return mismatch("enableSignature", "unrecoverable");
   // Kernel v3.3's ECDSA validator accepts the raw digest (signTypedData) and
   // its EIP-191 hash (a wallet's signMessage over the raw digest).
   let recovered: readonly `0x${string}`[];
@@ -460,7 +460,7 @@ export function bindKernelV33PermissionApproval(
     );
   const message = typedData(approval).message;
   function envelope(signature: `0x${string}`): `0x${string}` {
-    return concat([
+    return concatHex([
       KERNEL_V33_REPLAYABLE_SIGNATURE_PREFIX,
       NO_HOOK,
       encodeAbiParameters(

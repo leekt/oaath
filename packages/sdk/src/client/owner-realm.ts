@@ -59,7 +59,7 @@ export type OaathOwnerStores = OaathStoreBackend & Readonly<{ operations?: Opera
  * exists; the connected wallet signs each operation.
  */
 export interface OaathOwnerOptions {
-  /** Plain descriptors build the default viem ports; custom capabilities override them. */
+  /** Plain descriptors build the default Cetane ports; custom capabilities override them. */
   readonly chains: OaathChains<OwnerChain>;
   /** When set, `account(address)` refuses every other address. */
   readonly account?: `0x${string}`;

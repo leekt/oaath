@@ -18,7 +18,7 @@ import {
   type OaathSessionCoverage,
   probeBundlerCapability,
 } from "../src/advanced.js";
-import { asViemUserOperation, prepareUserOperation } from "../src/kernel.js";
+import { asCetaneUserOperation, prepareUserOperation } from "../src/kernel.js";
 import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
 import { supportsBundlerSponsorship } from "../src/routing/decide.js";
 
@@ -761,7 +761,7 @@ describe("handleOps encoding", () => {
         abi: entryPoint07Abi,
         functionName: "handleOps",
         args: [
-          [toPackedUserOperation({ ...asViemUserOperation(operation.userOperation), signature })],
+          [toPackedUserOperation({ ...asCetaneUserOperation(operation.userOperation), signature })],
           beneficiary,
         ],
       }),

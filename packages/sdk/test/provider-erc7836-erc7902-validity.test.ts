@@ -27,7 +27,7 @@ import {
   type OaathProviderErrorCode,
 } from "../src/provider/errors.js";
 import { OAATH_PREPARED_CALL_CONTEXT_VERSION } from "../src/provider/prepared-call-store.js";
-import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
+import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
 import {
   CALL_DATA,
   CHAIN_ID,

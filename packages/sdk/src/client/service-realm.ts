@@ -32,11 +32,11 @@ import {
   parseUserOperationFailure,
   type ServiceBootstrap,
 } from "@oaath/protocol";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
+import { OaathRpcError } from "../cetane/rpc.js";
 import { credentialKey } from "../kernel/key/credential.js";
 import { ecdsaKey } from "../kernel/key/ecdsa.js";
 import type { KeyProfile } from "../kernel/types.js";
-import { OaathRpcError } from "../viem/rpc.js";
 import type { OaathAuthorizationCapability } from "./connection.js";
 import { clientCapability, clientFail, clientFailure, exactClientRecord } from "./errors.js";
 import type { OaathChainCapability, OaathChainSponsorship } from "./grant-handle.js";

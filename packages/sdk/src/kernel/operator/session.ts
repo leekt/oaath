@@ -12,7 +12,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { CaptureContext } from "@oaath/protocol";
-import { concat, keccak256, pad } from "viem";
+import { concatHex, keccak256, padHex } from "cetane/utils";
 import {
   encodeKernelV4PermissionSignature,
   encodeKernelV4PolicyData,
@@ -45,7 +45,7 @@ function derivePermissionId(
   publicMaterial: `0x${string}`,
 ): `0x${string}` {
   const digest = keccak256(
-    concat([
+    concatHex([
       ...policies.flatMap((policy) => [policy.module, keccak256(policy.policyData)]),
       signerModule,
       keccak256(new TextEncoder().encode(kind)),
@@ -81,7 +81,7 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
   // action chain before any account binds to this permission.
   const signer = key.signerModule ?? resolvePinnedSigner(key.kind);
   const permissionId = derivePermissionId(policy.packages, signer, key.kind, key.publicMaterial);
-  const paddedPermissionId = pad(permissionId, { size: 32, dir: "right" });
+  const paddedPermissionId = padHex(permissionId, { size: 32, dir: "right" });
 
   return Object.freeze({
     authority: "session" as const,
@@ -100,7 +100,7 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
     // and the signer slice, which Kernel requires last, carries the key signature.
     encodeSignature: (signature: `0x${string}`, deployment: Readonly<KernelDeployment>) =>
       exactKernelDeployment(deployment).kernelVersion === "0.3.3"
-        ? concat(["0xff", signature])
+        ? concatHex(["0xff", signature])
         : encodeKernelV4PermissionSignature([
             ...policy.packages.map(() => "0x" as const),
             signature,
@@ -116,14 +116,14 @@ export function sessionOperator(value: SessionOperatorInput): Readonly<OperatorP
           Object.freeze({
             moduleType: 5 as const,
             module: entry.module,
-            moduleData: concat([paddedPermissionId, entry.policyData]),
+            moduleData: concatHex([paddedPermissionId, entry.policyData]),
             internalData: encodeKernelV4PolicyData(permissionId),
           }),
         ),
         Object.freeze({
           moduleType: 6 as const,
           module: signer,
-          moduleData: concat([paddedPermissionId, key.publicMaterial]),
+          moduleData: concatHex([paddedPermissionId, key.publicMaterial]),
           internalData: encodeKernelV4SignerData({
             permissionId,
             selectors: [KERNEL_V4_EXECUTE_SELECTOR],

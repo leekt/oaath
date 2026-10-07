@@ -2,10 +2,10 @@ import { createWalletClient, custom, decodeFunctionData } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
 import { describe, expect, it, vi } from "vitest";
 import { captureConnectedEoa, withConnectedEoaFallback } from "../src/client/connected-eoa.js";
-import { asViemUserOperation, prepareUserOperation } from "../src/kernel.js";
+import { asCetaneUserOperation, prepareUserOperation } from "../src/kernel.js";
 import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
 import { OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES } from "../src/routing/erc4337/bundler.js";
-import { OaathRpcError } from "../src/viem.js";
+import { OaathRpcError } from "../src/cetane.js";
 
 const address = `0x${"11".repeat(20)}` as const;
 const transactionHash = `0x${"22".repeat(32)}` as const;
@@ -69,7 +69,7 @@ function fixture(
         expect(decoded.args).toEqual([
           [
             toPackedUserOperation({
-              ...asViemUserOperation(prepared.userOperation),
+              ...asCetaneUserOperation(prepared.userOperation),
               signature: request.signature,
             }),
           ],

@@ -13,7 +13,7 @@ import {
   captureRecord,
   exactCapturedRecord,
 } from "@oaath/protocol";
-import { getAddress } from "viem";
+import { getAddress } from "cetane/utils";
 import {
   capabilityInvalid,
   exactRoutingRecord,

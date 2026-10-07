@@ -62,13 +62,13 @@
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
     },
-    "./viem": {
+    "./cetane": {
       "oaath-source": {
-        "types": "./src/viem.ts",
-        "default": "./src/viem.ts"
+        "types": "./src/cetane.ts",
+        "default": "./src/cetane.ts"
       },
-      "types": "./dist/viem.d.ts",
-      "default": "./dist/viem.js"
+      "types": "./dist/cetane.d.ts",
+      "default": "./dist/cetane.js"
     }
   },
   "files": [
@@ -81,7 +81,7 @@
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/kernel-v4.anvil.test.ts test/kernel-v33.anvil.test.ts test/kernel-composition.anvil.test.ts test/all-chain.anvil.test.ts test/provider-eip5792.anvil.test.ts test/viem-chain-ports.anvil.test.ts",
+    "test:anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/kernel-v4.anvil.test.ts test/kernel-v33.anvil.test.ts test/kernel-composition.anvil.test.ts test/all-chain.anvil.test.ts test/provider-eip5792.anvil.test.ts test/cetane-chain-ports.anvil.test.ts",
     "test:provider-anvil": "OAATH_REQUIRE_ANVIL=1 vitest run test/provider-eip5792.anvil.test.ts",
     "lint": "node scripts/check-package-boundary.mjs",
     "release:publish": "bun publish --access public --tolerate-republish",
@@ -92,12 +92,14 @@
     "@oaath/server": "workspace:*",
     "@oaath/testing": "workspace:*",
     "@types/node": "22.13.0",
-    "fake-indexeddb": "6.2.5"
+    "fake-indexeddb": "6.2.5",
+    "viem": "2.55.8"
   },
   "dependencies": {
     "@noble/curves": "1.9.1",
     "@oaath/protocol": "workspace:*",
-    "viem": "2.55.8"
+    "cetane": "file:../../vendor/cetane-0.0.2-9862f7c.tgz",
+    "@noble/hashes": "1.8.0"
   },
   "publishConfig": {
     "access": "public"

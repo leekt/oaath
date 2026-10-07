@@ -25,7 +25,7 @@ import {
   OAATH_PROVIDER_ERROR_MESSAGES,
   type OaathProviderErrorCode,
 } from "../src/provider/errors.js";
-import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
+import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
 import {
   CALL_DATA,
   CHAIN_ID,

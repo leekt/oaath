@@ -15,7 +15,7 @@ import {
   OAATH_PROVIDER_ERROR_MESSAGES,
   type OaathProviderErrorCode,
 } from "../src/provider/errors.js";
-import { oaathProvider } from "../src/viem.js";
+import { oaathProvider } from "../src/cetane.js";
 import {
   bundlerProbe,
   CALL_DATA,

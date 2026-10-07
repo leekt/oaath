@@ -1,6 +1,6 @@
 import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/protocol";
-import { keccak256, stringToHex } from "viem";
-import { getUserOperationHash } from "viem/account-abstraction";
+import { getSigningHash } from "cetane/execution/erc4337";
+import { keccak256, stringToHex } from "cetane/utils";
 import {
   encodeKernelV4Execution,
   encodeKernelV4Nonce,
@@ -9,7 +9,7 @@ import {
   type KernelValidation,
 } from "../../kernel-v4.js";
 import {
-  asViemUserOperation,
+  asCetaneUserOperation,
   type PreparedUserOperation,
   parsePreparedUserOperation,
   prepareUserOperation,
@@ -35,12 +35,12 @@ export function kernelV33OperationSigningHash(value: unknown): `0x${string}` {
   if (mode === 0n) return prepared.userOperationHash;
   if (mode !== 1n || ((BigInt(prepared.userOperation.nonce) >> 240n) & 0xffn) !== 2n)
     return inputInvalid("Kernel v3.3 signing mode is unsupported");
-  return getUserOperationHash({
-    chainId: 0,
-    entryPointAddress: prepared.entryPoint.address,
-    entryPointVersion: prepared.entryPoint.version,
-    userOperation: asViemUserOperation(prepared.userOperation),
-  });
+  return getSigningHash(
+    asCetaneUserOperation(prepared.userOperation),
+    0,
+    prepared.entryPoint.address,
+    prepared.entryPoint.version,
+  );
 }
 
 /** v3.3 uses mode 0x01 for enable; its validation/namespace layout matches v4. */

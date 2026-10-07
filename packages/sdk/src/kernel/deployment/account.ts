@@ -9,7 +9,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { decodeAbiParameters, encodeFunctionData, parseAbi } from "viem";
+import { decodeAbiParameters, encodeFunctionData, parseAbi } from "cetane/utils";
 import {
   bindKernelV4Account,
   bindKernelV4ExistingAccount,

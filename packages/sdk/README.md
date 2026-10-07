@@ -75,7 +75,7 @@ enable approval:
 ```ts
 import { createOAAth } from "@oaath/sdk";
 
-// Plain descriptors: createOAAth builds the default viem chain ports.
+// Plain descriptors: createOAAth builds the default Cetane chain ports.
 const chains = { 143: { publicRpcUrls: [publicRpcUrl], bundlerUrl } };
 const oaath = createOAAth({ chains, account: existingKernelAddress });
 const account = oaath.account(existingKernelAddress);
@@ -344,9 +344,9 @@ pass the array as `chains`; any `OaathChainCapability[]` is accepted the same
 way as a custom override:
 
 ```ts
-import { createViemChainPorts } from "@oaath/sdk/viem";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 
-const chains = createViemChainPorts({
+const chains = createCetaneChainPorts({
   480: {
     publicRpcUrls: [publicRpcUrl, backupPublicRpcUrl],
     bundlerUrl,
@@ -366,7 +366,7 @@ receives only ERC-4337 discovery, estimation, submission, and operation-receipt
 calls; paymaster methods go only to `paymasterUrl`. Usage comes from the pinned
 RateLimitPolicy at an exact finalized canonical block. An unavailable or absent
 policy contract is not zero usage. RPCs must support `finalized` and EIP-1898
-block-hash reads. The default quote uses nonce namespace zero and viem's fee
+block-hash reads. The default quote uses nonce namespace zero and Cetane's fee
 estimation. Existing gas-floor configuration can be supplied as `gas` per chain.
 
 Read failures such as HTTP 429/5xx, invalid JSON, and timeouts retry within the
@@ -460,7 +460,7 @@ resubmit. Custom submission sessions may return
 or `submission: { route: "erc4337-handleops", transactionHash }`; omit
 `submission` when the route is unknown.
 
-For direct acknowledgements, default viem observation reads the retained
+For direct acknowledgements, default Cetane observation reads the retained
 transaction from the public RPC and locates the exact EntryPoint event. Recovery
 needs neither a wallet nor a bundler index. The observer still verifies the
 receipt, transaction, canonical blocks, and finality; a missing event or a failed
@@ -483,9 +483,9 @@ UserOperation reference without constructing an OAAth Grant or Operation:
 
 ```ts
 import { createUserOperationObserver } from "@oaath/sdk/advanced";
-import { createViemChainPorts } from "@oaath/sdk/viem";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 
-const [port] = createViemChainPorts({
+const [port] = createCetaneChainPorts({
   [chainId]: { publicRpcUrls: [rpcUrl], bundlerUrl },
 }, { retry: { attempts: 1 }, timeoutMs: 8_000, maxRequests: 96 });
 const observer = createUserOperationObserver(port.observation);
@@ -550,7 +550,7 @@ session closes cannot start it either. Wallet rejection or a lost response never
 retries the transaction. Retain the operation ID and observe it. This option
 cannot be combined with paymaster sponsorship, which remains on the bundler
 route. Custom direct transports must preserve `OaathRpcError` conclusive
-rejections from `@oaath/sdk/viem`. The relay forwards their closed rejection
+rejections from `@oaath/sdk/cetane`. The relay forwards their closed rejection
 evidence only from submission failures; service-approved clients capture it before
 allowing the same local wallet fallback. Generic relay errors grant no fallback.
 
@@ -715,3 +715,9 @@ explicitly selected sponsorship. It prompts and submits nothing, does not
 reserve an operation slot, and fails when capacity cannot be established.
 `sendCalls` obtains a fresh quote through the existing operation journal; a
 review estimate is not an inclusion guarantee.
+
+The SDK runtime uses the exact Cetane tarball pinned in this repository.
+`@oaath/sdk/cetane` exports `createCetaneChainPorts` and the Grant-backed EIP-1193 provider.
+There is no `@oaath/sdk/viem` compatibility entry. Run `bun run smoke:cetane`
+to verify the packed SDK without viem installed. The existing operation runner
+continues to own submission, observation, recovery and lane occupancy.

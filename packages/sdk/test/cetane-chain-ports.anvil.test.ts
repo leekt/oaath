@@ -33,7 +33,7 @@ import { createIndexedDbKeyStore } from "../src/persistence/indexeddb/key-store.
 import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
 import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
 import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
-import { createViemChainPorts } from "../src/viem.js";
+import { createCetaneChainPorts } from "../src/cetane.js";
 import { createHarness, deployKernelStack, startAnvil } from "./support/anvil.js";
 import {
   bindingInput,
@@ -269,7 +269,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
             [url, `${url}/unavailable`, local.url].map((value) => new URL(value).href),
           );
           const chainPorts = () =>
-            createViemChainPorts(
+            createCetaneChainPorts(
               { [CHAIN_ID]: { publicRpcUrls: [`${url}/unavailable`, local.url], bundlerUrl: url } },
               {
                 retry: { attempts: 2, delayMs: 0 },

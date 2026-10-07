@@ -18,7 +18,7 @@
 
 import { encodeKernelNonceKey, encodeKernelNonceRead } from "@oaath/sdk/advanced";
 import { kernelDeployment } from "@oaath/sdk/kernel";
-import { createViemChainPorts } from "@oaath/sdk/viem";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import { parseEther } from "viem";
 import {
   createLocalAnvilObservation,
@@ -53,7 +53,7 @@ export async function createAnvilChain(chainId, options = {}) {
       kernelVersion: existingAccount === null ? "0.4.0" : "0.3.3",
     });
     // Use only the public read port here; this fixture owns submission below.
-    const reads = createViemChainPorts({
+    const reads = createCetaneChainPorts({
       [chainId]: { publicRpcUrls: [chain.url], bundlerUrl: chain.url },
     })[0].reads;
     const feePayerBalance = await chain.client.getBalance({ address: stack.submitter.address });

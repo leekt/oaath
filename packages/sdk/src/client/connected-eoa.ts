@@ -1,22 +1,41 @@
 /** One optional connected-wallet send after a conclusive refusal of the exact signed operation. */
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
-import { type Account, toHex, type WalletClient } from "viem";
+import { toHex } from "cetane/utils";
+import { OaathRpcError } from "../cetane/rpc.js";
 import type { OperationSubmissionSession } from "../operation-runner.js";
 import { routingAddress } from "../routing/capabilities.js";
 import { classifyBundlerAcceptance } from "../routing/erc4337/bundler.js";
 import { encodeHandleOps } from "../routing/erc4337/handle-ops.js";
-import { OaathRpcError } from "../viem/rpc.js";
 import { clientFail, clientFailure, exactClientRecord } from "./errors.js";
 import type { OaathSubmissionRequest } from "./grant-handle.js";
+
+type ConnectedEoaRpcRequest =
+  | { method: "eth_accounts" | "eth_chainId" }
+  | {
+      method: "eth_sendTransaction";
+      params: [
+        {
+          from: `0x${string}`;
+          to: `0x${string}`;
+          data: `0x${string}`;
+          value: `0x${string}`;
+          chainId: `0x${string}`;
+        },
+      ];
+    };
 
 /** A connected wallet that sends `handleOps` after a conclusive bundler rejection. */
 export interface OaathConnectedEoaPayer {
   readonly kind: "connected-eoa";
-  readonly wallet: Pick<WalletClient, "account" | "request"> & {
+  readonly wallet: {
+    readonly account?: Readonly<{ address: `0x${string}`; type?: string }>;
+    readonly signer?: Readonly<{ sign: (request: { hash: `0x${string}` }) => unknown }>;
+    readonly request: (
+      request: ConnectedEoaRpcRequest,
+      options?: { retryCount: 0 },
+    ) => Promise<unknown>;
     readonly sendTransaction?: (
       input: Readonly<{
-        account: Account;
-        chain: null;
         to: `0x${string}`;
         data: `0x${string}`;
         value: bigint;
@@ -32,7 +51,7 @@ export interface OaathConnectedEoaFallbackReview {
 }
 export interface ConnectedEoa {
   readonly address: `0x${string}`;
-  readonly request: WalletClient["request"];
+  readonly request: OaathConnectedEoaPayer["wallet"]["request"];
   readonly localSend:
     | ((input: { to: `0x${string}`; data: `0x${string}`; value: bigint }) => Promise<unknown>)
     | null;
@@ -50,7 +69,11 @@ export function captureConnectedEoa(
   const account = captureRecord(wallet.account, "connected fee payer account", context, fail);
   const address = routingAddress(account.address, "connected fee payer address", fail);
   if (typeof wallet.request !== "function") return fail("connected fee payer request is missing");
-  const local = account.type === "local";
+  const local = account.type === "local" || wallet.signer !== undefined;
+  if (wallet.signer !== undefined) {
+    const signer = captureRecord(wallet.signer, "connected fee payer signer", context, fail);
+    if (typeof signer.sign !== "function") return fail("local fee payer signer is missing");
+  }
   if (local && typeof wallet.sendTransaction !== "function")
     return fail("local fee payer sendTransaction is missing");
   const send = wallet.sendTransaction as NonNullable<
@@ -58,10 +81,9 @@ export function captureConnectedEoa(
   >;
   return Object.freeze({
     address,
-    request: wallet.request as WalletClient["request"],
+    request: wallet.request as OaathConnectedEoaPayer["wallet"]["request"],
     localSend: local
-      ? (call: { to: `0x${string}`; data: `0x${string}`; value: bigint }) =>
-          send({ ...call, account: account as Account, chain: null })
+      ? (call: { to: `0x${string}`; data: `0x${string}`; value: bigint }) => send(call)
       : null,
   });
 }

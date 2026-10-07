@@ -7,7 +7,8 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { encodeAbiParameters, type Hash, keccak256 } from "viem";
+import type { Hash } from "cetane";
+import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import { OaathClientError } from "../client/errors.js";
 import type {
   OaathExternalPreparedCallPlan,

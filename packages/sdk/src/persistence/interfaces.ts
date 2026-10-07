@@ -39,7 +39,7 @@ import {
   parseOperationIdentity,
   parsePermissionRequest,
 } from "@oaath/protocol";
-import type { Address, Hash } from "viem";
+import type { Address, Hash } from "cetane";
 import {
   type KernelGrantApproval,
   parseKernelGrantApproval,

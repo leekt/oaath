@@ -14,7 +14,8 @@ import {
   captureRecord,
   type ExactRecord,
 } from "@oaath/protocol";
-import { type Hash, type Hex, keccak256, stringToBytes } from "viem";
+import type { Hash, Hex } from "cetane";
+import { keccak256 } from "cetane/utils";
 import {
   type CapturedWalletStaticPaymasterConfiguration,
   captureAtomicCapability,
@@ -272,7 +273,7 @@ export function hashCapturedWalletPrepareCallsRequest(
       : { capabilities: hashCapabilities(request.capabilities) }),
     key: hashPreparedCallsKey(request.key),
   });
-  return keccak256(stringToBytes(canonicalJson(material)));
+  return keccak256(new TextEncoder().encode(canonicalJson(material)));
 }
 
 /** Deterministic identity of one exactly captured experimental send request. */
@@ -290,7 +291,7 @@ export function hashCapturedWalletSendPreparedCallsRequest(
     key: hashPreparedCallsKey(request.key),
     signature: request.signature,
   });
-  return keccak256(stringToBytes(canonicalJson(material)));
+  return keccak256(new TextEncoder().encode(canonicalJson(material)));
 }
 
 /** Internal deterministic identity for one already-captured request and its exact chosen ID. */
@@ -319,7 +320,7 @@ export function hashCapturedWalletSendCallsRequest(
       ? {}
       : { capabilities: hashCapabilities(request.capabilities) }),
   });
-  return keccak256(stringToBytes(canonicalJson(material)));
+  return keccak256(new TextEncoder().encode(canonicalJson(material)));
 }
 
 /** Binds canonical request bytes to one unrepeatable durable bundle generation. */

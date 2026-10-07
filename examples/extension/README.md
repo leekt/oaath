@@ -59,7 +59,7 @@ Then `chrome://extensions` → Developer mode → **Load unpacked** →
 
 ## Provider surface
 
-Exactly `@oaath/sdk/viem`: `eth_chainId`, `eth_accounts`,
+Exactly `@oaath/sdk/cetane`: `eth_chainId`, `eth_accounts`,
 `eth_requestAccounts`, `eth_sendTransaction`, and EIP-5792
 `wallet_sendCalls` / `wallet_getCallsStatus` / `wallet_showCallsStatus` /
 `wallet_getCapabilities`. `wallet_showCallsStatus` opens a read-only extension

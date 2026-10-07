@@ -12,8 +12,8 @@ import {
   type OaathConnectedEoaPayer,
   type OaathOwnerClient,
 } from "@oaath/sdk";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import { type KeyProfile, kernelDeployment, kernelKey } from "@oaath/sdk/kernel";
-import { createViemChainPorts } from "@oaath/sdk/viem";
 import {
   bytesToHex,
   createWalletClient,
@@ -58,7 +58,7 @@ export interface LocalOwnerAnvilFixture {
   /** Reopens the SDK and SQLite journal; no prior operation handle survives. */
   readonly openClient: () => Promise<Readonly<OaathOwnerClient>>;
   /** Fresh bounded public SDK ports for testing local client composition. */
-  readonly createChainPorts: () => ReturnType<typeof createViemChainPorts>;
+  readonly createChainPorts: () => ReturnType<typeof createCetaneChainPorts>;
   /**
    * Plain `createOAAth` chain descriptors: the Anvil RPC plus this fixture's
    * bundler served over loopback HTTP, so the SDK builds its default ports.
@@ -140,7 +140,14 @@ export async function createLocalOwnerAnvilFixture(
     let sessionEstimates = 0;
     let rpcRequests = 0;
     let rejected: UserOperation<"0.7"> | undefined;
+    const walletChain = {
+      id: chainId,
+      name: "Anvil",
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: [chain.url] } },
+    };
     const localWallet = createWalletClient({
+      chain: walletChain,
       account: owner,
       transport: http(chain.url, { retryCount: 0 }),
     });
@@ -165,6 +172,7 @@ export async function createLocalOwnerAnvilFixture(
     const wallet: OwnerWallet =
       input.wallet === "browser"
         ? createWalletClient({
+            chain: walletChain,
             account: owner.address,
             transport: custom({
               request: async ({ method, params }) => {
@@ -328,7 +336,7 @@ export async function createLocalOwnerAnvilFixture(
       return Response.json({ jsonrpc: "2.0", id, result });
     };
     const ports = () =>
-      createViemChainPorts(
+      createCetaneChainPorts(
         { [chainId]: { publicRpcUrls: [chain.url], bundlerUrl: "http://owner-bundler.test" } },
         { maxRequests: 1_000, fetch: rpcFetch },
       );

@@ -7,17 +7,15 @@
  * @author taek <leekt216@gmail.com>
  */
 import { p256 } from "@noble/curves/nist.js";
+import { sha256 } from "@noble/hashes/sha256";
 import type { CaptureContext } from "@oaath/protocol";
 import {
-  concat,
   decodeAbiParameters,
   encodeAbiParameters,
   hexToBytes,
   keccak256,
-  sha256,
-  stringToBytes,
   toHex,
-} from "viem";
+} from "cetane/utils";
 import type { KernelDeployment } from "../deployment/profile.js";
 import {
   exactInput,
@@ -167,7 +165,7 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
   const rpId = record.rpId;
   const origin = record.origin;
   const credentialId = record.credentialId;
-  const rpIdHash = sha256(stringToBytes(rpId));
+  const rpIdHash = toHex(sha256(new TextEncoder().encode(rpId)));
   const publicKey = credential.publicKey;
   const authenticate = inputCapability<WebAuthnKeyInput["authenticate"]>(
     record.authenticate,
@@ -205,8 +203,10 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
     ) {
       return false;
     }
-    const clientData = stringToBytes(clientDataJSON);
-    if (!matchesAt(clientData, stringToBytes(TYPE_FIELD), Number(responseTypeLocation))) {
+    const clientData = new TextEncoder().encode(clientDataJSON);
+    if (
+      !matchesAt(clientData, new TextEncoder().encode(TYPE_FIELD), Number(responseTypeLocation))
+    ) {
       return false;
     }
     let parsed: unknown;
@@ -225,12 +225,14 @@ export function webauthnKey(value: WebAuthnKeyInput): Readonly<KeyProfile> {
     ) {
       return false;
     }
-    const message = sha256(concat([authenticatorData, sha256(clientData)]));
+    const message = sha256(
+      new Uint8Array([...hexToBytes(authenticatorData), ...sha256(clientData)]),
+    );
     const compact = `0x${r.toString(16).padStart(64, "0")}${s
       .toString(16)
       .padStart(64, "0")}` as const;
     try {
-      return p256.verify(hexToBytes(compact), hexToBytes(message), hexToBytes(publicKey), {
+      return p256.verify(hexToBytes(compact), message, hexToBytes(publicKey), {
         format: "compact",
         lowS: true,
         prehash: false,

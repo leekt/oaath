@@ -197,7 +197,7 @@ export type {
   UnsignedUserOperationV07,
 } from "./prepared-user-operation.js";
 export {
-  asViemUserOperation,
+  asCetaneUserOperation,
   deriveOperationId,
   OAATH_PREPARED_USER_OPERATION_VERSION,
   OaathPreparedUserOperationError,

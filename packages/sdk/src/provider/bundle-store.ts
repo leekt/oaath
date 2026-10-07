@@ -14,7 +14,7 @@ import {
   exactRecord as exactRecordValue,
   parseOperationIdentity,
 } from "@oaath/protocol";
-import type { Hash } from "viem";
+import type { Hash } from "cetane";
 import {
   OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION,
   OAATH_WALLET_CALL_BUNDLE_VERSION,

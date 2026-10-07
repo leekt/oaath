@@ -12,7 +12,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import { createOAAth } from "@oaath/sdk";
-import { oaathProvider } from "@oaath/sdk/viem";
+import { oaathProvider } from "@oaath/sdk/cetane";
 import { showWalletCallStatus } from "./status-presentation.js";
 import {
   confirmWalletCalls,

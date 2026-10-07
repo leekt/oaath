@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { kernelDeployment, kernelRuntimeReadiness } from "@oaath/sdk/kernel";
-import { createViemChainPorts } from "@oaath/sdk/viem";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import { concat, createWalletClient, http, parseEther } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 const exec = promisify(execFile);
@@ -84,7 +84,7 @@ try {
   timer = setInterval(() => { if (miningPromise) return; miningPromise = rpc("anvil_mine", ["0x40"]).catch(() => { miningError = true; }).finally(() => { miningPromise = undefined; }); }, 200);
   const deployed = JSON.parse((await exec(bin, args, { env: { ...cleanEnv, OAATH_DEPLOYER_PRIVATE_KEY: key }, timeout: 60000 })).stdout);
   if (deployed.status !== "ready" || !deployed.readiness.ready || !deployed.readiness.passkeySessionsReady) throw new Error("packed deployment failed");
-  const port = createViemChainPorts({ 143: { publicRpcUrls: [url], bundlerUrl: url } })[0];
+  const port = createCetaneChainPorts({ 143: { publicRpcUrls: [url], bundlerUrl: url } })[0];
   const modules = await kernelRuntimeReadiness({ chainId: 143, reads: port.reads });
   const external = ["call_policy", "operation_limit_policy", "ecdsa_signer", "p256_verifier"];
   if (modules.modules.length !== 7 || modules.modules.some(row => row.status !== "present" || row.deployment !== (external.includes(row.module) ? "external" : "oaath"))) throw new Error("SDK readiness omitted a required module");

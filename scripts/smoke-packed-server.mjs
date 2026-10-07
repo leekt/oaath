@@ -67,7 +67,7 @@ import {
   OAATH_RELAY_POSTGRES_SCHEMA_STATEMENTS,
   OAATH_RELAY_POSTGRES_SCHEMA_VERSION,
 } from "@oaath/server/postgres";
-import { classifyUserOperationError, parseUserOperationFailure } from "@oaath/sdk/viem";
+import { classifyUserOperationError, parseUserOperationFailure } from "@oaath/sdk/cetane";
 import pg from "pg";
 
 function fail(message) {

@@ -19,7 +19,7 @@ import {
   hashCapturedWalletSendCallsRequest,
   hashWalletCallBundleProvenance,
 } from "../src/provider/capture.js";
-import { oaathProvider } from "../src/viem.js";
+import { oaathProvider } from "../src/cetane.js";
 import {
   ACCOUNT,
   bindingInput,

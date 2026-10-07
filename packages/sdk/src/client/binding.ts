@@ -33,7 +33,7 @@ import {
   type SubjectBinding,
   type WorkspaceAccountContext,
 } from "@oaath/protocol";
-import { encodeAbiParameters, keccak256 } from "viem";
+import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import { clientFail, clientFailure, exactClientRecord, mapClientFailure } from "./errors.js";
 
 export const OAATH_BINDING_VERSION = "oaath.client-realm-binding/v2" as const;

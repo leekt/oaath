@@ -69,8 +69,9 @@
       "version": "0.3.4",
       "dependencies": {
         "@noble/curves": "1.9.1",
+        "@noble/hashes": "1.8.0",
         "@oaath/protocol": "workspace:*",
-        "viem": "2.55.8",
+        "cetane": "file:../../vendor/cetane-0.0.2-9862f7c.tgz",
       },
       "devDependencies": {
         "@account-abstraction/contracts": "0.7.0",
@@ -78,6 +79,7 @@
         "@oaath/testing": "workspace:*",
         "@types/node": "22.13.0",
         "fake-indexeddb": "6.2.5",
+        "viem": "2.55.8",
       },
     },
     "packages/server": {
@@ -797,6 +799,8 @@
     "@noble/curves/@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
 
     "@oaath/protocol/@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
+
+    "@oaath/sdk/@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
 
     "@quansync/fs/quansync": ["quansync@1.0.0", "", {}, "sha512-5xZacEEufv3HSTPQuchrvV6soaiACMFnq1H8wkVioctoH3TRha9Sz66lOxRwPK/qZj7HPiSveih9yAyh98gvqA=="],
 

@@ -11,7 +11,7 @@ const consumer = await createConsumer({
 import assert from "node:assert/strict";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { createUserOperationObserver } from "@oaath/sdk/advanced";
-import { createViemChainPorts, classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/viem";
+import { createCetaneChainPorts, classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/cetane";
 import { kernelDeployment, NONCE_ALIGNMENT_PERMISSION_ID, verifyKernelPermissionNonceAlignmentCalls } from "@oaath/sdk/kernel";
 import { createPublicClient, decodeEventLog, getAddress, getCreate2Address, http } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
@@ -23,7 +23,7 @@ assert.equal(classified.retryable, false);
 assert.equal(classified.cause, providerCause);
 assert.equal(readUserOperationFailure(new Error("wrapped", { cause: classified })), classified);
 assert.equal(readUserOperationFailure({ ...classified }), null);
-const failed = createViemChainPorts({ 421614: { publicRpcUrls: ["https://fixture.test"], bundlerUrl: "https://fixture.test" } }, {
+const failed = createCetaneChainPorts({ 421614: { publicRpcUrls: ["https://fixture.test"], bundlerUrl: "https://fixture.test" } }, {
   retry: { attempts: 1 }, fetch: async () => new Response(null, { status: 503 }),
 })[0];
 await assert.rejects(failed.observation.read({ type: "user_operation_receipt", chainId: 421614, userOperationHash: "0x" + "11".repeat(32) }), error => error.failure?.stage === "receipt" && error.failure.code === "transport");
@@ -61,7 +61,7 @@ try {
   const event = receipt.logs.map(log => { try { return decodeEventLog({ abi: entryPoint07Abi, ...log }); } catch { return null; } }).find(log => log?.eventName === "UserOperationEvent" && log.args.userOpHash === first.id);
   assert.ok(event);
   const reference = { chainId: 421614, entryPoint: kernelDeployment({ chainId: 421614 }).entryPoint.address, account: event.args.sender.toLowerCase(), nonce: event.args.nonce.toString(), userOperationHash: first.id };
-  const ports = () => createViemChainPorts({ 421614: {
+  const ports = () => createCetaneChainPorts({ 421614: {
     publicRpcUrls: [fixture.rpcUrl(421614)], headers: { "x-oaath-fixture": "observation" },
   } }, { maxRequests: 64, signal: new AbortController().signal, fetch: request => {
     assert.equal(request.headers.get("x-oaath-fixture"), "observation");
@@ -108,7 +108,7 @@ console.log("packed local fixture: raw CREATE2 deployment, two chains, one appro
 import type { Oaath } from "@oaath/sdk";
 import { type KernelRuntime, kernelPermissionNonce, materializeKernelPermission } from "@oaath/sdk/kernel";
 import type { ObserveUserOperationResult } from "@oaath/sdk/advanced";
-import { classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/viem";
+import { classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/cetane";
 import type { UserOperationFailureCode } from "@oaath/sdk";
 export const readFailure: typeof readUserOperationFailure = readUserOperationFailure;
 export const classifiedCode: UserOperationFailureCode = classifyUserOperationError({ stage: "send", error: null }).code;

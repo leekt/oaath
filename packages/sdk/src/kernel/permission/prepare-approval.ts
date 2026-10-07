@@ -24,7 +24,7 @@ import {
   parseOwnerSigningRequest,
   parsePermissionRequest,
 } from "@oaath/protocol";
-import { hashTypedData } from "viem";
+import { hashTypedData } from "cetane/utils";
 import {
   kernelV4Deployment,
   kernelV4ReplayableInstallDigest,

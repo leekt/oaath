@@ -19,7 +19,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { ServiceBootstrap } from "@oaath/protocol";
-import { encodeAbiParameters, keccak256 } from "viem";
+import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import { requireNonExtractableKey } from "../persistence/interfaces.js";
 
 export const OAATH_SERVICE_SESSION_VERSION = "oaath.service-session/v2" as const;

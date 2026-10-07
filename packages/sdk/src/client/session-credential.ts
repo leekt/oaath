@@ -15,7 +15,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/protocol";
-import { keccak256 } from "viem";
+import { keccak256 } from "cetane/utils";
 import { type WebAuthnKeyInput, webauthnKey } from "../kernel/key/webauthn.js";
 import type { KeyProfile } from "../kernel/types.js";
 import { clientFail, clientFailure } from "./errors.js";

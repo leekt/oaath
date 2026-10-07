@@ -24,7 +24,7 @@ import { createIndexedDbKeyStore } from "../src/persistence/indexeddb/key-store.
 import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
 import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
 import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
-import { oaathProvider } from "../src/viem.js";
+import { oaathProvider } from "../src/cetane.js";
 import {
   bundlerProbe,
   CALL_DATA,

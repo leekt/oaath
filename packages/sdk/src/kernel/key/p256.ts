@@ -7,7 +7,7 @@
  */
 import { p256 } from "@noble/curves/nist.js";
 import { type CaptureContext, parseOwnerCredentialProfile } from "@oaath/protocol";
-import { encodeAbiParameters, hexToBytes } from "viem";
+import { encodeAbiParameters, hexToBytes } from "cetane/utils";
 import type { KernelDeployment } from "../deployment/profile.js";
 import {
   exactInput,
