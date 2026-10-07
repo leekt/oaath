@@ -129,6 +129,7 @@
         "@types/react": "19.2.2",
         "@types/react-dom": "19.2.2",
         "@vitejs/plugin-react": "6.1.1",
+        "jose": "6.2.12",
         "puppeteer-core": "25.5.0",
         "vite": "8.2.0",
         "vitest": "4.1.10",
@@ -606,6 +607,8 @@
     "isexe": ["isexe@2.0.0", "", {}, "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw=="],
 
     "isows": ["isows@1.0.7", "", { "peerDependencies": { "ws": "*" } }, "sha512-I1fSfDCZL5P0v33sVqeTDSpcstAg/N+wF5HS033mogOVIp4B+oHC7oOCsA3axAbBSGTJ8QubbNmnIRN/h8U7hg=="],
+
+    "jose": ["jose@6.2.12", "", {}, "sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw=="],
 
     "js-yaml": ["js-yaml@4.3.1", "", { "dependencies": { "argparse": "2.0.1" }, "bin": { "js-yaml": "bin/js-yaml.js" } }, "sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ=="],
 
