@@ -52,6 +52,7 @@ export type {
 export type {
   OaathAuthorizationLauncher,
   OaathLogin,
+  OaathLoginAccount,
   OaathLoginOptions,
   OaathLoginSigner,
 } from "./client/oauth-login.js";

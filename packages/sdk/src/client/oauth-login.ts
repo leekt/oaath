@@ -13,8 +13,8 @@
  *                    iss, aud = clientId, nonce)
  * ```
  *
- * The result names the account and signer the user chose. It is identity, not
- * authority: `verified` is true because the signer proved control of its
+ * The result names the account and signer the user chose, and every account
+ * the signer is an active member of. It is identity, not authority: `verified` is true because the signer proved control of its
  * credential to OAAth and is a member of the account, and a Grant still needs
  * its own owner approval.
  *
@@ -59,12 +59,23 @@ export interface OaathLoginSigner {
   readonly profile: Readonly<OwnerCredentialProfile>;
 }
 
+/** One account the signer is an active member of (the id_token `oaath_accounts`). */
+export interface OaathLoginAccount {
+  /** The smart account's address, lowercase. */
+  readonly address: `0x${string}`;
+  /** `root` when the signer is the account's root; otherwise a permission member. */
+  readonly role: "root" | "permission";
+  readonly status: "active";
+}
+
 export interface OaathLogin {
   /** The chosen smart account's address (the id_token `sub`), lowercase. */
   readonly account: `0x${string}`;
   readonly accountProfile: Readonly<KernelAccountProfile>;
   /** The signer the user signed in with. */
   readonly signer: Readonly<OaathLoginSigner>;
+  /** Every account the signer is an active member of, in the issuer's order. */
+  readonly accounts: readonly Readonly<OaathLoginAccount>[];
   /** Always true: the signer proved control and is a member of the account. */
   readonly verified: true;
   /** The verified ES256 id_token, for the dapp's own backend. */
@@ -352,10 +363,13 @@ async function verifyIdToken(
       typeof signer?.id !== "string"
     )
       return invalid();
+    const accounts = captureAccounts(payload.oaath_accounts);
+    if (!accounts) return invalid();
     return Object.freeze({
       account: payload.sub as `0x${string}`,
       accountProfile,
       signer: Object.freeze({ id: signer.id, kind: profile.kind, profile }),
+      accounts,
       verified: true,
       idToken,
     });
@@ -363,6 +377,26 @@ async function verifyIdToken(
     if (cause instanceof OaathClientError) throw cause;
     return invalid(cause);
   }
+}
+
+/** The exact `oaath_accounts` claim, or null when any entry is malformed. */
+function captureAccounts(value: unknown): readonly Readonly<OaathLoginAccount>[] | null {
+  if (!Array.isArray(value)) return null;
+  const accounts: Readonly<OaathLoginAccount>[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return null;
+    const { address, role, status, ...rest } = entry as Record<string, unknown>;
+    if (
+      Object.keys(rest).length > 0 ||
+      typeof address !== "string" ||
+      !/^0x[0-9a-f]{40}$/u.test(address) ||
+      (role !== "root" && role !== "permission") ||
+      status !== "active"
+    )
+      return null;
+    accounts.push(Object.freeze({ address: address as `0x${string}`, role, status }));
+  }
+  return Object.freeze(accounts);
 }
 
 /**

@@ -87,6 +87,7 @@ export async function createLocalOAuthIssuer(
       nonce: par.form.get("nonce"),
       verified: true,
       oaath_account: accountProfile,
+      oaath_accounts: [{ address: input.account, role: "root", status: "active" }],
       signer: {
         id: "local-root",
         kind: input.root.credential.kind,
