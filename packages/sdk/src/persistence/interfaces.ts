@@ -29,6 +29,7 @@
 import {
   type CaptureContext,
   type CaptureFailure,
+  captureAddress,
   captureDenseArray,
   exactRecord,
   type GrantPolicy,
@@ -57,7 +58,6 @@ export const OAATH_WALLET_CALL_BUNDLE_STORE_RECORD_VERSION =
   "oaath.wallet-call-bundle-store-record/v7" as const;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
-const ADDRESS = /^0x[0-9a-f]{40}$/u;
 const MAX_ID_LENGTH = 256;
 const MAX_WALLET_CALL_BUNDLE_ID_UTF8_BYTES = 4_096;
 const MAX_EFFECTS = 4;
@@ -178,10 +178,7 @@ function walletCallBundleAddress(
   label: string,
   code: PersistenceErrorCode,
 ): Address {
-  if (typeof value !== "string" || !ADDRESS.test(value)) {
-    return persistenceFail(code, `${label} must be a lowercase 20-byte address`);
-  }
-  return value as Address;
+  return captureAddress(value, label, (message) => persistenceFail(code, message), true);
 }
 
 function walletCallBundleOperation(
@@ -288,7 +285,7 @@ export interface WalletCallBundleStoreAdapter {
   close(): Promise<unknown>;
 }
 
-/** Captures one caller-supplied bundle key without normalizing any component. */
+/** Captures one caller-supplied bundle key with a canonical lowercase account. */
 export function parseWalletCallBundleKey(value: unknown): Readonly<WalletCallBundleKey> {
   const code: PersistenceErrorCode = "persistence_input_invalid";
   const record = exactRecord(

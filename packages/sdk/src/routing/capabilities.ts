@@ -9,11 +9,11 @@
  */
 import {
   type CaptureContext,
+  captureAddress,
   captureDenseArray,
   captureRecord,
   exactCapturedRecord,
 } from "@oaath/protocol";
-import { getAddress } from "cetane/utils";
 import {
   capabilityInvalid,
   exactRoutingRecord,
@@ -26,7 +26,6 @@ import {
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 const MAX_UINT256 = (1n << 256n) - 1n;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 
 /**
  * The routing fact for one chain's bundler, in the repository's closed capability
@@ -88,14 +87,7 @@ export function routingAddress(
   label: string,
   fail: (message: string) => never,
 ): `0x${string}` {
-  if (typeof value !== "string") return fail(`${label} must be an address`);
-  try {
-    const canonical = getAddress(value).toLowerCase() as `0x${string}`;
-    if (canonical === ZERO_ADDRESS) return fail(`${label} must be a nonzero address`);
-    return canonical;
-  } catch {
-    return fail(`${label} must be an address`);
-  }
+  return captureAddress(value, label, fail);
 }
 
 /** Canonical lowercase nonempty byte string, as a signature or calldata field. */

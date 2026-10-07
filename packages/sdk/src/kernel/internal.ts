@@ -8,12 +8,12 @@
  */
 import {
   type CaptureContext,
+  captureAddress,
   captureDenseArray,
   captureRecord,
   type ExactRecord,
   exactCapturedRecord,
 } from "@oaath/protocol";
-import { getAddress } from "cetane/utils";
 import type { KernelInstall } from "../kernel-v4.js";
 import {
   type KernelBuiltInKeyKind,
@@ -29,7 +29,6 @@ const BYTES4 = /^0x[0-9a-f]{8}$/u;
 const BYTES32 = /^0x[0-9a-f]{64}$/u;
 const CUSTOM_KEY_KIND = /^custom:[a-z0-9][a-z0-9-]{0,31}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
-const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
 
 export function runtimeFail(
   code: KernelRuntimeErrorCode,
@@ -80,14 +79,7 @@ export function denseInput(
 }
 
 export function inputAddress(value: unknown, label: string): `0x${string}` {
-  if (typeof value !== "string") return inputInvalid(`${label} is invalid`);
-  try {
-    const canonical = getAddress(value).toLowerCase() as `0x${string}`;
-    if (canonical === ZERO_ADDRESS) return inputInvalid(`${label} is invalid`);
-    return canonical;
-  } catch {
-    return inputInvalid(`${label} is invalid`);
-  }
+  return captureAddress(value, label, inputInvalid);
 }
 
 export function inputSelector(value: unknown, label: string): `0x${string}` {

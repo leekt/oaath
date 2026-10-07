@@ -9,14 +9,18 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { type CaptureContext, captureDenseArray, captureRecord } from "@oaath/protocol";
+import {
+  type CaptureContext,
+  captureAddress,
+  captureDenseArray,
+  captureRecord,
+} from "@oaath/protocol";
 import { clientFail, clientFailure } from "./errors.js";
 
 export const OAATH_CALLS_REVIEW_VERSION = "oaath-calls-review-v1" as const;
 
 const IDENTITY = /^[a-z0-9]+(?:[.:-][a-z0-9]+)*$/u;
 const MAX_IDENTITY_LENGTH = 64;
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const DECIMAL = /^(?:0|[1-9][0-9]{0,77})$/u;
 const DATA = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const MAX_CALLS = 64;
@@ -69,9 +73,7 @@ function oneOf<const T extends string>(value: unknown, allowed: readonly T[], la
 }
 
 function address(value: unknown, label: string): `0x${string}` {
-  if (typeof value !== "string" || !ADDRESS.test(value))
-    return clientFail("oaath_client_input_invalid", `${label} is not an address`);
-  return value as `0x${string}`;
+  return captureAddress(value, label, clientFailure("oaath_client_input_invalid"), true);
 }
 
 function enforcement(
