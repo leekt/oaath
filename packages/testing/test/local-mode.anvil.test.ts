@@ -611,7 +611,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     }
   }, 60_000);
 
-  it("refuses a WebAuthn root owner before it signs", async () => {
+  it("refuses a WebAuthn key on an ECDSA-root account before it signs", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const fixture = await createLocalOwnerAnvilFixture({ kernelVersion: "0.4.0" });
     const passkey = await softwarePasskey("https://consumer.example");
@@ -619,21 +619,25 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("issuer-free local mode
     const owner = kernelKey({ kind: "webauthn", ...input });
     const owned = createOAAth({ chains: fixture.createChainPorts(), account: fixture.address });
     try {
-      const unsupported = {
-        code: "oaath_client_capability_unsupported",
-        source: "owner_key_kind_unsupported",
-      };
-      expect(() => owned.account(fixture.address).owner(owner)).toThrow(
-        expect.objectContaining(unsupported),
-      );
-      expect(() =>
-        createOAAth({
-          approvals: { kind: "wallet", owner },
-          account: fixture.address,
-          chains: fixture.createChainPorts(),
-          origin: "https://consumer.example",
-        }),
-      ).toThrow(expect.objectContaining(unsupported));
+      await expect(
+        owned.account(fixture.address).owner(owner).sendCalls({ chain: fixture.chainId, calls }),
+      ).rejects.toMatchObject({
+        code: "oaath_client_state_conflict",
+        source: "kernel_runtime_binding_mismatch",
+      });
+      const client = createOAAth({
+        approvals: { kind: "wallet", owner },
+        account: fixture.address,
+        chains: fixture.createChainPorts(),
+        origin: "https://consumer.example",
+      });
+      try {
+        await expect((await client.connect()).requestPermission(permission)).rejects.toMatchObject({
+          code: "oaath_client_state_conflict",
+        });
+      } finally {
+        await client.close();
+      }
       expect(passkey.assertions).toBe(0);
       expect(fixture.bundlerSubmissionCount).toBe(0);
     } finally {
