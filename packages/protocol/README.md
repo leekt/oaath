@@ -5,7 +5,9 @@ signing profiles. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
 The shared contracts cover caller/account bindings, workspace account context, permission
-requests and decisions, grants, operations, and owner signing. `deriveCodeChallenge`
+requests and decisions, grants, operations, owner signing requests, and owner
+operations (`oaath.owner-operation-request/v1`, `oaath.signed-owner-operation/v1`:
+one exact EntryPoint 0.9 UserOperation the account root signs). `deriveCodeChallenge`
 owns PKCE S256 challenge derivation. Authorization request/code storage, decision
 transactions, code consumption, and HTTP responses belong to the Rust relay.
 

@@ -3,7 +3,7 @@
  * encoders custom deployments and fixtures need, and the fully overridden
  * composition: binding capture, chain capabilities, routing, the operation
  * runner/observer pair, stores, and cleanup. Injecting these bypasses the
- * service-owned execution path; they exist for deterministic tests and
+ * default execution path; they exist for deterministic tests and
  * deployments that deliberately own it.
  *
  * @author taek <leekt216@gmail.com>
