@@ -19,7 +19,7 @@ import { createPublicClient, createWalletClient, http } from "cetane";
 import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
 import { createExecution } from "cetane/execution/evm";
 import { toPackedUserOperation } from "cetane/execution/erc4337";
-import { encodeFunctionData, getCreate2Address, keccak256, parseAbi, bytesToHex, hexToBytes, concatHex, toHex, decodeEventLog } from "cetane/utils";
+import { encodeFunctionData, getAddress, getCreate2Address, keccak256, parseAbi, bytesToHex, hexToBytes, concatHex, toHex, decodeEventLog } from "cetane/utils";
 import { entryPointAbi, OAATH_OWNER_CREDENTIAL_PROFILE_VERSION, encodeKernelPermissionUninstallCalls } from "@oaath/protocol";
 import { p256 } from "@noble/curves/nist.js";
 import { sha256 } from "@noble/hashes/sha256";
@@ -75,10 +75,11 @@ try {
   assert.equal(fixture.signatureCount, signatures);
   const profile = kernelDeployment({ chainId: 143, reviewedImplementations: [{ address: implementation, runtimeCodeHash }] });
   const after = createKernelRuntime({ deployment: profile, operator: ownerOperator({ key: fixture.ownerKey }), reads: ports.reads });
-  const imported = await after.bindAccount({ address: fixture.address });
+  const imported = await after.bindAccount({ address: getAddress(fixture.address) });
   assert.equal(imported.implementation, implementation);
   assert.equal(kernelAccountDeployment(imported), profile);
-  const target = "0x" + "67".repeat(20);
+  const target = getAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
+  assert.notEqual(target, target.toLowerCase());
   await send(after, imported, "1", [{ target, value: "123", data: "0x" }]);
   assert.equal(await reader.getBalance({ address: target }), 123n);
   // Rotate an existing account through its owner, then recreate its WebAuthn runtime.
@@ -143,16 +144,24 @@ try {
   await send(passkeyRuntime, passkeyAccount, "5", [{ target: fixture.address, value: "0", data: encodeFunctionData({
     abi: parseAbi(["function upgradeToAndCall(address implementation, bytes data)"]), functionName: "upgradeToAndCall", args: [base.implementation, "0x"],
   }) }]);
-  const app = createOAAth({ approvals: { kind: "wallet", owner: passkey }, account: fixture.address,
+  const app = createOAAth({ approvals: { kind: "wallet", owner: passkey }, account: getAddress(fixture.address),
     chains: fixture.createChainPorts(), origin, stores: { kind: "memory" } });
   try {
-    const grant = await (await app.connect()).requestPermission({ chainScope: "all", expiresIn: 3600, perChainOperationLimit: 3,
+    const connection = await app.connect();
+    await assert.rejects(connection.requestPermission({ chainScope: "all", expiresIn: 3600, perChainOperationLimit: 3,
+      permissions: [{ calls: [{ target: target.replace(/[a-f]/, letter => letter.toUpperCase()), selectors: ["0x12345678"], valueLimit: "1" }] }] }),
+      { code: "oaath_client_input_invalid", message: /permission 0 call 0 target.*checksum/ });
+    const grant = await connection.requestPermission({ chainScope: "all", expiresIn: 3600, perChainOperationLimit: 3,
       permissions: [{ calls: [{ target, selectors: ["0x12345678"], valueLimit: "1" }] }] });
+    const wrong = target.replace(/[a-f]/, letter => letter.toUpperCase());
+    const signaturesBeforeInvalid = assertions;
+    await assert.rejects(grant.sendCalls({ chain: 143, calls: [{ target: wrong, value: "1", data: "0x12345678" }] }), { code: "oaath_client_input_invalid", message: /call 0 target.*checksum/ });
+    assert.equal(assertions, signaturesBeforeInvalid);
     const sent = await grant.sendCalls({ chain: 143, calls: [{ target, value: "1", data: "0x12345678" }] });
     assert.equal((await sent.wait({ attempts: 3 })).status, "finalized");
     assert.equal(await reader.getBalance({ address: target }), 136n);
   } finally { await app.close(); }
-  console.log("packed Kernel import: reviewed implementation; WebAuthn root rotation/import, owner execution, session approval/materialization and revocation; unsupported root and wrong code refused before signing");
+  console.log("packed Kernel import: checksummed account/policy/calls; reviewed implementation; WebAuthn root rotation/import, owner execution, session approval/materialization and revocation; unsupported root and wrong code refused before signing");
 } finally { await ports?.observation.close(); await fixture.close(); }
 `,
     "surface.ts": `

@@ -204,7 +204,10 @@ describe("canonical permission approval by the owner", () => {
   it("refuses an unsupported owner or policy before preparing an approval", async () => {
     const fixed = fixture();
     await expect(
-      fixed.prepare({ ...fixed.request, logicalAccount: accountProfile }),
+      fixed.prepare({
+        ...fixed.request,
+        logicalAccount: { ...accountProfile, factoryRoute: "meta_factory" },
+      }),
     ).rejects.toMatchObject({ code: "kernel_runtime_unsupported" });
     await expect(
       fixed.prepare({

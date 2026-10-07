@@ -31,6 +31,7 @@ import {
   type CaptureContext,
   type ChainBinding,
   type ChainPermissionEvidence,
+  captureAddress,
   captureDenseArray,
   captureRecord,
   evaluateGrantPolicyCoverage,
@@ -166,6 +167,7 @@ import {
 import {
   clientCapability,
   clientFail,
+  clientFailure,
   exactClientRecord,
   mapClientFailure,
   OaathClientError,
@@ -897,9 +899,13 @@ export function captureCalls(
       ) {
         return clientFail("oaath_client_input_invalid", `call ${index} fields are invalid`);
       }
-      // kernel-v4 owns the exact address, value, and calldata rules.
+      // Capture the address before policy/review; kernel-v4 owns value and calldata rules.
       return Object.freeze({
-        target: record.target as `0x${string}`,
+        target: captureAddress(
+          record.target,
+          `call ${index} target`,
+          clientFailure("oaath_client_input_invalid"),
+        ),
         value: record.value,
         data: record.data as `0x${string}`,
       });

@@ -6,6 +6,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { CaptureContext } from "@oaath/protocol";
+import { captureAddress } from "@oaath/protocol";
 import type { KernelAccountDescriptor } from "../kernel/deployment/account.js";
 import {
   captureKernelGasPolicy,
@@ -17,7 +18,6 @@ import type { KernelUserOperationGas } from "../kernel-v4.js";
 import type { PreparedPaymaster, PreparedUserOperation } from "../prepared-user-operation.js";
 import { capabilityInvalid, exactRoutingRecord, routingFail } from "./types.js";
 
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
 
@@ -69,9 +69,7 @@ function decimal(value: unknown, label: string): string {
 }
 
 function address(value: unknown): `0x${string}` {
-  if (typeof value !== "string" || !ADDRESS.test(value))
-    return invalidEvidence("sponsorship paymaster address is invalid");
-  return `0x${value.slice(2).toLowerCase()}`;
+  return captureAddress(value, "sponsorship paymaster address", invalidEvidence, true);
 }
 
 function bytes(value: unknown): `0x${string}` {

@@ -2,6 +2,7 @@
  * The built portal in headless Chrome against a stub relay whose responses are
  * the typed `src/api.ts` shapes. The real relay end-to-end is a later proof.
  */
+import { generateKeyPairSync } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
@@ -10,6 +11,8 @@ import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
   CreateAccountResponse,
+  DecisionRequest,
+  IdentifiedSigner,
   PortalAccount,
   PortalTransaction,
   RedirectResponse,
@@ -33,6 +36,15 @@ const WALLET_SIGNER: RememberedSigner = {
   rdns: "test.wallet",
   lastUsedAt: 1,
 };
+
+/** A resident credential the relay knows, as if enrolled in another browser. */
+const KNOWN_KEY = generateKeyPairSync("ec", { namedCurve: "P-256" });
+const KNOWN_CREDENTIAL_BYTES = Buffer.from("known-passkey-0001");
+const KNOWN_CREDENTIAL = KNOWN_CREDENTIAL_BYTES.toString("base64url");
+const KNOWN_PUBLIC_KEY = `0x${KNOWN_KEY.publicKey
+  .export({ type: "spki", format: "der" })
+  .subarray(-65)
+  .toString("hex")}` as const;
 
 interface Call {
   readonly method: string;
@@ -85,7 +97,23 @@ async function stubRelay(path: string, method: string, body: unknown) {
     return created;
   }
   if (path === "/portal/transactions/par-1/decision" && method === "POST")
-    return { redirect: `${origin}/dapp/callback?code=code-1&state=s` } satisfies RedirectResponse;
+    return {
+      redirect:
+        (body as DecisionRequest).outcome === "cancelled"
+          ? `${origin}/dapp/callback?error=access_denied&state=s`
+          : `${origin}/dapp/callback?code=code-1&state=s`,
+    } satisfies RedirectResponse;
+  if (path === `/portal/signers/by-credential/${KNOWN_CREDENTIAL}` && method === "GET")
+    return {
+      signer_id: "signer-known-passkey",
+      kind: "webauthn",
+      profile: {
+        version: "oaath.owner-credential-profile/v1",
+        kind: "webauthn",
+        publicKey: KNOWN_PUBLIC_KEY,
+        authenticatorIdHash: `0x${"77".repeat(32)}`,
+      },
+    } satisfies IdentifiedSigner;
   return null;
 }
 
@@ -292,6 +320,82 @@ describe("portal in Chrome", () => {
         kind: "ecdsa",
         address: `0x${"22".repeat(20)}`,
       },
+    });
+    await page.close();
+  });
+
+  async function withResidentPasskey(page: Page, credential: Buffer) {
+    const session = await page.createCDPSession();
+    await session.send("WebAuthn.enable");
+    const { authenticatorId } = await session.send("WebAuthn.addVirtualAuthenticator", {
+      options: {
+        protocol: "ctap2",
+        transport: "internal",
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+      },
+    });
+    await session.send("WebAuthn.addCredential", {
+      authenticatorId,
+      credential: {
+        credentialId: credential.toString("base64"),
+        isResidentCredential: true,
+        rpId: "localhost",
+        privateKey: KNOWN_KEY.privateKey
+          .export({ type: "pkcs8", format: "der" })
+          .toString("base64"),
+        userHandle: Buffer.from("user").toString("base64"),
+        signCount: 0,
+      },
+    });
+  }
+
+  it("recognises a passkey from another browser by its credential ID alone", async () => {
+    calls.length = 0;
+    const page = await openPortal([]);
+    await withResidentPasskey(page, KNOWN_CREDENTIAL_BYTES);
+    await clickText(page, "Use a passkey from another device or browser");
+    await page.waitForSelector("#account-heading");
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      "GET /portal/transactions/par-1",
+      `GET /portal/signers/by-credential/${KNOWN_CREDENTIAL}`,
+      "GET /portal/signers/signer-known-passkey/accounts",
+    ]);
+    const remembered = await page.evaluate(() => localStorage.getItem("oaath.portal.signers/v1"));
+    expect(JSON.parse(remembered ?? "[]")[0]).toMatchObject({
+      signer_id: "signer-known-passkey",
+      kind: "passkey",
+      credentialId: KNOWN_CREDENTIAL,
+      profile: { kind: "webauthn", publicKey: KNOWN_PUBLIC_KEY },
+    });
+    await page.close();
+  });
+
+  it("says an unknown passkey is not registered with OAAth", async () => {
+    const page = await openPortal([]);
+    await withResidentPasskey(page, Buffer.from("unknown-passkey-01"));
+    await clickText(page, "Use a passkey from another device or browser");
+    const alert = await page.waitForSelector("[role=alert]");
+    expect(await alert?.evaluate((node) => node.textContent)).toContain(
+      "isn't registered with OAAth",
+    );
+    await page.close();
+  });
+
+  it("cancels from the account screen with access_denied", async () => {
+    calls.length = 0;
+    const page = await openPortal([WALLET_SIGNER]);
+    await clickText(page, "Test Wallet");
+    await page.waitForSelector("#account-heading");
+    // The account the first test created is listed with its role as "Owner".
+    await page.waitForSelector("::-p-text(Smart account · Owner)");
+    await Promise.all([page.waitForNavigation(), clickText(page, "Cancel and return to the app")]);
+    expect(new URL(page.url()).searchParams.get("error")).toBe("access_denied");
+    expect(calls.at(-1)).toEqual({
+      method: "POST",
+      path: "/portal/transactions/par-1/decision",
+      body: { outcome: "cancelled" },
     });
     await page.close();
   });

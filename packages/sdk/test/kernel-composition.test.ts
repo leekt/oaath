@@ -1058,7 +1058,7 @@ describe("Consumer-authored key profiles", () => {
     ).toThrowError(
       expect.objectContaining({
         code: "kernel_runtime_input_invalid",
-        message: "Kernel key profile signer module is invalid",
+        message: expect.stringContaining("Kernel key profile signer module"),
       }),
     );
   });

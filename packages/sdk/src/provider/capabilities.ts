@@ -7,7 +7,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { OAATH_ISSUER_VERSION, parseIssuerIdentity } from "@oaath/protocol";
+import { captureAddress, OAATH_ISSUER_VERSION, parseIssuerIdentity } from "@oaath/protocol";
 import type { Hash } from "cetane";
 import type {
   CapturedJsonObject,
@@ -25,6 +25,7 @@ import {
 import {
   ATOMICITY_UNSUPPORTED,
   INTERNAL_ERROR,
+  invalidProviderAddress,
   invalidProviderParams,
   rpcFail,
   UNSUPPORTED_CAPABILITY,
@@ -269,6 +270,9 @@ export function capturePaymasterServiceCapability(
 export function captureStaticPaymasterConfigurationCapability(
   value: CapturedJsonObject,
 ): Readonly<CapturedWalletStaticPaymasterConfiguration> {
+  captureAddress(value.paymaster, "paymaster", (_message, reason) =>
+    invalidProviderAddress("paymaster", reason),
+  );
   return STATIC_PAYMASTER_CONFIGURATION_HANDLER.capture(value, "bundle");
 }
 

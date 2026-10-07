@@ -1,5 +1,5 @@
 import { IDBFactory } from "fake-indexeddb";
-import type { Hash } from "viem";
+import { getAddress, type Hash } from "viem";
 import { describe, expect, it } from "vitest";
 import { type OaathDatabase, openOaathDatabase } from "../src/persistence/indexeddb/database.js";
 import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
@@ -223,6 +223,28 @@ async function expectStoreError(
 }
 
 describe("PreparedCallStore", () => {
+  it("captures checksummed reservation addresses without changing the prepared identity", async () => {
+    const lower = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+    const checked = getAddress(lower);
+    const operation = preparedOperation({ account: lower });
+    const input = reservation({
+      account: checked,
+      prepared: operation,
+      calls: [{ target: checked, value: "0", data: "0x1234" }],
+    });
+    const store = new PreparedCallStore(new MemoryPreparedCallAdapter().adapter);
+    const result = requireCommitted(await store.reservePrepared(input));
+    expect(result.value.account).toBe(lower);
+    expect(result.value.calls[0]?.target).toBe(lower);
+    expect(result.value.prepared).toEqual(operation);
+    expect(result.value.digest).toBe(operation.userOperationHash);
+    const wrong = checked.replace(/[a-f]/u, (letter) => letter.toUpperCase());
+    await expect(store.reservePrepared({ ...input, account: wrong })).rejects.toMatchObject({
+      code: "store_input_invalid",
+      message: expect.stringMatching(/Prepared call account.*checksum/u),
+    });
+    await store.close();
+  });
   it("captures one exact prepared record and consumes its preallocated identity once", async () => {
     const adapter = new MemoryPreparedCallAdapter();
     const store = new PreparedCallStore(adapter.adapter);

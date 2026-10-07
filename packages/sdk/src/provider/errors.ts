@@ -65,9 +65,15 @@ const PROVIDER_ERROR_MESSAGE_RECORD: Record<OaathProviderErrorCode, string> = {
 /** The only messages an OAAth provider error may expose. */
 export const OAATH_PROVIDER_ERROR_MESSAGES = Object.freeze(PROVIDER_ERROR_MESSAGE_RECORD);
 
+type AddressInputFailure = Readonly<{
+  field: "from" | "to" | "account" | "paymaster";
+  reason: "format" | "checksum" | "zero";
+}>;
+
 export class OaathProviderRpcError extends Error {
   readonly code: OaathProviderErrorCode;
   readonly data?: Readonly<{
+    address?: AddressInputFailure;
     diagnostic?: Readonly<ValidationGasDiagnostic>;
     message?: string;
     failure?: Readonly<OaathUserOperationError>;
@@ -77,17 +83,27 @@ export class OaathProviderRpcError extends Error {
     code: OaathProviderErrorCode,
     diagnostic: Readonly<ValidationGasDiagnostic> | null = null,
     failure: Readonly<OaathUserOperationError> | null = null,
+    address: AddressInputFailure | null = null,
   ) {
     super(OAATH_PROVIDER_ERROR_MESSAGES[code], failure === null ? undefined : { cause: failure });
     this.name = "OaathProviderRpcError";
     this.code = code;
     const captured = captureValidationGasDiagnostic(diagnostic);
-    if (captured !== null || failure !== null)
+    if (captured !== null || failure !== null || address !== null)
       this.data = Object.freeze({
         ...(captured === null
           ? {}
           : { diagnostic: captured, message: validationGasDiagnosticMessage(captured) }),
         ...(failure === null ? {} : { failure }),
+        ...(address === null
+          ? {}
+          : {
+              address: Object.freeze({ field: address.field, reason: address.reason }),
+              message:
+                address.reason === "checksum"
+                  ? `${address.field} has an invalid EIP-55 checksum`
+                  : `${address.field} is not a valid address`,
+            }),
       });
   }
 }
@@ -98,6 +114,14 @@ export class OaathProviderRpcError extends Error {
  */
 export function rpcFail(code: OaathProviderErrorCode, _ownerDiagnostic?: string): never {
   throw new OaathProviderRpcError(code);
+}
+
+/** Field names and reasons are local structured facts, never provider error text. */
+export function invalidProviderAddress(
+  field: AddressInputFailure["field"],
+  reason: AddressInputFailure["reason"],
+): never {
+  throw new OaathProviderRpcError(INVALID_PARAMS, null, null, { field, reason });
 }
 
 /** Capture-failure callback that deliberately discards protocol diagnostic prose. */
