@@ -5,7 +5,7 @@ import {
   OAATH_PERMISSION_DECISION_VERSION,
   type PermissionRequest,
 } from "@oaath/protocol";
-import { keccak256, stringToHex } from "viem";
+import { keccak256, stringToHex } from "cetane/utils";
 import {
   approveKernelPermission,
   type KernelPermissionEnableTypedData,

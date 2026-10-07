@@ -18,11 +18,7 @@ import {
   parseOwnerSigningArtifact,
   parsePermissionRequest,
 } from "@oaath/protocol";
-import {
-  toPackedUserOperation,
-  toUserOperation,
-  type UserOperation,
-} from "viem/account-abstraction";
+import { toPackedUserOperation, toUserOperation } from "cetane/execution/erc4337";
 import {
   encodeKernelInstallNonceInvalidationCall,
   encodeKernelPermissionUninstallCalls,
@@ -32,7 +28,7 @@ import {
   kernelV4ReplayableInstallTypedData,
 } from "../../kernel-v4.js";
 import {
-  asViemUserOperation,
+  asCetaneUserOperation,
   OAATH_PREPARED_USER_OPERATION_VERSION,
   type PreparedPaymaster,
   type PreparedUserOperation,
@@ -180,7 +176,10 @@ export async function prepareKernelV4Revocation(
     gas: input.gas as KernelUserOperationGas,
     paymaster: input.paymaster as Readonly<PreparedPaymaster> | null,
   });
-  const packed = toPackedUserOperation(asViemUserOperation(prepared.userOperation));
+  const packed = toPackedUserOperation(
+    asCetaneUserOperation(prepared.userOperation),
+    prepared.entryPoint.version,
+  );
   const signingRequest = parseKernelRevocationSigningRequest({
     version: OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,
     kind: "kernel-revocation",
@@ -242,12 +241,15 @@ export function restoreKernelV4Revocation(
         runtimeFail("kernel_runtime_binding_mismatch", "restoration must not read the chain"),
     },
   });
-  const operation = toUserOperation({
-    ...signingRequest.operation,
-    nonce: BigInt(signingRequest.operation.nonce),
-    preVerificationGas: BigInt(signingRequest.operation.preVerificationGas),
-    signature: "0x",
-  }) as unknown as UserOperation<"0.9">;
+  const operation = toUserOperation(
+    {
+      ...signingRequest.operation,
+      nonce: BigInt(signingRequest.operation.nonce),
+      preVerificationGas: BigInt(signingRequest.operation.preVerificationGas),
+      signature: "0x",
+    },
+    "0.9",
+  );
   const prepared = parsePreparedUserOperation({
     version: OAATH_PREPARED_USER_OPERATION_VERSION,
     kind: "revocation",

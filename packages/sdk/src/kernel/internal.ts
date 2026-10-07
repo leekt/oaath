@@ -13,7 +13,7 @@ import {
   type ExactRecord,
   exactCapturedRecord,
 } from "@oaath/protocol";
-import { getAddress } from "viem";
+import { getAddress } from "cetane/utils";
 import type { KernelInstall } from "../kernel-v4.js";
 import {
   type KernelBuiltInKeyKind,

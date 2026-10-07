@@ -1,7 +1,7 @@
 import { encodeErrorResult } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
-import { isAccountValidationRejection, OaathRpcError, rpcOwner } from "../src/viem/rpc.js";
+import { isAccountValidationRejection, OaathRpcError, rpcOwner } from "../src/cetane/rpc.js";
 
 const data = encodeErrorResult({
   abi: entryPoint07Abi,

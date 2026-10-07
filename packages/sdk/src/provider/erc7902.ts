@@ -10,7 +10,8 @@
  * @author taek <leekt216@gmail.com>
  */
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
-import { encodeAbiParameters, type Hash, keccak256 } from "viem";
+import type { Hash } from "cetane";
+import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import type { PreparedPaymaster } from "../prepared-user-operation.js";
 import { capabilityInvalid } from "../routing/types.js";
 

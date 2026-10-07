@@ -13,8 +13,8 @@ import {
   OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
   parseKernelAccountProfile,
 } from "@oaath/protocol";
-import type { Address } from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import type { Address } from "cetane";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
 import { OaathCleanupError } from "../cleanup/coordinator.js";
 import type { Oaath, OaathStoreConfiguration } from "../create-oaath.js";
 import { detectKernelAccountDeployment } from "../kernel/deployment/account.js";
@@ -75,7 +75,7 @@ export interface OaathWalletApprovals {
 }
 /** `createOAAth` options whose Grants the connected wallet approves. */
 export interface OaathWalletOptions {
-  /** Plain descriptors build the default viem ports; custom capabilities override them. */
+  /** Plain descriptors build the default Cetane ports; custom capabilities override them. */
   readonly chains: OaathChains<OaathChainCapability>;
   readonly account: Address;
   readonly approvals: Readonly<OaathWalletApprovals>;

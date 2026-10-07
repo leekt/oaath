@@ -51,7 +51,8 @@ import {
   parseOperationIdentity,
   parseOperationLane,
 } from "@oaath/protocol";
-import { publicKeyToAddress } from "viem/accounts";
+import { publicKeyToAddress } from "cetane/accounts";
+import { isAccountValidationRejection } from "../cetane/rpc.js";
 import {
   diagnoseKernelCapability,
   type KernelCapability,
@@ -149,7 +150,6 @@ import {
   type OperationStoreKey,
   type OperationStoreRecord,
 } from "../store.js";
-import { isAccountValidationRejection } from "../viem/rpc.js";
 import type { OaathBinding } from "./binding.js";
 import {
   kernelImplementation,

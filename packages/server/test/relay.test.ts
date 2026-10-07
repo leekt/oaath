@@ -4,7 +4,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { classifyUserOperationError } from "@oaath/sdk/viem";
+import { classifyUserOperationError } from "@oaath/sdk/cetane";
 import { describe, expect, it } from "vitest";
 import { OaathRelayError, type RelayErrorCode } from "../src/relay/errors.js";
 import { createRelayHandler, type RelayHandlerOptions } from "../src/relay/handler.js";

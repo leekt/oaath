@@ -2,7 +2,7 @@ import { decodeFunctionData, encodeErrorResult, toHex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import { OaathClientError } from "../src/index.js";
-import { createViemChainPorts, oaathProvider } from "../src/viem.js";
+import { createCetaneChainPorts, oaathProvider } from "../src/cetane.js";
 import {
   CALL_DATA,
   CHAIN_ID,
@@ -24,7 +24,7 @@ const revert = (reason = "AA23 reverted", inner: `0x${string}` = "0x", index = 0
 
 function fixture(data: unknown = revert(), onSend = false) {
   let sent = 0;
-  const [ports] = createViemChainPorts(
+  const [ports] = createCetaneChainPorts(
     {
       [CHAIN_ID]: {
         publicRpcUrls: ["https://public.test"],

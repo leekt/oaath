@@ -49,7 +49,7 @@ import {
 import { OAATH_KERNEL_VALIDITY_POLICY, OAATH_KERNEL_VALIDITY_POLICY_RUNTIME_CODE_HASH, encodeKernelInstallNonceInvalidationCall, encodeKernelInstallNonceRead, encodeKernelNonceKey } from "@oaath/sdk/advanced";
 import { OAATH_KERNEL_RATE_LIMIT_POLICY, compileKernelPermissionPolicy, createKernelRuntime, kernelDeployment, kernelKey, prepareKernelPermissionApproval, prepareKernelPermissionRevocation, sessionOperator } from "@oaath/sdk/kernel";
 import { openIndexedDbStores } from "@oaath/sdk/persistence";
-import { oaathProvider } from "@oaath/sdk/viem";
+import { oaathProvider } from "@oaath/sdk/cetane";
 import {
   hashGrantPolicy,
   hashGrantPolicyCalls,

@@ -8,11 +8,11 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import * as advanced from "../src/advanced.js";
+import * as cetane from "../src/cetane.js";
 import * as root from "../src/index.js";
 import * as kernel from "../src/kernel.js";
 import * as persistence from "../src/persistence.js";
 import * as testing from "../src/testing.js";
-import * as viem from "../src/viem.js";
 
 describe("package boundary", () => {
   it("exposes only the adopter workflow on the root entry", () => {
@@ -28,7 +28,7 @@ describe("package boundary", () => {
     // Kernel and EntryPoint versions are detected or optional settings, never
     // part of a function or constant name, /advanced included. The type-level
     // check is check:public-surface.
-    const versioned = [root, kernel, advanced, persistence, testing, viem]
+    const versioned = [root, kernel, advanced, persistence, testing, cetane]
       .flatMap((entry) => Object.keys(entry))
       .filter((name) => /V33|V4/u.test(name));
     expect(versioned).toEqual([]);
@@ -52,7 +52,7 @@ describe("package boundary", () => {
       "OaathPreparedUserOperationError",
       "OaathWebAuthnEnrolmentError",
       "approveKernelPermission",
-      "asViemUserOperation",
+      "asCetaneUserOperation",
       "bindKernelAccount",
       "bindKernelPermissionEnable",
       "compileKernelPermissionPolicy",
@@ -186,12 +186,12 @@ describe("package boundary", () => {
     ).rejects.toMatchObject({ code: "oaath_client_input_invalid" });
   });
 
-  it("exposes the provider and default chain ports on /viem", () => {
-    expect(Object.keys(viem).sort()).toEqual([
+  it("exposes the provider and default chain ports on /cetane", () => {
+    expect(Object.keys(cetane).sort()).toEqual([
       "OaathRpcError",
       "OaathUserOperationError",
       "classifyUserOperationError",
-      "createViemChainPorts",
+      "createCetaneChainPorts",
       "oaathProvider",
       "parseUserOperationFailure",
       "readUserOperationFailure",
@@ -200,7 +200,7 @@ describe("package boundary", () => {
   });
 
   it("keeps every surface disjoint", () => {
-    const surfaces = [root, kernel, advanced, persistence, testing, viem].map((entry) =>
+    const surfaces = [root, kernel, advanced, persistence, testing, cetane].map((entry) =>
       Object.keys(entry),
     );
     const all = surfaces.flat();

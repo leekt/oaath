@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createViemChainPorts } from "../src/viem.js";
+import { createCetaneChainPorts } from "../src/cetane.js";
 
 const rpc = (id: number, result: unknown) => Response.json({ jsonrpc: "2.0", id, result });
 const entryPoint = "0x0000000071727de22e5e9d8baf0edac6f37da032";
@@ -8,7 +8,7 @@ describe("authenticated read-only chain ports", () => {
   it("captures headers for reads, observes finality and exposes no bundler route", async () => {
     const headers = { authorization: "Basic fixture-only" };
     const methods: string[] = [];
-    const [chain] = createViemChainPorts(
+    const [chain] = createCetaneChainPorts(
       { 143: { publicRpcUrls: ["https://private.test"], headers } },
       {
         fetch: async (request) => {
@@ -53,7 +53,7 @@ describe("authenticated read-only chain ports", () => {
 
   it("never forwards read credentials to a bundler or paymaster", async () => {
     const hosts: string[] = [];
-    const [chain] = createViemChainPorts(
+    const [chain] = createCetaneChainPorts(
       {
         143: {
           publicRpcUrls: ["https://private.test"],
@@ -96,7 +96,7 @@ describe("authenticated read-only chain ports", () => {
     const cause = new Error("fixture-cancellation");
     let requests = 0,
       cancelled = false;
-    const [chain] = createViemChainPorts(
+    const [chain] = createCetaneChainPorts(
       { 143: { publicRpcUrls: ["https://private.test"] } },
       {
         signal: controller.signal,
@@ -134,7 +134,7 @@ describe("authenticated read-only chain ports", () => {
     try {
       const controller = new AbortController();
       const fetch = vi.fn(async () => new Response(null, { status: 503 }));
-      const [chain] = createViemChainPorts(
+      const [chain] = createCetaneChainPorts(
         { 143: { publicRpcUrls: ["https://private.test"] } },
         { signal: controller.signal, retry: { attempts: 3, delayMs: 5000 }, fetch },
       );
@@ -158,13 +158,13 @@ describe("authenticated read-only chain ports", () => {
       { authorization: 1 },
     ]) {
       expect(() =>
-        createViemChainPorts({
+        createCetaneChainPorts({
           143: { publicRpcUrls: ["https://private.test"], headers: headers as never },
         }),
       ).toThrow(expect.objectContaining({ code: "oaath_rpc_config_invalid" }));
     }
     expect(() =>
-      createViemChainPorts(
+      createCetaneChainPorts(
         { 143: { publicRpcUrls: ["https://private.test"] } },
         { signal: {} as never },
       ),

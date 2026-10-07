@@ -238,7 +238,7 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * One constructor. The approval source is an optional setting:
  *
  * ```ts
- * const chains = { 143: { publicRpcUrls: [rpcUrl], bundlerUrl } };         // default viem ports
+ * const chains = { 143: { publicRpcUrls: [rpcUrl], bundlerUrl } };         // default Cetane ports
  * createOAAth({ chains, account });                                        // owner-only execution
  * createOAAth({ chains, account, approvals: { kind: "wallet", owner } });  // wallet-approved Grants
  * createOAAth({ approvals: { kind: "service", url } });                    // service-approved Grants

@@ -9,7 +9,7 @@ import {
   isKernelExistingAccountProfile,
   type KernelAccountProfile,
 } from "@oaath/protocol";
-import { hashTypedData, recoverAddress } from "viem";
+import { hashTypedData, recoverAddress } from "cetane/utils";
 import type { KernelCall } from "../../kernel-v4.js";
 import { kernelV4ReplayableInstallTypedData } from "../../kernel-v4.js";
 import type { PreparedUserOperation } from "../../prepared-user-operation.js";

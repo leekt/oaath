@@ -5,7 +5,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
-import { hashMessage, recoverAddress } from "viem";
+import { hashMessage, recoverAddress } from "cetane/utils";
 import type { KernelDeployment } from "../deployment/profile.js";
 import {
   exactInput,
@@ -32,10 +32,10 @@ export interface EcdsaSignRequest {
   readonly hash: `0x${string}`;
 }
 
-/** The minimal viem LocalAccount surface consumed by this key profile. */
+/** The minimal digest signer surface consumed by this key profile. */
 export interface EcdsaKeyAccount {
   readonly address: `0x${string}`;
-  readonly sign: (request: EcdsaSignRequest) => Promise<unknown>;
+  readonly sign: (request: EcdsaSignRequest) => unknown;
 }
 
 export interface EcdsaKeyInput {
@@ -48,7 +48,7 @@ export interface EcdsaKeyInput {
   readonly validator: `0x${string}`;
 }
 
-/** The connected viem WalletClient surface; private-key custody remains with the wallet. */
+/** The connected wallet signing surface; private-key custody remains with the wallet. */
 export interface EcdsaWalletClient {
   readonly account?: Readonly<{ address: `0x${string}`; type?: string }> | undefined;
   readonly signMessage: (
@@ -56,7 +56,7 @@ export interface EcdsaWalletClient {
       account?: `0x${string}`;
       message: Readonly<{ raw: `0x${string}` }>;
     }>,
-  ) => Promise<unknown>;
+  ) => unknown;
 }
 
 export interface EcdsaWalletKeyInput {
@@ -96,7 +96,7 @@ export function ecdsaKey(value: EcdsaKeyInput): Readonly<KeyProfile> {
   const context: CaptureContext = new WeakSet();
   const record = exactInput(value, ["account", "validator"], "ECDSA key", context);
   const validator = inputAddress(record.validator, "ECDSA key validator");
-  // Exactness stops at the viem account: it legitimately carries extra signing
+  // Exactness stops at the supplied account: it legitimately carries extra signing
   // members. Only address and sign are captured and used.
   const account = captureRecord(record.account, "ECDSA key account", context, inputInvalid);
   const owner = inputAddress(account.address, "ECDSA key address");

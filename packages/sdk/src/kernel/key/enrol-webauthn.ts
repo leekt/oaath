@@ -1,4 +1,6 @@
 /** Browser-owned passkey creation; no attestation trust-chain claim or persisted state. */
+
+import { sha256 } from "@noble/hashes/sha256";
 import {
   captureDenseArray,
   captureRecord,
@@ -6,7 +8,7 @@ import {
   parseOperatorCredentialProfile,
   type WebAuthnOperatorCredentialProfile,
 } from "@oaath/protocol";
-import { keccak256, sha256, stringToBytes, toHex } from "viem";
+import { keccak256, toHex } from "cetane/utils";
 import { base64UrlFromBytes, bytesFromBase64Url } from "./webauthn.js";
 
 export type WebAuthnEnrolmentErrorCode =
@@ -185,7 +187,8 @@ export async function enrolWebAuthnCredential(
     const data = new Uint8Array(response.getAuthenticatorData());
     if (data.length < 55 || data.length > 65536 || (data[32]! & 0x40) === 0)
       return fail("invalid-attestation");
-    if (toHex(data.slice(0, 32)) !== sha256(stringToBytes(rpId))) return fail("rp-mismatch");
+    if (toHex(data.slice(0, 32)) !== toHex(sha256(new TextEncoder().encode(rpId))))
+      return fail("rp-mismatch");
     const flags = data[32]!;
     if ((flags & 0x05) !== 0x05) return fail("user-verification");
     if ((flags & 0x08) === 0 && (flags & 0x10) !== 0) return fail("invalid-attestation");

@@ -24,7 +24,7 @@ import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexed
 import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
 import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
 import { INTERNAL_ERROR } from "../src/provider/errors.js";
-import { oaathProvider } from "../src/viem.js";
+import { oaathProvider } from "../src/cetane.js";
 import {
   bindingInput,
   CALL_DATA,

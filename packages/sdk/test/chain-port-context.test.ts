@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { OaathChainCapability, OaathQuoteRequest } from "../src/advanced.js";
 import { parsePreparedUserOperation } from "../src/kernel.js";
 import { encodeKernelV4NonceKey } from "../src/kernel-v4.js";
-import { oaathProvider } from "../src/viem.js";
+import { oaathProvider } from "../src/cetane.js";
 import {
   ACCOUNT,
   CALL_DATA,

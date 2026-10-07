@@ -1,5 +1,5 @@
 /**
- * `@oaath/sdk/viem` provides default RPC chain ports and exposes one active
+ * `@oaath/sdk/cetane` provides default RPC chain ports and exposes one active
  * Grant as a narrow EIP-1193 provider.
  *
  * `eth_accounts`, `eth_requestAccounts`, `eth_chainId`, and
@@ -33,17 +33,21 @@ import {
 } from "./provider/errors.js";
 
 export {
-  createViemChainPorts,
-  type ViemChainCapability,
-  type ViemChainPortConfiguration,
-} from "./viem/chain-ports.js";
-export { OaathRpcError, type OaathRpcErrorCode, type ViemChainPortOptions } from "./viem/rpc.js";
+  type CetaneChainCapability,
+  type CetaneChainPortConfiguration,
+  createCetaneChainPorts,
+} from "./cetane/chain-ports.js";
+export {
+  type CetaneChainPortOptions,
+  OaathRpcError,
+  type OaathRpcErrorCode,
+} from "./cetane/rpc.js";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const BYTES = /^0x(?:[0-9a-fA-F]{2})*$/u;
 const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/u;
 
-/** The minimal EIP-1193 surface viem's `custom` transport consumes. */
+/** The minimal EIP-1193 surface Cetane's `custom` transport consumes. */
 export interface OaathEip1193Provider {
   readonly request: (args: { method: string; params?: unknown }) => Promise<unknown>;
 }

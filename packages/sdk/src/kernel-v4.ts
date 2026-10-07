@@ -17,21 +17,19 @@ import {
   type KernelModuleType as ProtocolKernelV4ModuleType,
   parseKernelInstallPackages,
 } from "@oaath/protocol";
+import type { Hex } from "cetane";
 import {
-  concat,
+  concatHex,
   decodeAbiParameters,
   decodeFunctionData,
   encodeAbiParameters,
   encodeFunctionData,
   getAddress,
-  type Hex,
   hashTypedData,
-  hexToBigInt,
   keccak256,
-  pad,
-  type TypedData,
+  padHex,
   toHex,
-} from "viem";
+} from "cetane/utils";
 import {
   KERNEL_V4_ENTRY_POINT_V09,
   KERNEL_V4_FACTORY_V09,
@@ -263,7 +261,7 @@ export interface KernelV4BindAccountInput extends KernelV4AccountInput {
 }
 
 /**
- * Minimal viem-PublicClient-shaped surface consumed by createKernelV4Reads.
+ * Minimal client surface consumed by createKernelV4Reads.
  * Any client whose getChainId/getCode/getStorageAt/call match structurally
  * satisfies it.
  */
@@ -615,7 +613,7 @@ export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deploymen
 export function encodeKernelV4ValidatorData(value: KernelV4ModuleDataInput): Hex {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["selectors"], "Kernel validator data", context);
-  return concat(["0x", ...captureSelectors(record.selectors, context)]);
+  return concatHex(["0x", ...captureSelectors(record.selectors, context)]);
 }
 
 /** Encodes Kernel v4 policy internalData. */
@@ -627,7 +625,7 @@ export function encodeKernelV4PolicyData(permissionId: `0x${string}`): Hex {
 export function encodeKernelV4SignerData(value: KernelV4SignerDataInput): Hex {
   const context: CaptureContext = new WeakSet();
   const record = exact(value, ["permissionId", "selectors"], "Kernel signer data", context);
-  return concat([
+  return concatHex([
     bytes4(record.permissionId, "Kernel permission ID"),
     ...captureSelectors(record.selectors, context),
   ]);
@@ -680,7 +678,7 @@ export function encodeKernelV4FactoryDeploy(value: KernelV4AccountInput): Hex {
 }
 
 /**
- * Adapts one viem-style public client into the exact account read capability
+ * Adapts one public client into the exact account read capability
  * consumed by bindKernelV4Account, covering all six read request types.
  */
 export function createKernelV4Reads(client: KernelV4ReadClient): KernelV4AccountReadCapability {
@@ -1131,7 +1129,7 @@ export function prepareKernelV4UserOperation(
       // selector against the same allow-list.
       callData:
         nonceKey.validationType === "0x01"
-          ? concat([KERNEL_V4_EXECUTE_USER_OP_SELECTOR, execution])
+          ? concatHex([KERNEL_V4_EXECUTE_USER_OP_SELECTOR, execution])
           : execution,
       callGasLimit: uint120(gasRecord.callGasLimit, "Kernel call gas limit"),
       verificationGasLimit: uint120(
@@ -1155,7 +1153,7 @@ export function prepareKernelV4UserOperation(
 
 /**
  * Captures the optional paymaster input exactly. The shapes are the ones
- * parsePreparedUserOperation validates and viem's getUserOperationHash hashes,
+ * parsePreparedUserOperation validates and Cetane's getSigningHash hashes,
  * so a sponsored operation's identity covers its sponsorship byte for byte.
  */
 function capturePaymaster(
@@ -1201,7 +1199,7 @@ function validationBytes(
     exactCapturedRecord(captured, ["kind", "permissionId"], "Kernel permission validation", fail);
     return Object.freeze({
       type: "0x02",
-      identifier: pad(bytes4(captured.permissionId, "Kernel permission ID"), {
+      identifier: padHex(bytes4(captured.permissionId, "Kernel permission ID"), {
         size: 20,
         dir: "right",
       }),
@@ -1254,13 +1252,13 @@ function captureNonceKey(
   if (mode.includes("enable") && validation.type === "0x00") {
     return fail("Kernel enable mode cannot use root validation");
   }
-  const key = concat([
+  const key = concatHex([
     VALIDATION_MODES[mode],
     validation.type,
     validation.identifier,
     toHex(uint(record.nonceKey, MAX_UINT16, "Kernel nonce namespace"), { size: 2 }),
   ]);
-  return Object.freeze({ value: hexToBigInt(key).toString(10), validationType: validation.type });
+  return Object.freeze({ value: BigInt(key).toString(10), validationType: validation.type });
 }
 
 /** Returns the canonical decimal uint192 key accepted by EntryPoint 0.9 getNonce. */
@@ -1382,12 +1380,7 @@ export function kernelV4ReplayableInstallTypedData(
 /** The digest of the canonical replayable install typed data. */
 export function kernelV4ReplayableInstallDigest(value: KernelV4ReplayableInstallDigestInput): Hex {
   const typedData = kernelV4ReplayableInstallTypedData(value);
-  return hashTypedData({
-    types: typedData.types as TypedData,
-    primaryType: typedData.primaryType,
-    domain: typedData.domain as never,
-    message: typedData.message as never,
-  });
+  return hashTypedData(typedData);
 }
 
 /** ABI-encodes Kernel v4's EnableModeSignature struct. */
@@ -1463,7 +1456,7 @@ export function encodeKernelV4Execution(value: KernelV4ExecutionInput): Hex {
     ? captureValidityTimeRange(record.validityTimeRange, context)
     : null;
   const mode = validityTimeRange
-    ? concat([
+    ? concatHex([
         single ? "0x00" : "0x01",
         `0x${"00".repeat(5)}`,
         VALIDITY_TIME_RANGE_MODE_SELECTOR,
@@ -1475,7 +1468,7 @@ export function encodeKernelV4Execution(value: KernelV4ExecutionInput): Hex {
       ? (`0x${"00".repeat(32)}` as const)
       : (`0x0100${"00".repeat(30)}` as const);
   const executionData = single
-    ? concat([single.target, toHex(BigInt(single.value), { size: 32 }), single.data])
+    ? concatHex([single.target, toHex(BigInt(single.value), { size: 32 }), single.data])
     : encodeAbiParameters(
         [
           {

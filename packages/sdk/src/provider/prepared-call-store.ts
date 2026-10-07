@@ -28,7 +28,7 @@ import {
   exactCapturedRecord,
   exactRecord as exactRecordValue,
 } from "@oaath/protocol";
-import type { Hash } from "viem";
+import type { Hash } from "cetane";
 import {
   type PreparedUserOperation,
   parsePreparedUserOperation,

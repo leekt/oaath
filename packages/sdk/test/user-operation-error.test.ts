@@ -1,12 +1,12 @@
 import { encodeErrorResult } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
-import { OaathRpcError, rpcOwner } from "../src/viem/rpc.js";
+import { OaathRpcError, rpcOwner } from "../src/cetane/rpc.js";
 import {
   classifyUserOperationError,
   parseUserOperationFailure,
   serializeUserOperationFailure,
-} from "../src/viem.js";
+} from "../src/cetane.js";
 
 const stages = ["estimate", "sponsor", "send", "receipt"] as const;
 describe("UserOperation failure classification", () => {

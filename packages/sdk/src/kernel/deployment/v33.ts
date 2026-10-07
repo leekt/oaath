@@ -1,3 +1,5 @@
+const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
+
 /**
  * Kernel 0.3.3 accounts: existing accounts bound at their address, and
  * ECDSA-owned accounts derived through ZeroDev's MetaFactory route. A derived
@@ -5,7 +7,7 @@
  */
 import { type CaptureContext, captureRecord } from "@oaath/protocol";
 import {
-  concat,
+  concatHex,
   decodeAbiParameters,
   encodeAbiParameters,
   encodeFunctionData,
@@ -13,8 +15,7 @@ import {
   keccak256,
   parseAbi,
   toHex,
-  zeroAddress,
-} from "viem";
+} from "cetane/utils";
 import {
   KERNEL_V4_CREATE2_DEPLOYER,
   KERNEL_V4_IMPLEMENTATION_SLOT,
@@ -210,7 +211,7 @@ export function deriveKernelV33Account(
     address: getContractAddress({
       opcode: "CREATE2",
       from: FACTORY,
-      salt: keccak256(concat([initData, index])),
+      salt: keccak256(concatHex([initData, index])),
       bytecodeHash: PROXY_INIT_CODE_HASH,
     }).toLowerCase() as `0x${string}`,
     factory: META_FACTORY,

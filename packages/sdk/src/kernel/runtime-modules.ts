@@ -22,7 +22,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { keccak256 } from "viem";
+import { keccak256 } from "cetane/utils";
 import { kernelV4Deployment } from "../kernel-v4.js";
 import type { KernelReads } from "./deployment/account.js";
 import { exactInput, inputCapability, inputInvalid, isBytes } from "./internal.js";

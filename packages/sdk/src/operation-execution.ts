@@ -1,16 +1,13 @@
 import {
   captureRecord,
+  entryPointAbi,
   exactCapturedRecord,
   type OperationIdentity,
   type OperationInclusion,
 } from "@oaath/protocol";
-import { decodeFunctionData, type Hex } from "viem";
-import {
-  entryPoint07Abi,
-  getUserOperationHash,
-  toUserOperation,
-  type UserOperation,
-} from "viem/account-abstraction";
+import type { Hex } from "cetane";
+import { getSigningHash, toUserOperation } from "cetane/execution/erc4337";
+import { decodeFunctionData } from "cetane/utils";
 import { KERNEL_V4_ENTRY_POINT_V09 } from "./kernel/deployment/v4-artifacts.js";
 import { KERNEL_ENTRY_POINT_V07 } from "./kernel/deployment/v33.js";
 import { decodeKernelV4Execution, type KernelCall } from "./kernel-v4.js";
@@ -55,7 +52,7 @@ export function verifyOperationExecutionEvidence(
       : identity.entryPoint === KERNEL_V4_ENTRY_POINT_V09
         ? "0.9"
         : invalid();
-  const decoded = decodeFunctionData({ abi: entryPoint07Abi, data: transaction.input as Hex });
+  const decoded = decodeFunctionData({ abi: entryPointAbi, data: transaction.input as Hex });
   const operations =
     decoded.functionName === "handleOps"
       ? decoded.args[0]
@@ -66,18 +63,19 @@ export function verifyOperationExecutionEvidence(
   for (const packed of operations) {
     // Use the library's EntryPoint hash implementation, including factory,
     // paymaster and gas fields, rather than trusting a provider's claimed ID.
-    // The converter accepts packed input but its inferred return type retains
-    // that input shape; specify the actual unpacked v0.7 result explicitly.
-    const operation = toUserOperation<Omit<UserOperation<"0.7">, "authorization">>({
-      ...packed,
-      signature: "0x",
-    });
-    const hash = getUserOperationHash({
-      chainId: identity.chainId,
-      entryPointAddress: identity.entryPoint,
+    const operation = toUserOperation(
+      {
+        ...packed,
+        signature: "0x",
+      },
       entryPointVersion,
-      userOperation: operation,
-    });
+    );
+    const hash = getSigningHash(
+      operation,
+      identity.chainId,
+      identity.entryPoint,
+      entryPointVersion,
+    );
     if (hash !== identity.userOperationHash) continue;
     if (
       calls ||

@@ -6,7 +6,7 @@
  */
 import { createWalletClient, custom } from "viem";
 import { describe, expect, it } from "vitest";
-import { oaathProvider } from "../src/viem.js";
+import { oaathProvider } from "../src/cetane.js";
 import { CALL_DATA, CHAIN_ID, createRealm, permissionInput, TARGET } from "./support/browser.js";
 
 async function activeGrant() {

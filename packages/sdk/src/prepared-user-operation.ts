@@ -7,8 +7,8 @@ import {
   type OperationIdentity,
   type OperationKind,
 } from "@oaath/protocol";
-import type { Hash } from "viem";
-import { getUserOperationHash, type UserOperation } from "viem/account-abstraction";
+import type { Hash } from "cetane";
+import { getSigningHash, type Operation } from "cetane/execution/erc4337";
 
 export const OAATH_PREPARED_USER_OPERATION_VERSION = "oaath.prepared-user-operation/v1" as const;
 
@@ -375,7 +375,7 @@ function parseUnsignedUserOperation(
  * Maps one prepared unsigned UserOperation into the common EntryPoint 0.7/0.9 unpacked shape with an
  * empty signature, ready for signing and toPackedUserOperation submission.
  */
-export function asViemUserOperation(value: UnsignedUserOperationV07): UserOperation<"0.7"> {
+export function asCetaneUserOperation(value: UnsignedUserOperationV07): Operation {
   return {
     sender: value.sender,
     nonce: BigInt(value.nonce),
@@ -405,12 +405,12 @@ function deriveUserOperationHash(value: {
   readonly entryPoint: Readonly<PreparedEntryPoint>;
   readonly userOperation: Readonly<UnsignedUserOperationV07>;
 }): `0x${string}` {
-  return getUserOperationHash({
-    chainId: value.chainId,
-    entryPointAddress: value.entryPoint.address,
-    entryPointVersion: value.entryPoint.version,
-    userOperation: asViemUserOperation(value.userOperation),
-  });
+  return getSigningHash(
+    asCetaneUserOperation(value.userOperation),
+    value.chainId,
+    value.entryPoint.address,
+    value.entryPoint.version,
+  );
 }
 
 function capturePreparation(

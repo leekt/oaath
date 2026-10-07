@@ -1,17 +1,18 @@
+const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
+
 /** Kernel v3.3 revokes one permission without advancing the global validNonceFrom. */
 import { captureDenseArray } from "@oaath/protocol";
 import {
-  concat,
+  concatHex,
   decodeFunctionResult,
   encodeAbiParameters,
   encodeFunctionData,
   encodeFunctionResult,
   keccak256,
-  pad,
+  padHex,
   parseAbi,
   stringToHex,
-  zeroAddress,
-} from "viem";
+} from "cetane/utils";
 import type { KernelCall } from "../../kernel-v4.js";
 import {
   exactInput,
@@ -98,7 +99,7 @@ export function parseKernelV33PermissionState(value: unknown): Readonly<KernelV3
 function validationId(permissionId: `0x${string}`): `0x${string}` {
   if (!/^0x[0-9a-f]{8}$/u.test(permissionId))
     return inputInvalid("Kernel v3.3 permission ID is invalid");
-  return concat(["0x02", pad(permissionId, { size: 20, dir: "right" })]);
+  return concatHex(["0x02", padHex(permissionId, { size: 20, dir: "right" })]);
 }
 
 /** The caller pins all three reads to the same block when producing finalized evidence. */
@@ -187,7 +188,7 @@ export function kernelV33PermissionStatus(
     state.permissionFlag !== "0x0002" ||
     state.policies.length !== approval.packages.length - 1 ||
     !state.policies.every(
-      (policy, index) => policy === concat(["0x0002", approval.packages[index]!.module]),
+      (policy, index) => policy === concatHex(["0x0002", approval.packages[index]!.module]),
     )
   )
     return inputInvalid("Kernel v3.3 permission state contradicts the retained approval");
@@ -288,7 +289,7 @@ const NONCE_ALIGNMENT_SIGNER_ADDRESS = "0x000000000000000000000000000000000000de
 function alignmentValidatorData(signerModule: `0x${string}`): `0x${string}` {
   return encodeAbiParameters(
     [{ type: "bytes[]" }],
-    [[concat(["0x0002", signerModule, NONCE_ALIGNMENT_SIGNER_ADDRESS])]],
+    [[concatHex(["0x0002", signerModule, NONCE_ALIGNMENT_SIGNER_ADDRESS])]],
   );
 }
 

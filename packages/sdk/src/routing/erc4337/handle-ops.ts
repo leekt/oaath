@@ -10,9 +10,13 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { CaptureContext } from "@oaath/protocol";
-import { encodeFunctionData } from "viem";
-import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
-import { asViemUserOperation, parsePreparedUserOperation } from "../../prepared-user-operation.js";
+import { entryPointAbi } from "@oaath/protocol";
+import { toPackedUserOperation } from "cetane/execution/erc4337";
+import { encodeFunctionData } from "cetane/utils";
+import {
+  asCetaneUserOperation,
+  parsePreparedUserOperation,
+} from "../../prepared-user-operation.js";
 import { routingAddress, routingBytes, routingUint } from "../capabilities.js";
 import {
   exactRoutingRecord,
@@ -163,10 +167,13 @@ export function encodeHandleOps(input: OaathHandleOpsEncodingInput): Readonly<Oa
     );
   }
 
-  const packed = toPackedUserOperation({
-    ...asViemUserOperation(operation.userOperation),
-    signature,
-  });
+  const packed = toPackedUserOperation(
+    {
+      ...asCetaneUserOperation(operation.userOperation),
+      signature,
+    },
+    operation.entryPoint.version,
+  );
   return Object.freeze({
     chainId: operation.chainId,
     entryPoint: operation.entryPoint.address,
@@ -174,7 +181,7 @@ export function encodeHandleOps(input: OaathHandleOpsEncodingInput): Readonly<Oa
     userOperationHash: operation.userOperationHash,
     beneficiary,
     data: encodeFunctionData({
-      abi: entryPoint07Abi,
+      abi: entryPointAbi,
       functionName: "handleOps",
       args: [[packed], beneficiary],
     }),

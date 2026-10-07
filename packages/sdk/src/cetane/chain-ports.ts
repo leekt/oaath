@@ -1,17 +1,14 @@
+import { entryPointAbi } from "@oaath/protocol";
+import { createPublicClient, custom } from "cetane";
 import {
-  BaseError,
-  createPublicClient,
-  custom,
   decodeAbiParameters,
   decodeEventLog,
   encodeFunctionData,
-  getAbiItem,
-  pad,
+  keccak256,
+  padHex,
   parseAbi,
-  toEventSelector,
   toHex,
-} from "viem";
-import { entryPoint07Abi } from "viem/account-abstraction";
+} from "cetane/utils";
 import type {
   OaathChainCapability,
   OaathChainSponsorship,
@@ -37,6 +34,7 @@ import {
 import type { Erc7677EstimationUserOperationV07 } from "../provider/erc7677.js";
 import type { OaathBundlerProbeRequest } from "../routing/erc4337/bundler.js";
 import {
+  type CetaneChainPortOptions,
   evidence,
   integer,
   invalid,
@@ -48,10 +46,9 @@ import {
   rpcOwner,
   url,
   urls,
-  type ViemChainPortOptions,
 } from "./rpc.js";
 
-export interface ViemChainPortConfiguration {
+export interface CetaneChainPortConfiguration {
   readonly publicRpcUrls: readonly string[];
   /** Read endpoint headers only; never sent to bundler/paymaster URLs. Captured at construction. */
   readonly headers?: Readonly<Record<string, string>>;
@@ -61,7 +58,7 @@ export interface ViemChainPortConfiguration {
   readonly gas?: Readonly<KernelGasPolicy>;
 }
 
-export interface ViemChainCapability extends OaathChainCapability {
+export interface CetaneChainCapability extends OaathChainCapability {
   readonly reads: KernelReads;
 }
 
@@ -87,8 +84,13 @@ const BUNDLER_METHODS = [
 ];
 type Erc7677ChainSponsorship = Extract<OaathChainSponsorship, { kind: "erc7677" }>;
 const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
-const USER_OPERATION_EVENT = toEventSelector(
-  getAbiItem({ abi: entryPoint07Abi, name: "UserOperationEvent" }),
+const eventAbi = entryPointAbi.find(
+  (item) => item.type === "event" && item.name === "UserOperationEvent",
+)!;
+const USER_OPERATION_EVENT = keccak256(
+  new TextEncoder().encode(
+    `${eventAbi.name}(${eventAbi.inputs.map(({ type }) => type).join(",")})`,
+  ),
 );
 const RATE_ABI = parseAbi([
   "function status(bytes32 id, address account) view returns (uint8)",
@@ -211,10 +213,9 @@ async function directReceipt(
     const event = (() => {
       try {
         return decodeEventLog({
-          abi: entryPoint07Abi,
+          abi: entryPointAbi,
           topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
           data: hex(log.data),
-          strict: true,
         });
       } catch {
         return evidence();
@@ -316,7 +317,7 @@ function observer(publicRpc: RpcRequest, bundler: RpcRequest) {
             {
               to: request.entryPoint,
               data: encodeFunctionData({
-                abi: entryPoint07Abi,
+                abi: entryPointAbi,
                 functionName: "getNonce",
                 args: [request.account, BigInt(request.nonce) >> 64n],
               }),
@@ -375,7 +376,7 @@ async function usage(publicRpc: RpcRequest, request: Readonly<OaathUsageRequest>
   const windowed = request.intervalSeconds !== null;
   const module = resolvePolicyModule(windowed ? "rate-limit" : "operation-limit");
   if (hex(await publicRpc("eth_getCode", [module, at])) === "0x") return evidence();
-  const id = pad(hex(request.permissionId), { size: 32, dir: "right" });
+  const id = padHex(hex(request.permissionId), { size: 32, dir: "right" });
   const account = address(request.account);
   const maximum = BigInt(request.maximumOperations);
   if (maximum < 1n || maximum >= 1n << 48n) return evidence();
@@ -435,10 +436,10 @@ async function usage(publicRpc: RpcRequest, request: Readonly<OaathUsageRequest>
 }
 
 /** Public reads and ERC-4337 transports from one configuration; constructing it makes no requests. */
-export function createViemChainPorts(
-  configuration: Readonly<Record<number, Readonly<ViemChainPortConfiguration>>>,
-  options: ViemChainPortOptions = {},
-): readonly Readonly<ViemChainCapability>[] {
+export function createCetaneChainPorts(
+  configuration: Readonly<Record<number, Readonly<CetaneChainPortConfiguration>>>,
+  options: CetaneChainPortOptions = {},
+): readonly Readonly<CetaneChainCapability>[] {
   const entries = Object.entries(record(configuration));
   if (entries.length === 0 || entries.length > 64) return invalid();
   const owner = rpcOwner(options);
@@ -481,13 +482,16 @@ export function createViemChainPorts(
             );
       const gasPolicy = captureKernelGasPolicy(chainId, config.gas);
       const client = createPublicClient({
-        transport: custom(
-          {
-            request: ({ method, params }) =>
-              publicRpc(method, params as readonly unknown[] | undefined),
-          },
-          { retryCount: 0 },
-        ),
+        chain: {
+          id: chainId,
+          name: `Chain ${chainId}`,
+          nativeAA: false,
+          fees: { baseFeeMultiplier: 12000 },
+        },
+        transport: custom({
+          request: ({ method, params }) =>
+            publicRpc(method, params as readonly unknown[] | undefined),
+        }),
       });
       const readClient: KernelReadClient = {
         getChainId: async () => Number(quantity(await publicRpc("eth_chainId"))),
@@ -563,7 +567,7 @@ export function createViemChainPorts(
             {
               to: prepared.entryPoint.address,
               data: encodeFunctionData({
-                abi: entryPoint07Abi,
+                abi: entryPointAbi,
                 functionName: "getNonce",
                 args: [request.account, BigInt(key)],
               }),
@@ -575,10 +579,7 @@ export function createViemChainPorts(
         let quoted = gas(prepared.userOperation);
         if (request.purpose !== "revalidate") {
           const fees = await client.estimateFeesPerGas().catch((error: unknown) => {
-            if (error instanceof BaseError) {
-              const cause = error.walk((value) => value instanceof OaathRpcError);
-              if (cause instanceof OaathRpcError) throw cause;
-            }
+            if (error instanceof OaathRpcError) throw error;
             return evidence();
           });
           quoted = {

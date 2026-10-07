@@ -8,7 +8,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import { OAATH_ISSUER_VERSION, parseIssuerIdentity } from "@oaath/protocol";
-import type { Hash } from "viem";
+import type { Hash } from "cetane";
 import type {
   CapturedJsonObject,
   CapturedWalletCall,

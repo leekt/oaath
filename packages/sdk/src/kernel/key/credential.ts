@@ -17,7 +17,7 @@ import type {
   OperatorCredentialProfile,
   OwnerCredentialProfile,
 } from "@oaath/protocol";
-import { encodeAbiParameters } from "viem";
+import { encodeAbiParameters } from "cetane/utils";
 import type { KernelDeployment } from "../deployment/profile.js";
 import { exactInput, inputAddress, inputInvalid, runtimeFail } from "../internal.js";
 import { exactKernelDeployment, resolvePinnedValidator } from "../modules.js";

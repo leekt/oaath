@@ -76,7 +76,7 @@ import {
 } from "../src/kernel.js";
 import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
 import { parsePreparedUserOperation } from "../src/prepared-user-operation.js";
-import { createViemChainPorts } from "../src/viem.js";
+import { createCetaneChainPorts } from "../src/cetane.js";
 import { type AnvilChain, createHarness, type ModuleFixture, startAnvil } from "./support/anvil.js";
 import { createKernelV33Account, deployKernelV33Account } from "./support/kernel-v33.js";
 
@@ -757,7 +757,7 @@ function passkeySession() {
       await harness.deployModule(module);
     const reads = createKernelV33Reads(harness.client);
     // The public server verifier reads through the default port's finalized observation.
-    const [port] = createViemChainPorts(
+    const [port] = createCetaneChainPorts(
       { 143: { publicRpcUrls: [chain.url], bundlerUrl: "https://bundler.test" } },
       {
         maxRequests: 200,
@@ -1067,7 +1067,7 @@ function passkeySession() {
     expect(ownerSign).toHaveBeenCalledTimes(1);
 
     const rpc = (failing: boolean) =>
-      createViemChainPorts(
+      createCetaneChainPorts(
         { 143: { publicRpcUrls: [chain.url], bundlerUrl: "https://bundler.test" } },
         {
           maxRequests: 50,
@@ -1205,7 +1205,7 @@ function passkeySession() {
       let directSends = 0;
       // The bundler supplies a fixed estimate. Account reads, signing, execution,
       // receipts and finality use the real contracts on the local chain.
-      const ports = createViemChainPorts(
+      const ports = createCetaneChainPorts(
         { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "https://bundler.test" } },
         {
           maxRequests: 200,
@@ -1385,7 +1385,7 @@ function passkeySession() {
             };
       const direct = createOAAth({
         stores: { kind: "memory", operations: createSqliteOperationStoreAdapter(filePath) },
-        chains: createViemChainPorts(
+        chains: createCetaneChainPorts(
           { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "https://rejecting-bundler.test" } },
           {
             fetch: async (request) => {
@@ -1454,7 +1454,7 @@ function passkeySession() {
       await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
       const recreated = createOAAth({
         stores: { kind: "memory", operations: createSqliteOperationStoreAdapter(filePath) },
-        chains: createViemChainPorts(
+        chains: createCetaneChainPorts(
           { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "http://unused.test" } },
           {
             fetch: async (request) => {

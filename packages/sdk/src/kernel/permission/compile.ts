@@ -22,7 +22,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import type { CaptureContext } from "@oaath/protocol";
-import { concat, decodeAbiParameters, encodeAbiParameters, toHex } from "viem";
+import { concatHex, decodeAbiParameters, encodeAbiParameters, toHex } from "cetane/utils";
 import type { KernelCall } from "../../kernel-v4.js";
 import {
   captureInput,
@@ -312,7 +312,7 @@ export function compileCapturedKernelPermissionPolicy(
         // RateLimitPolicy install data is packed interval ‖ count ‖ startAt, each
         // uint48. A zero interval and start make it a pure per-chain count cap:
         // every operation decrements the count and adds no time bound.
-        policyData: concat([
+        policyData: concatHex([
           toHex(0, { size: 6 }),
           toHex(BigInt(maximumOperations), { size: 6 }),
           toHex(0, { size: 6 }),
@@ -325,7 +325,7 @@ export function compileCapturedKernelPermissionPolicy(
     packages.push(
       Object.freeze({
         module: resolvePolicyModule("rate-limit"),
-        policyData: concat([
+        policyData: concatHex([
           toHex(BigInt(rateLimit.intervalSeconds), { size: 6 }),
           toHex(BigInt(rateLimit.maximumOperations), { size: 6 }),
         ]),

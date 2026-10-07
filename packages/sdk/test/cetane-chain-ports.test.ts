@@ -3,7 +3,7 @@ import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import { prepareUserOperation } from "../src/kernel.js";
 import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
-import { createViemChainPorts } from "../src/viem.js";
+import { createCetaneChainPorts } from "../src/cetane.js";
 
 const config = {
   143: {
@@ -17,7 +17,7 @@ const rpc = (id: number, result: unknown) => Response.json({ jsonrpc: "2.0", id,
 describe("default viem chain ports", () => {
   it("pins plain v4 permission reads through the default RPC port", async () => {
     const selectors: unknown[] = [];
-    const [chain] = createViemChainPorts(config, {
+    const [chain] = createCetaneChainPorts(config, {
       fetch: async (request) => {
         const { id, method, params } = await request.json();
         if (method === "eth_chainId") return rpc(id, "0x8f");
@@ -84,7 +84,7 @@ describe("default viem chain ports", () => {
         status: scenario === "reverted-transaction" ? "0x0" : "0x1",
         logs: scenario === "duplicate" ? [event, event] : [event],
       };
-      const [chain] = createViemChainPorts(config, {
+      const [chain] = createCetaneChainPorts(config, {
         fetch: async (request) => {
           expect(new URL(request.url).hostname).toMatch(/^public-/u);
           const { id, method, params } = await request.json();
@@ -122,7 +122,7 @@ describe("default viem chain ports", () => {
 
   it("bounds timeout and concurrency without a queue", async () => {
     let started = 0;
-    const [chain] = createViemChainPorts(config, {
+    const [chain] = createCetaneChainPorts(config, {
       retry: { attempts: 1 },
       timeoutMs: 20,
       maxConcurrency: 1,
@@ -147,7 +147,7 @@ describe("default viem chain ports", () => {
     "sends exactly once after %s and never uses a public RPC for submission",
     async (failure) => {
       let sends = 0;
-      const [chain] = createViemChainPorts(config, {
+      const [chain] = createCetaneChainPorts(config, {
         retry: { attempts: 3, delayMs: 0 },
         timeoutMs: 20,
         fetch: async (request) => {
@@ -213,7 +213,7 @@ describe("default viem chain ports", () => {
 
   it("routes paymaster calls only to their registered URL and never retries them", async () => {
     let calls = 0;
-    const [chain] = createViemChainPorts(
+    const [chain] = createCetaneChainPorts(
       { 143: { ...config[143], paymasterUrl: "https://paymaster.test?project=demo" } },
       {
         fetch: async (request) => {
@@ -253,7 +253,7 @@ describe("default viem chain ports", () => {
   });
   it("fails over non-JSON public RPC failures without sending account reads to the bundler", async () => {
     const calls: string[] = [];
-    const [chain] = createViemChainPorts(config, {
+    const [chain] = createCetaneChainPorts(config, {
       retry: { attempts: 3, delayMs: 0 },
       fetch: async (request) => {
         const { id, method } = await request.json();
@@ -276,7 +276,7 @@ describe("default viem chain ports", () => {
 
   it("bounds attempts and the lifetime request budget", async () => {
     let calls = 0;
-    const [chain] = createViemChainPorts(config, {
+    const [chain] = createCetaneChainPorts(config, {
       retry: { attempts: 3, delayMs: 0 },
       maxRequests: 2,
       fetch: async () => {
@@ -295,7 +295,7 @@ describe("default viem chain ports", () => {
   });
 
   it("fails over a wrong-chain endpoint and preserves nonretryable RPC refusals", async () => {
-    const [chain] = createViemChainPorts(config, {
+    const [chain] = createCetaneChainPorts(config, {
       retry: { attempts: 2, delayMs: 0 },
       fetch: async (request) => {
         const { id, method } = await request.json();
