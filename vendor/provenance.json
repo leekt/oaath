@@ -1,0 +1,56 @@
+[
+  {
+    "name": "@oaath/protocol",
+    "version": "0.3.4",
+    "file": "oaath-protocol-0.3.4-1406da2477f4.tgz",
+    "commit": "31459fae67aab71c2de32633909016543da21e7e",
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sourceState": "clean commit",
+    "sha256": "1406da2477f4244bb76ba6a28eb7a7ce2a641a010e7fc71cf43f572494bc086d"
+  },
+  {
+    "name": "@oaath/sdk",
+    "version": "0.3.4",
+    "file": "oaath-sdk-0.3.4-16fbc4c9ab0e.tgz",
+    "commit": "429db2a8cfa517ea77909bcc7945cd2b72bdba99",
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sourceState": "clean commit",
+    "sha256": "16fbc4c9ab0e53b4ed881f604cf50ddba039454883205a516db76767758b503d"
+  },
+  {
+    "name": "@oaath/server",
+    "version": "0.3.4",
+    "file": "oaath-server-0.3.4-10f356759d1c.tgz",
+    "commit": "31459fae67aab71c2de32633909016543da21e7e",
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sourceState": "clean commit",
+    "sha256": "10f356759d1cfe95e3584d24beafce97b9f8e9f169f06f857390aaf127e5fd4d"
+  },
+  {
+    "name": "@oaath/testing",
+    "version": "0.3.4",
+    "file": "oaath-testing-0.3.4-1633afc54e02.tgz",
+    "commit": "31459fae67aab71c2de32633909016543da21e7e",
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sourceState": "clean commit",
+    "sha256": "1633afc54e023969a9f2ea9339e366c094c4f4c8f34170611666a8c77cf3b5e3"
+  },
+  {
+    "name": "cetane",
+    "version": "0.0.2",
+    "file": "cetane-0.0.2-f0b99e13f1e8.tgz",
+    "commit": "8cbc6e4d89d4ab9bf89a5d593d71a396d33f7767",
+    "sourceDiffSha256": "f25072b133503e7821fb339498497d382beaf915cac3f6291d2e440d2b077b34",
+    "sourceState": "working-tree snapshot; packed artifact is authoritative",
+    "sha256": "f0b99e13f1e84eedb6b55519b07a468b444d8793f9de8e0c14d7ae1adac8b860"
+  },
+  {
+    "name": "moesi",
+    "version": "0.15.2",
+    "file": "moesi-0.15.2-1a7235ae9f2d.tgz",
+    "commit": "ac75cff2a0d9b21fd65437fecd5723cc75b128be",
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sourceState": "clean commit",
+    "sha256": "1a7235ae9f2d4bc277f4366e2b160d7ef53a8cce152d1f3c63b6818d41137892"
+  }
+]
