@@ -1,0 +1,33 @@
+{
+  "name": "@oaath/portal",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The hosted OAAth sign-in portal and its Cloudflare Worker. Never a published package.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "taek <leekt216@gmail.com>",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vite build && vitest run",
+    "deploy:check": "vite build && bunx wrangler@4.147.0 deploy --dry-run"
+  },
+  "dependencies": {
+    "@oaath/protocol": "workspace:*",
+    "@oaath/sdk": "workspace:*",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.0",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@vitejs/plugin-react": "6.1.1",
+    "puppeteer-core": "25.5.0",
+    "vite": "8.2.0",
+    "vitest": "4.1.10"
+  }
+}

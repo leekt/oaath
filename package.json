@@ -62,7 +62,8 @@
   },
   "workspaces": [
     "packages/*",
-    "examples"
+    "examples",
+    "portal"
   ],
   "trustedDependencies": [
     "esbuild"
