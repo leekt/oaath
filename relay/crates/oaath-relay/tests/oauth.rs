@@ -249,7 +249,8 @@ async fn logs_in_and_issues_a_verifiable_id_token() {
         .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
         .unwrap();
     let other =
-        oaath_relay::oauth::id_token::IdTokenKey::from_pkcs8_pem(ID_TOKEN_KID, &other_pem).unwrap();
+        oaath_relay::oauth::id_token::IdTokenKey::from_pkcs8_pem(Some(ID_TOKEN_KID), &other_pem)
+            .unwrap();
     let other: JwkSet = serde_json::from_value(other.jwks().clone()).unwrap();
     let other = DecodingKey::from_jwk(&other.keys[0]).unwrap();
     assert!(decode::<Value>(id_token, &other, &validation).is_err());
@@ -471,4 +472,24 @@ async fn refuses_malformed_registrations_and_pushed_requests() {
         "invalid_request",
         E::RequestInvalid,
     );
+}
+
+#[tokio::test]
+async fn serves_the_portal_and_oauth_without_any_caller_authentication() {
+    let h = harness_with(|options| {
+        options.authentication = std::sync::Arc::new(oaath_relay::authentication::NoAuthentication);
+        options.owner_routing =
+            std::sync::Arc::new(oaath_relay::authorization::request::NoOwnerRouting);
+    });
+    // Caller-authenticated relay routes refuse.
+    h.send(post(
+        "/authorization/requests",
+        Some(CLIENT_TOKEN),
+        Some(json!({})),
+    ))
+    .await
+    .failure(E::Unauthenticated);
+    // The login flow needs no caller.
+    let (client_id, _, _, _, code) = approved_code(&h).await;
+    token(&h, &client_id, &code, CODE_VERIFIER).await.ok(200);
 }

@@ -99,6 +99,21 @@ pub fn bearer_token(headers: &HeaderMap) -> Option<&str> {
         .strip_prefix("Bearer ")
 }
 
+/// Authenticates nobody: every caller-authenticated route answers
+/// `relay_unauthenticated`. The production default until a real port exists;
+/// the portal and OAuth routes need no caller.
+pub struct NoAuthentication;
+
+#[async_trait]
+impl RelayAuthentication for NoAuthentication {
+    async fn authenticate(
+        &self,
+        _headers: &HeaderMap,
+    ) -> Result<Option<RelayCaller>, AuthenticationFailure> {
+        Ok(None)
+    }
+}
+
 /// DEV ONLY: static bearer tokens mapped to callers from a local config file.
 /// A later stage replaces this with portal sessions; never deploy it.
 pub struct DevTokenAuthentication {

@@ -4,12 +4,15 @@
 //! OAATH_LISTEN        listen address, default 127.0.0.1:8787
 //! OAATH_POSTGRES_URL  PostgreSQL store; the memory store when unset
 //! OAATH_KMS_KEY       64 hex characters: the AES-256-GCM artifact key
-//! OAATH_CONFIG        path to the DEV ONLY JSON config (tokens, owner route,
-//!                     bootstrap selection)
+//! OAATH_CONFIG        optional path to the DEV ONLY JSON config (tokens, owner
+//!                     route, bootstrap selection). Without it the
+//!                     caller-authenticated relay routes answer
+//!                     relay_unauthenticated; /portal/*, /oauth/*, and discovery
+//!                     need no caller.
 //! OAATH_ISSUER        OAuth/OIDC issuer URL (no trailing slash); enables
 //!                     /oauth/*, discovery, and the portal transaction routes
 //! OAATH_ID_TOKEN_KEY  path to the ES256 (P-256) PKCS#8 PEM id_token key
-//! OAATH_ID_TOKEN_KID  the key's `kid`
+//! OAATH_ID_TOKEN_KID  optional `kid`; defaults to the key's RFC 7638 thumbprint
 //! --create-schema     create the current PostgreSQL schema first; fails if
 //!                     any object already exists
 //! ```
@@ -19,8 +22,8 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use oaath_relay::authentication::DevTokenAuthentication;
-use oaath_relay::authorization::request::StaticOwnerRouting;
+use oaath_relay::authentication::{DevTokenAuthentication, NoAuthentication};
+use oaath_relay::authorization::request::{NoOwnerRouting, StaticOwnerRouting};
 use oaath_relay::bootstrap::{BootstrapConfiguration, StaticBootstrapResolver};
 use oaath_relay::clock::SystemClock;
 use oaath_relay::config::DevConfig;
@@ -63,10 +66,20 @@ async fn run() -> Result<(), String> {
         .ok()
         .and_then(|key| AesGcmKms::from_hex(&key))
         .ok_or("OAATH_KMS_KEY must be 64 hex characters")?;
-    let config_path = std::env::var("OAATH_CONFIG").map_err(|_| "OAATH_CONFIG is required")?;
-    let config_text = std::fs::read_to_string(&config_path)
-        .map_err(|_| "OAATH_CONFIG could not be read".to_owned())?;
-    let config = DevConfig::parse(&config_text)?;
+    let config = match std::env::var("OAATH_CONFIG") {
+        Ok(path) if !path.is_empty() => {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|_| "OAATH_CONFIG could not be read".to_owned())?;
+            Some(DevConfig::parse(&text)?)
+        }
+        _ => None,
+    };
+
+    // Every configuration error surfaces before any schema is created.
+    let oauth = match std::env::var("OAATH_ISSUER") {
+        Ok(issuer) if !issuer.is_empty() => Some(oauth_configuration(issuer)?),
+        _ => None,
+    };
 
     let store: Arc<dyn RelayStore> = match std::env::var("OAATH_POSTGRES_URL") {
         Ok(url) if !url.is_empty() => {
@@ -92,29 +105,35 @@ async fn run() -> Result<(), String> {
         }
     };
 
-    let oauth = match std::env::var("OAATH_ISSUER") {
-        Ok(issuer) if !issuer.is_empty() => Some(oauth_configuration(issuer)?),
-        _ => None,
-    };
-
-    tracing::warn!("authentication: DEV static bearer tokens; never deploy this configuration");
-    let relay = Relay::new(RelayOptions {
+    let mut options = RelayOptions {
         store: store.clone(),
-        authentication: Arc::new(DevTokenAuthentication::new(config.tokens)),
-        owner_routing: Arc::new(StaticOwnerRouting(config.owner_route)),
+        authentication: Arc::new(NoAuthentication),
+        owner_routing: Arc::new(NoOwnerRouting),
         kms: Arc::new(kms),
         clock: Arc::new(SystemClock),
         rate_limit: None,
-        request_ttl_ms: config.request_ttl_ms,
-        code_ttl_ms: config.code_ttl_ms,
-        max_body_bytes: config.max_body_bytes,
-        bootstrap: config.bootstrap.map(|bootstrap| BootstrapConfiguration {
+        request_ttl_ms: None,
+        code_ttl_ms: None,
+        max_body_bytes: None,
+        bootstrap: None,
+        oauth,
+    };
+    if let Some(config) = config {
+        tracing::warn!("authentication: DEV static bearer tokens; never deploy this configuration");
+        options.authentication = Arc::new(DevTokenAuthentication::new(config.tokens));
+        options.owner_routing = Arc::new(StaticOwnerRouting(config.owner_route));
+        options.request_ttl_ms = config.request_ttl_ms;
+        options.code_ttl_ms = config.code_ttl_ms;
+        options.max_body_bytes = config.max_body_bytes;
+        options.bootstrap = config.bootstrap.map(|bootstrap| BootstrapConfiguration {
             resolver: Arc::new(StaticBootstrapResolver(bootstrap.selection)),
             chains: bootstrap.chains,
-        }),
-        oauth,
-    })
-    .map_err(|code| format!("relay configuration is invalid ({code})"))?;
+        });
+    } else {
+        tracing::info!("authentication: none; caller-authenticated relay routes refuse");
+    }
+    let relay =
+        Relay::new(options).map_err(|code| format!("relay configuration is invalid ({code})"))?;
 
     let listener = tokio::net::TcpListener::bind(&listen)
         .await
@@ -139,9 +158,11 @@ fn oauth_configuration(issuer: String) -> Result<OAuthConfiguration, String> {
         return Err("OAATH_ISSUER must be an http(s) URL without a trailing slash".into());
     }
     let path = std::env::var("OAATH_ID_TOKEN_KEY").map_err(|_| "OAATH_ID_TOKEN_KEY is required")?;
-    let kid = std::env::var("OAATH_ID_TOKEN_KID").map_err(|_| "OAATH_ID_TOKEN_KID is required")?;
+    let kid = std::env::var("OAATH_ID_TOKEN_KID")
+        .ok()
+        .filter(|kid| !kid.is_empty());
     let pem = std::fs::read_to_string(path).map_err(|_| "OAATH_ID_TOKEN_KEY could not be read")?;
-    let key = IdTokenKey::from_pkcs8_pem(&kid, &pem)
+    let key = IdTokenKey::from_pkcs8_pem(kid.as_deref(), &pem)
         .ok_or("OAATH_ID_TOKEN_KEY must be a P-256 PKCS#8 PEM key with a URL-safe kid")?;
     tracing::info!(%issuer, "oauth: enabled");
     Ok(OAuthConfiguration { issuer, key })
