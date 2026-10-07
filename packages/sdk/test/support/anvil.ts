@@ -167,6 +167,33 @@ async function waitForAnvil(process_: ChildProcess, url: string, chainId: number
 }
 
 /**
+ * Pins the running node's clock at least one whole second ahead of wall time.
+ *
+ * Grants take `validAfter` from wall time, so a block stamped earlier than the
+ * second it was requested in fails validation (AA22) and its handleOps
+ * reverts. A genesis `--timestamp` chosen before spawning Anvil leaves only
+ * `1 - frac(now)` seconds of margin, which any startup delay consumes; once
+ * consumed, every block lags wall time for the chain's life and a fast first
+ * send fails. Setting the clock on the ready node removes startup from the
+ * margin: the offset is whole seconds and the call itself is local.
+ * `@oaath/testing`'s anvil-process.mjs carries the same rule.
+ */
+async function keepChainTimeAhead(url: string): Promise<void> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "anvil_setTime",
+      params: [Math.floor(Date.now() / 1000) + 2],
+    }),
+  });
+  if (((await response.json()) as { error?: unknown }).error)
+    throw new Error("anvil_set_time_failed");
+}
+
+/**
  * Starts one loopback Anvil bound to the given chain ID.
  *
  * The hardfork is an argument because one module's dependency is a chain feature
@@ -196,18 +223,12 @@ export async function startAnvil(
       "--accounts",
       "0",
       ...(slotsInEpoch === undefined ? [] : ["--slots-in-an-epoch", slotsInEpoch.toString(10)]),
-      // Anvil derives its clock offset from a genesis timestamp it reads before
-      // its clock starts; a second boundary between the two reads leaves every
-      // block a second behind wall time, so a wall-clock validAfter (AA22) is
-      // not yet due. An explicit genesis one second ahead keeps chain time at or
-      // ahead of wall time unless startup itself takes over a second.
-      "--timestamp",
-      String(Math.floor(Date.now() / 1000) + 1),
       "--silent",
     ],
     { env: scrubLiveProviderEnvironment(process.env), stdio: "ignore" },
   );
   await waitForAnvil(process_, url, chainId);
+  await keepChainTimeAhead(url);
   return Object.freeze({
     chainId,
     url,
