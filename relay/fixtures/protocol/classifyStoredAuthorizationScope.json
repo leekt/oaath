@@ -457,6 +457,92 @@
     }
   },
   {
+    "name": "permission request existing webauthn account",
+    "fn": "classifyStoredAuthorizationScope",
+    "input": {
+      "requestedScope": "{\"version\":\"oaath.permission-request/v2\",\"context\":{\"version\":\"oaath.workspace-account-context/v1\",\"workspaceId\":\"personal-1\",\"workspaceKind\":\"personal\",\"accountId\":\"account-1\"},\"application\":{\"applicationId\":\"oaath-tests\",\"clientId\":\"permission-protocol\",\"origin\":\"https://request.example\",\"deviceId\":\"request-device\"},\"chainScope\":\"all\",\"logicalAccount\":{\"version\":\"oaath.kernel-existing-account-profile/v3\",\"kind\":\"kernel\",\"kernelVersion\":\"0.4.0\",\"address\":\"0x6666666666666666666666666666666666666666\",\"entryPoint\":{\"version\":\"0.9\"},\"ownerCredential\":{\"version\":\"oaath.owner-credential-profile/v1\",\"kind\":\"webauthn\",\"publicKey\":\"0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5\",\"authenticatorIdHash\":\"0x2222222222222222222222222222222222222222222222222222222222222222\"}},\"operatorCredential\":{\"version\":\"oaath.operator-credential-profile/v1\",\"kind\":\"ecdsa\",\"address\":\"0x4444444444444444444444444444444444444444\"},\"policy\":{\"version\":\"oaath.grant-policy/v2\",\"calls\":[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}],\"validAfter\":100,\"validUntil\":190,\"perChainOperationLimit\":{\"count\":10,\"intervalSeconds\":null}},\"requestedAt\":100,\"expiresAt\":200,\"sessionSigner\":null}",
+      "requestId": "permission-request-1"
+    },
+    "expect": {
+      "ok": {
+        "kind": "permission-request",
+        "decision": "approve-or-reject",
+        "request": {
+          "version": "oaath.permission-request/v2",
+          "requestId": "permission-request-1",
+          "context": {
+            "version": "oaath.workspace-account-context/v1",
+            "workspaceId": "personal-1",
+            "workspaceKind": "personal",
+            "accountId": "account-1"
+          },
+          "application": {
+            "applicationId": "oaath-tests",
+            "clientId": "permission-protocol",
+            "origin": "https://request.example",
+            "deviceId": "request-device"
+          },
+          "chainScope": "all",
+          "logicalAccount": {
+            "version": "oaath.kernel-existing-account-profile/v3",
+            "kind": "kernel",
+            "kernelVersion": "0.4.0",
+            "address": "0x6666666666666666666666666666666666666666",
+            "entryPoint": {
+              "version": "0.9"
+            },
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "webauthn",
+              "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+              "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          },
+          "operatorCredential": {
+            "version": "oaath.operator-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x4444444444444444444444444444444444444444"
+          },
+          "policy": {
+            "version": "oaath.grant-policy/v2",
+            "calls": [
+              {
+                "target": "0x1111111111111111111111111111111111111111",
+                "selector": "0x12345678",
+                "valueLimit": "100",
+                "argumentEquals": [
+                  {
+                    "index": 0,
+                    "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                  },
+                  {
+                    "index": 2,
+                    "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              {
+                "target": "0x2222222222222222222222222222222222222222",
+                "selector": "0xabcdef01",
+                "valueLimit": "0",
+                "argumentEquals": []
+              }
+            ],
+            "validAfter": 100,
+            "validUntil": 190,
+            "perChainOperationLimit": {
+              "count": 10,
+              "intervalSeconds": null
+            }
+          },
+          "requestedAt": 100,
+          "expiresAt": 200,
+          "sessionSigner": null
+        }
+      }
+    }
+  },
+  {
     "name": "kernel p256 request",
     "fn": "classifyStoredAuthorizationScope",
     "input": {

@@ -1,7 +1,7 @@
 //! Replays every TypeScript-generated protocol fixture and requires the same
 //! accept/reject decision, error code, canonical output, and hash.
 //!
-//! Regenerate with `bun scripts/export-protocol-fixtures.mjs`.
+//! Regenerate with `bun run fixtures:protocol`.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -112,7 +112,7 @@ fn typescript_fixtures_replay_exactly() {
     let mut counts = BTreeMap::new();
     let mut failures = Vec::new();
     let mut entries: Vec<_> = fs::read_dir(&directory)
-        .expect("fixtures exist; run bun scripts/export-protocol-fixtures.mjs")
+        .expect("fixtures exist; run bun run fixtures:protocol")
         .map(|entry| entry.expect("fixture entry").path())
         .collect();
     entries.sort();

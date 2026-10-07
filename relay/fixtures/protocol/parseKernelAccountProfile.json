@@ -566,6 +566,100 @@
       }
     },
     "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.4.0",
+        "address": "0x6666666666666666666666666666666666666666",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing 0.3.3 webauthn",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.3.3",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.7"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "webauthn",
+        "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+        "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    "expect": {
+      "error": "kernel_account_profile_invalid"
+    }
+  },
+  {
+    "name": "existing 0.4.0 webauthn checksummed address",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.4.0",
+      "address": "0x52908400098527886E0F7030069857D2E4169EE7",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "webauthn",
+        "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+        "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.kernel-existing-account-profile/v3",
+        "kind": "kernel",
+        "kernelVersion": "0.4.0",
+        "address": "0x52908400098527886e0f7030069857d2e4169ee7",
+        "entryPoint": {
+          "version": "0.9"
+        },
+        "ownerCredential": {
+          "version": "oaath.owner-credential-profile/v1",
+          "kind": "webauthn",
+          "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          "authenticatorIdHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      }
+    }
+  },
+  {
+    "name": "existing 0.4.0 webauthn invalid authenticatorIdHash",
+    "fn": "parseKernelAccountProfile",
+    "input": {
+      "version": "oaath.kernel-existing-account-profile/v3",
+      "kind": "kernel",
+      "kernelVersion": "0.4.0",
+      "address": "0x6666666666666666666666666666666666666666",
+      "entryPoint": {
+        "version": "0.9"
+      },
+      "ownerCredential": {
+        "version": "oaath.owner-credential-profile/v1",
+        "kind": "webauthn",
+        "publicKey": "0x046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+        "authenticatorIdHash": "0xABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+      }
+    },
+    "expect": {
       "error": "kernel_account_profile_invalid"
     }
   },

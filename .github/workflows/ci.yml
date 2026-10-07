@@ -26,6 +26,29 @@ jobs:
       # Tests compile both native targets and consume the shared relay fixtures.
       - run: bun run test:phone
 
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
+        with:
+          components: clippy, rustfmt
+      - run: bun install --frozen-lockfile
+      # The TypeScript protocol owns the wire; committed fixtures must match it.
+      - run: bun run fixtures:protocol
+      # Intent-to-add also fails the job on a new, uncommitted fixture file.
+      - run: git add --intent-to-add relay/fixtures && git diff --exit-code relay/fixtures
+      - run: cargo fmt --check
+        working-directory: relay
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+        working-directory: relay
+      - run: cargo test --workspace
+        working-directory: relay
+
   check:
     runs-on: ubuntu-latest
     # The packaging gates add three clean `npm install`s from tarballs.
