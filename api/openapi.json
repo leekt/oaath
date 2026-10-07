@@ -1,0 +1,738 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Automation API",
+    "version": "0.1.0"
+  },
+  "security": [
+    {
+      "Bearer": []
+    }
+  ],
+  "paths": {
+    "/v1/sessions": {
+      "post": {
+        "operationId": "createSession",
+        "description": "Application credential only. Backend asserts its authenticated customer/account. Session expires in one hour.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/application": {
+      "post": {
+        "operationId": "configureSigning",
+        "description": "Application credential only. Affects new plans; existing scopes remain frozen.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationSettings"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/config": {
+      "get": {
+        "operationId": "getConfig",
+        "description": "User session or application credential required.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans": {
+      "post": {
+        "operationId": "createPlan",
+        "description": "User session required. Same application/account/key and canonical inputs recover the plan (200); changed input conflicts (409).",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePlan"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listPlans",
+        "description": "User session or application credential required.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}": {
+      "get": {
+        "operationId": "getPlan",
+        "description": "User session or application credential required.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/plans/{id}/runs": {
+      "get": {
+        "operationId": "listRuns",
+        "description": "User session or application credential required.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": -1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ]
+      }
+    },
+    "/v1/plans/{id}/pause": {
+      "post": {
+        "operationId": "pausePlan",
+        "description": "User session or application credential required.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/plans/{id}/resume": {
+      "post": {
+        "operationId": "resumePlan",
+        "description": "User session or application credential required.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/plans/{id}/cancel": {
+      "post": {
+        "operationId": "cancelPlan",
+        "description": "User session or application credential required.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/plans/{id}/authorize": {
+      "post": {
+        "operationId": "authorizePlan",
+        "description": "User session or application credential required.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Approval"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/plans/{id}/approve": {
+      "post": {
+        "operationId": "submitApproval",
+        "description": "User session or application credential required.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Approval"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignedApproval"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{id}/refresh": {
+      "post": {
+        "operationId": "refreshPlan",
+        "description": "User session or application credential required.",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Sanitized error; unknown outcomes must be reconciled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "CreatePlan": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "recipe",
+          "amount",
+          "opportunities",
+          "maxSlippageBps",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "recipe": {
+            "const": "dca.v1"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"
+          },
+          "opportunities": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "maxSlippageBps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "startAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "token",
+          "expiresAt",
+          "account",
+          "keyScope"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "integer"
+          },
+          "account": {
+            "type": "string"
+          },
+          "keyScope": {
+            "enum": [
+              "user",
+              "application"
+            ]
+          }
+        }
+      },
+      "SessionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "userId",
+          "account"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "account": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{40}$"
+          }
+        }
+      },
+      "ApplicationSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "keyScope"
+        ],
+        "properties": {
+          "keyScope": {
+            "enum": [
+              "user",
+              "application"
+            ]
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "Plan": {
+        "type": "object",
+        "required": [
+          "id",
+          "recipe",
+          "status",
+          "keyScope",
+          "terms",
+          "progress"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "recipe": {
+            "const": "dca.v1"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "awaiting_consent",
+              "authorized",
+              "active",
+              "paused",
+              "cancelling",
+              "cancelled",
+              "expired",
+              "completed"
+            ]
+          },
+          "keyScope": {
+            "enum": [
+              "user",
+              "application"
+            ]
+          },
+          "terms": {
+            "type": "object"
+          },
+          "progress": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "cancellation": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      },
+      "Approval": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "enum": [
+              "pending",
+              "active",
+              "cancelled"
+            ]
+          },
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          },
+          "review": {
+            "type": "object",
+            "description": "Exact signed terms, custody, keyScope, fees, consent and permission typed data, and owner setup calls."
+          }
+        }
+      },
+      "SignedApproval": {
+        "type": "object",
+        "required": [
+          "commitment",
+          "consentSignature",
+          "permissionSignature"
+        ],
+        "properties": {
+          "commitment": {
+            "type": "string"
+          },
+          "consentSignature": {
+            "type": "string"
+          },
+          "permissionSignature": {
+            "type": "string"
+          },
+          "setupOperation": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

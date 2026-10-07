@@ -1,3 +1,4 @@
+use crate::sessions;
 use crate::{
     model::{self, Create, Terms},
     scheduler,
@@ -14,7 +15,6 @@ use axum::{
 use num_bigint::BigUint;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 
@@ -68,25 +68,6 @@ pub fn now() -> i64 {
         .unwrap()
         .as_secs() as i64
 }
-fn app_id(app: &App, headers: &HeaderMap) -> Result<String> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(ApiError(
-            StatusCode::UNAUTHORIZED,
-            "authentication_required",
-        ))?;
-    let digest = hex::encode(Sha256::digest(token.as_bytes()));
-    app.apps
-        .iter()
-        .find(|(_, hash)| hash == &digest)
-        .map(|(id, _)| id.clone())
-        .ok_or(ApiError(
-            StatusCode::UNAUTHORIZED,
-            "authentication_required",
-        ))
-}
 async fn guard(State(app): State<App>, req: Request, next: Next) -> Response {
     let host = req
         .headers()
@@ -137,9 +118,17 @@ pub fn router(app: App) -> Router {
     Router::new()
         .route(
             "/health",
-            get(|| async { Json(json!({"status":"ok","version":"dca.api/v1"})) }),
+            get(|| async { Json(json!({"status":"ok","version":"automation.api/v1"})) }),
+        )
+        .route(
+            "/openapi.json",
+            get(|| async {
+                Json(serde_json::from_str::<Value>(include_str!("../openapi.json")).unwrap())
+            }),
         )
         .route("/v1/config", get(config))
+        .route("/v1/sessions", post(sessions::create))
+        .route("/v1/application", post(sessions::configure))
         .route("/v1/plans", post(create).get(list))
         .route("/v1/plans/{id}", get(status))
         .route("/v1/plans/{id}/runs", get(history))
@@ -154,16 +143,18 @@ pub fn router(app: App) -> Router {
         .with_state(app)
 }
 async fn config(State(a): State<App>, h: HeaderMap) -> Result<Json<Value>> {
-    app_id(&a, &h)?;
+    let identity = sessions::authenticate(&a, &h).await?;
     Ok(Json(
-        json!({"chainId":a.config.chain_id,"sell":{"token":a.config.sell_token,"symbol":"USDC","decimals":6},"buy":{"token":a.config.buy_token,"symbol":"WETH","decimals":18},"intervalSeconds":86400,"graceSeconds":900,"serviceFee":"0","maxFeePerGas":a.config.max_fee_per_gas,"maxGasCost":a.config.max_gas_cost,"factory":a.config.factory}),
+        json!({"version":"automation.api/v1","recipes":[{"id":"dca.v1","name":"Recurring purchase"}],"account":identity.account,"keyScope":sessions::scope(&a,&identity.app_id).await?,"chainId":a.config.chain_id,"sell":{"token":a.config.sell_token,"symbol":"USDC","decimals":6},"buy":{"token":a.config.buy_token,"symbol":"WETH","decimals":18},"intervalSeconds":86400,"graceSeconds":900,"serviceFee":"0","maxFeePerGas":a.config.max_fee_per_gas,"maxGasCost":a.config.max_gas_cost,"factory":a.config.factory}),
     ))
 }
 async fn own(a: &App, h: &HeaderMap, id: &str) -> Result<Value> {
-    let app = app_id(a, h)?;
-    let row = sqlx::query("SELECT to_jsonb(p) AS value FROM dca_plans p WHERE id=$1 AND app_id=$2")
+    let identity = sessions::authenticate(a, h).await?;
+    let row = sqlx::query("SELECT to_jsonb(p) AS value FROM automation_plans p WHERE id=$1 AND app_id=$2 AND ($3::text IS NULL OR (user_id=$3 AND account=$4))")
         .bind(id)
-        .bind(app)
+        .bind(identity.app_id)
+        .bind(identity.user_id)
+        .bind(identity.account)
         .fetch_optional(&a.pool)
         .await?
         .ok_or(ApiError(StatusCode::NOT_FOUND, "plan_not_found"))?;
@@ -196,27 +187,28 @@ async fn create(
     h: HeaderMap,
     Json(c): Json<Create>,
 ) -> Result<(StatusCode, Json<Value>)> {
-    let app = app_id(&a, &h)?;
-    let account = model::address(&c.account)?;
+    let identity = sessions::authenticate(&a, &h).await?;
+    let app = identity.app_id.clone();
+    let user_id = identity
+        .user_id
+        .ok_or(ApiError(StatusCode::FORBIDDEN, "user_session_required"))?;
+    let account = identity.account.ok_or("account_required")?;
+    let key_scope = sessions::scope(&a, &app).await?;
     if c.idempotency_key.is_empty()
         || c.idempotency_key.len() > 128
         || c.idempotency_key.trim() != c.idempotency_key
-        || c.chain_id != a.config.chain_id
-        || model::address(&c.sell.token)? != a.config.sell_token
-        || model::address(&c.buy.token)? != a.config.buy_token
-        || c.buy.amount.is_some()
-        || c.interval_seconds != 86400
-        || c.max_runs == 0
-        || c.max_runs > 365
+        || c.recipe != "dca.v1"
+        || c.opportunities == 0
+        || c.opportunities > 365
         || c.max_slippage_bps > 1000
     {
         return Err("plan_invalid".into());
     }
-    let amount = model::base_units(c.sell.amount.as_deref().ok_or("amount_required")?)?;
-    let canonical = json!({"account":account,"chainId":c.chain_id,"amountIn":amount,"maxRuns":c.max_runs,"maxSlippageBps":c.max_slippage_bps,"startAt":c.start_at,"profile":serde_json::json!([&a.config.sell_token,&a.config.buy_token,&a.config.router,a.config.pool_fee,&a.config.sell_feed,&a.config.buy_feed,a.config.max_price_age_seconds,&a.config.max_fee_per_gas,&a.config.max_gas_cost])});
+    let amount = model::base_units(&c.amount)?;
+    let canonical = json!({"recipe":c.recipe,"userId":user_id,"keyScope":key_scope,"account":account,"chainId":a.config.chain_id,"amountIn":amount,"maxRuns":c.opportunities,"maxSlippageBps":c.max_slippage_bps,"startAt":c.start_at,"profile":serde_json::json!([&a.config.sell_token,&a.config.buy_token,&a.config.router,a.config.pool_fee,&a.config.sell_feed,&a.config.buy_feed,a.config.max_price_age_seconds,&a.config.max_fee_per_gas,&a.config.max_gas_cost])});
     let digest = model::hash(canonical.to_string().as_bytes());
     let existing = sqlx::query(
-        "SELECT id,input_digest FROM dca_plans WHERE app_id=$1 AND account=$2 AND creation_key=$3",
+        "SELECT id,input_digest FROM automation_plans WHERE app_id=$1 AND account=$2 AND creation_key=$3",
     )
     .bind(&app)
     .bind(&account)
@@ -241,16 +233,16 @@ async fn create(
         version: model::VERSION.into(),
         plan_id: id.clone(),
         account: account.clone(),
-        chain_id: c.chain_id,
+        chain_id: a.config.chain_id,
         sell_token: a.config.sell_token.clone(),
         buy_token: a.config.buy_token.clone(),
         amount_in: amount.clone(),
-        total_input_cap: (amount.parse::<BigUint>().unwrap() * c.max_runs).to_string(),
+        total_input_cap: (amount.parse::<BigUint>().unwrap() * c.opportunities).to_string(),
         start_at: start,
         interval_seconds: 86400,
         grace_seconds: 900,
-        max_runs: c.max_runs,
-        end_at: start + u64::from(c.max_runs - 1) * 86400 + 900,
+        max_runs: c.opportunities,
+        end_at: start + u64::from(c.opportunities - 1) * 86400 + 900,
         recipient: account.clone(),
         router: a.config.router.clone(),
         pool_fee: a.config.pool_fee,
@@ -260,9 +252,9 @@ async fn create(
         max_slippage_bps: c.max_slippage_bps,
     };
     terms.validate()?;
-    let inserted=sqlx::query("INSERT INTO dca_plans(id,app_id,account,creation_key,input_digest,terms,status,next_at,created_at,fee_terms) VALUES($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9) ON CONFLICT(app_id,account,creation_key) DO NOTHING RETURNING id").bind(&id).bind(&app).bind(&account).bind(&c.idempotency_key).bind(&digest).bind(serde_json::to_value(&terms).unwrap()).bind(start as i64).bind(now()).bind(json!({"serviceFee":"0","payer":"account","maxFeePerGas":a.config.max_fee_per_gas,"maxGasCost":a.config.max_gas_cost})).fetch_optional(&a.pool).await?;
+    let inserted=sqlx::query("INSERT INTO automation_plans(id,app_id,account,creation_key,input_digest,terms,status,next_at,created_at,fee_terms,user_id,key_scope,recipe) VALUES($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10,$11,$12) ON CONFLICT(app_id,account,creation_key) DO NOTHING RETURNING id").bind(&id).bind(&app).bind(&account).bind(&c.idempotency_key).bind(&digest).bind(serde_json::to_value(&terms).unwrap()).bind(start as i64).bind(now()).bind(json!({"serviceFee":"0","payer":"account","maxFeePerGas":a.config.max_fee_per_gas,"maxGasCost":a.config.max_gas_cost})).bind(&user_id).bind(&key_scope).bind(&c.recipe).fetch_optional(&a.pool).await?;
     if inserted.is_none() {
-        let row=sqlx::query("SELECT id,input_digest FROM dca_plans WHERE app_id=$1 AND account=$2 AND creation_key=$3").bind(app).bind(account).bind(c.idempotency_key).fetch_one(&a.pool).await?;
+        let row=sqlx::query("SELECT id,input_digest FROM automation_plans WHERE app_id=$1 AND account=$2 AND creation_key=$3").bind(app).bind(account).bind(c.idempotency_key).fetch_one(&a.pool).await?;
         if row.get::<String, _>("input_digest") != digest {
             return Err(ApiError(StatusCode::CONFLICT, "idempotency_conflict"));
         }
@@ -273,7 +265,7 @@ async fn create(
     }
     Ok((StatusCode::CREATED, Json(project(&a, &id).await?)))
 }
-const PROJECTION: &str = "SELECT to_jsonb(p) AS value,COALESCE((SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*)::integer AS n FROM dca_runs WHERE plan_id=p.id GROUP BY status) counts),'{}'::jsonb) AS progress FROM dca_plans p";
+const PROJECTION: &str = "SELECT to_jsonb(p) AS value,COALESCE((SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*)::integer AS n FROM automation_runs WHERE plan_id=p.id GROUP BY status) counts),'{}'::jsonb) AS progress FROM automation_plans p";
 fn projection(_a: &App, r: sqlx::postgres::PgRow) -> Value {
     let p: Value = r.get("value");
     let counts: Value = r.get("progress");
@@ -282,7 +274,7 @@ fn projection(_a: &App, r: sqlx::postgres::PgRow) -> Value {
     for (k, v) in counts.as_object().unwrap() {
         progress[k] = v.clone();
     }
-    json!({"id":p["id"],"status":p["status"],"revision":p["revision"],"terms":p["terms"],"executor":p["executor"],"signer":p["signer"],"commitment":p["commitment"],"progress":progress,"nextSlot":p["next_slot"],"nextAt":p["next_at"],"setup":p["setup"],"cancellation":p["cancellation"],"diagnostic":p["diagnostic"],"fees":p["fee_terms"],"asOf":now()})
+    json!({"id":p["id"],"recipe":p["recipe"],"keyScope":p["key_scope"],"status":p["status"],"revision":p["revision"],"terms":p["terms"],"executor":p["executor"],"signer":p["signer"],"commitment":p["commitment"],"progress":progress,"nextSlot":p["next_slot"],"nextAt":p["next_at"],"setup":p["setup"],"cancellation":p["cancellation"],"diagnostic":p["diagnostic"],"fees":p["fee_terms"],"asOf":now()})
 }
 pub async fn project(a: &App, id: &str) -> Result<Value> {
     let r = sqlx::query(&format!("{PROJECTION} WHERE id=$1"))
@@ -307,17 +299,20 @@ async fn history(
     Query(q): Query<Page>,
 ) -> Result<Json<Value>> {
     own(&a, &h, &id).await?;
-    let rows=sqlx::query("SELECT to_jsonb(r) - 'generation' - 'lease_until' AS value FROM dca_runs r WHERE plan_id=$1 AND slot>$2 ORDER BY slot LIMIT $3").bind(id).bind(q.after.unwrap_or(-1)).bind(q.limit.unwrap_or(50).clamp(1,100)).fetch_all(&a.pool).await?;
+    let rows=sqlx::query("SELECT to_jsonb(r) - 'generation' - 'lease_until' AS value FROM automation_runs r WHERE plan_id=$1 AND slot>$2 ORDER BY slot LIMIT $3").bind(id).bind(q.after.unwrap_or(-1)).bind(q.limit.unwrap_or(50).clamp(1,100)).fetch_all(&a.pool).await?;
     Ok(Json(
         json!({"runs":rows.iter().map(|r|r.get::<Value,_>("value")).collect::<Vec<_>>() }),
     ))
 }
 async fn list(State(a): State<App>, h: HeaderMap) -> Result<Json<Value>> {
-    let app = app_id(&a, &h)?;
+    let identity = sessions::authenticate(&a, &h).await?;
+    let app = identity.app_id.clone();
     let rows = sqlx::query(&format!(
-        "{PROJECTION} WHERE app_id=$1 ORDER BY created_at DESC,id LIMIT 100"
+        "{PROJECTION} WHERE app_id=$1 AND ($2::text IS NULL OR (user_id=$2 AND account=$3)) ORDER BY created_at DESC,id LIMIT 100"
     ))
     .bind(app)
+    .bind(identity.user_id)
+    .bind(identity.account)
     .fetch_all(&a.pool)
     .await?;
     Ok(Json(
@@ -357,7 +352,7 @@ async fn approve(
 async fn pause(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Result<Json<Value>> {
     own(&a, &h, &id).await?;
     let n = sqlx::query(
-        "UPDATE dca_plans SET status='paused',revision=revision+1 WHERE id=$1 AND status='active'",
+        "UPDATE automation_plans SET status='paused',revision=revision+1 WHERE id=$1 AND status='active'",
     )
     .bind(&id)
     .execute(&a.pool)
@@ -375,7 +370,7 @@ async fn resume(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> R
 }
 async fn cancel(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Result<Json<Value>> {
     own(&a, &h, &id).await?;
-    sqlx::query("UPDATE dca_plans SET status='cancelling',revision=revision+1 WHERE id=$1 AND status IN ('draft','awaiting_consent','authorized','active','paused','completed','expired')").bind(&id).execute(&a.pool).await?;
+    sqlx::query("UPDATE automation_plans SET status='cancelling',revision=revision+1 WHERE id=$1 AND status IN ('draft','awaiting_consent','authorized','active','paused','completed','expired')").bind(&id).execute(&a.pool).await?;
     let _ = bridge(&a, "cancel", &id, json!({})).await;
     Ok(Json(project(&a, &id).await?))
 }
@@ -385,7 +380,7 @@ async fn refresh(
     Path(id): Path<String>,
 ) -> Result<(StatusCode, Json<Value>)> {
     own(&a, &h, &id).await?;
-    sqlx::query("UPDATE dca_runs SET next_observe_at=LEAST(next_observe_at,$2) WHERE plan_id=$1 AND status IN ('observing','unresolved') AND next_observe_at>$2+10").bind(&id).bind(now()+10).execute(&a.pool).await?;
+    sqlx::query("UPDATE automation_runs SET next_observe_at=LEAST(next_observe_at,$2) WHERE plan_id=$1 AND status IN ('observing','unresolved') AND next_observe_at>$2+10").bind(&id).bind(now()+10).execute(&a.pool).await?;
     Ok((
         StatusCode::ACCEPTED,
         Json(json!({"status":"queued","planId":id})),

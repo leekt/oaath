@@ -1,31 +1,34 @@
 mod http;
 mod model;
+mod recipes;
 mod scheduler;
+mod sessions;
 use sqlx::postgres::PgPoolOptions;
 use std::{sync::Arc, time::Duration};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config: http::Config =
-        serde_json::from_str(&std::fs::read_to_string(std::env::var("DCA_CONFIG")?)?)?;
+    let config: http::Config = serde_json::from_str(&std::fs::read_to_string(std::env::var(
+        "AUTOMATION_CONFIG",
+    )?)?)?;
     let applications: Vec<(String, String)> =
-        serde_json::from_str(&std::env::var("DCA_APPLICATION_HASHES")?)?;
+        serde_json::from_str(&std::env::var("AUTOMATION_APPLICATION_HASHES")?)?;
     let pool = PgPoolOptions::new()
         .max_connections(12)
         .acquire_timeout(Duration::from_secs(5))
-        .connect(&std::env::var("DCA_DATABASE_URL")?)
+        .connect(&std::env::var("AUTOMATION_DATABASE_URL")?)
         .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     let app = http::App {
         pool,
         config,
         apps: Arc::new(applications),
-        runtime: std::env::var("DCA_RUNTIME_URL")?,
-        runtime_token: std::env::var("DCA_RUNTIME_TOKEN")?,
+        runtime: std::env::var("AUTOMATION_RUNTIME_URL")?,
+        runtime_token: std::env::var("AUTOMATION_RUNTIME_TOKEN")?,
         client: reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?,
         hosts: Arc::new(
-            std::env::var("DCA_ALLOWED_HOSTS")?
+            std::env::var("AUTOMATION_ALLOWED_HOSTS")?
                 .split(',')
                 .map(str::to_owned)
                 .collect(),
@@ -42,9 +45,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    let bind = std::env::var("DCA_BIND").unwrap_or("127.0.0.1:4317".into());
+    let bind = std::env::var("AUTOMATION_BIND").unwrap_or("127.0.0.1:4317".into());
     let listener = tokio::net::TcpListener::bind(&bind).await?;
-    println!("DCA API listening on {bind}");
+    println!("Automation API listening on {bind}");
     axum::serve(listener, http::router(app.clone()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
