@@ -17,7 +17,7 @@ use oaath_relay::bootstrap::{
 use oaath_relay::error::{RelayErrorCode, RelayResult};
 use oaath_relay::store::memory::MemoryRelayStore;
 use oaath_relay::store::{RelayStore, RelayTransaction};
-use oaath_relay::{Relay, oauth, records, registry, session};
+use oaath_relay::{Relay, link, oauth, records, registry, session};
 use serde_json::{Value, json};
 use support::*;
 
@@ -99,6 +99,13 @@ ambiguous_transaction! {
     insert_account(r: &registry::AccountRecord) -> RelayResult<bool>;
     insert_account_signer(r: &registry::AccountSignerRecord) -> RelayResult<bool>;
     lock_account(id: &str) -> RelayResult<Option<registry::AccountRecord>>;
+    lock_account_by_address(address: &str) -> RelayResult<Option<registry::AccountRecord>>;
+    list_account_signers(id: &str) -> RelayResult<Vec<(registry::SignerRecord, registry::AccountSignerRecord)>>;
+    delete_account_signers(account: &str, signer: &str) -> RelayResult<bool>;
+    lock_link_request(id: &str) -> RelayResult<Option<link::LinkRequestRecord>>;
+    insert_link_request(r: &link::LinkRequestRecord) -> RelayResult<bool>;
+    decide_link_request(id: &str, outcome: link::LinkOutcome, signature: Option<&str>, at: u64) -> RelayResult<bool>;
+    remove_link_request(id: &str, at: u64) -> RelayResult<bool>;
     lock_oauth_client(id: &str) -> RelayResult<Option<oauth::records::OAuthClientRecord>>;
     insert_oauth_client(r: &oauth::records::OAuthClientRecord) -> RelayResult<bool>;
     lock_par(id: &str) -> RelayResult<Option<oauth::records::ParRecord>>;

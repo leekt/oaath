@@ -248,11 +248,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v10 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v11 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v10");
+    assert_eq!(version, "oaath.relay-postgres-schema/v11");
     pool.close().await;
 }
 
@@ -446,6 +446,7 @@ async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
             signer_id: other.clone(),
             role,
             request_id: request_id.map(str::to_owned),
+            link_id: None,
             created_at: CLOCK_START,
         };
     let h = fixture.process(clock.clone()).await;
@@ -470,7 +471,7 @@ async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
     // guarded insert.
     let pool = fixture.pool().await;
     let inserted = sqlx::query(
-        "INSERT INTO oaath_account_signer_v1 \
+        "INSERT INTO oaath_account_signer_v2 \
          (account_id, signer_id, record_version, role, request_id, created_at) \
          VALUES ($1, $2, $3, 'root', NULL, 0)",
     )
@@ -976,4 +977,108 @@ async fn keeps_sessions_and_refuses_consumed_nonces_across_restarts() {
         .await
         .failure(E::Unauthenticated);
     shutdown(third).await;
+}
+
+#[tokio::test]
+async fn keeps_a_link_approval_single_use_and_its_removal_across_restarts() {
+    use alloy_primitives::B256;
+    use support::grant::{Root, root_key, sign_in};
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let root = Root::Ecdsa(root_key());
+    let passkey = Root::WebAuthn(
+        p256::ecdsa::SigningKey::from_slice(&[0x44; 32]).unwrap(),
+        b"second-device".to_vec(),
+    );
+
+    let h = fixture.process(clock.clone()).await;
+    let (root_id, root_cookie) = sign_in(&h, &root).await;
+    let account = h
+        .send(portal_call(
+            "POST",
+            "/portal/accounts",
+            Some(&root_cookie),
+            Some(json!({ "root_signer_id": root_id })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    let account_id = text(&account, "account_id").to_owned();
+    let (device_id, device_cookie) = sign_in(&h, &passkey).await;
+    let link_id = text(
+        h.send(portal_call(
+            "POST",
+            "/portal/links",
+            Some(&device_cookie),
+            Some(json!({
+                "signer_id": device_id,
+                "account": account["address"],
+                "label": "Second device",
+            })),
+        ))
+        .await
+        .ok(201),
+        "link_id",
+    )
+    .to_owned();
+    shutdown(h).await;
+
+    let link = |cookie: &str| {
+        portal_call(
+            "GET",
+            &format!("/portal/links/{link_id}"),
+            Some(cookie),
+            None,
+        )
+    };
+    let h = fixture.process(clock.clone()).await;
+    let view = h.send(link(&root_cookie)).await.ok(200).clone();
+    assert_eq!(view["status"], "pending");
+    let digest: B256 = text(&view, "digest").parse().unwrap();
+    let approval = json!({ "signature": format!("0x{}", hex::encode(root.sign(digest))) });
+    let approve = || {
+        portal_call(
+            "POST",
+            &format!("/portal/links/{link_id}/approve"),
+            Some(&root_cookie),
+            Some(approval.clone()),
+        )
+    };
+    h.send(approve()).await.ok(200);
+    shutdown(h).await;
+
+    let accounts = || {
+        portal_call(
+            "GET",
+            &format!("/portal/signers/{device_id}/accounts"),
+            Some(&device_cookie),
+            None,
+        )
+    };
+    let h = fixture.process(clock.clone()).await;
+    h.send(approve()).await.failure(E::AlreadyDecided);
+    let mut approved = view.clone();
+    approved["status"] = json!("approved");
+    assert_eq!(h.send(link(&device_cookie)).await.ok(200), &approved);
+    let listed = h.send(accounts()).await.ok(200).clone();
+    assert_eq!(listed["accounts"][0]["account_id"], json!(account_id));
+    assert_eq!(listed["accounts"][0]["role"], "permission");
+    h.send(portal_call(
+        "DELETE",
+        &format!("/portal/accounts/{account_id}/members/{device_id}"),
+        Some(&root_cookie),
+        None,
+    ))
+    .await
+    .ok(200);
+    shutdown(h).await;
+
+    let h = fixture.process(clock).await;
+    assert_eq!(
+        h.send(link(&root_cookie)).await.ok(200)["status"],
+        "removed"
+    );
+    assert_eq!(h.send(accounts()).await.ok(200)["accounts"], json!([]));
+    shutdown(h).await;
 }

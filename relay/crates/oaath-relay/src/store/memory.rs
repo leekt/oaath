@@ -17,6 +17,7 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use super::{RelayStore, RelayTransaction};
 use crate::error::{RelayErrorCode, RelayResult};
+use crate::link::{LinkOutcome, LinkRequestRecord};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
@@ -40,6 +41,7 @@ struct Tables {
     access_tokens: HashMap<String, Value>,
     portal_challenges: HashMap<String, Value>,
     portal_sessions: HashMap<String, Value>,
+    link_requests: HashMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -386,8 +388,9 @@ impl RelayTransaction for MemoryTransaction {
             let second_root =
                 stored.role == MembershipRole::Root && record.role == MembershipRole::Root;
             let repeated = stored.signer_id == record.signer_id
-                && stored.request_id.is_some()
-                && stored.request_id == record.request_id;
+                && stored.role == MembershipRole::Permission
+                && stored.request_id == record.request_id
+                && stored.link_id == record.link_id;
             if second_root || repeated {
                 return Ok(false);
             }
@@ -398,6 +401,127 @@ impl RelayTransaction for MemoryTransaction {
 
     async fn lock_account(&mut self, account_id: &str) -> RelayResult<Option<AccountRecord>> {
         read(&self.staged.accounts, account_id, AccountRecord::parse)
+    }
+
+    async fn lock_account_by_address(
+        &mut self,
+        address: &str,
+    ) -> RelayResult<Option<AccountRecord>> {
+        for value in self.staged.accounts.values() {
+            let account = AccountRecord::parse(value)?;
+            if account.address == address {
+                return Ok(Some(account));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn list_account_signers(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Vec<(SignerRecord, AccountSignerRecord)>> {
+        let mut signers = Vec::new();
+        for value in &self.staged.memberships {
+            let membership = AccountSignerRecord::parse(value)?;
+            if membership.account_id != account_id {
+                continue;
+            }
+            let signer = read(
+                &self.staged.signers,
+                &membership.signer_id,
+                SignerRecord::parse,
+            )?
+            .ok_or(RelayErrorCode::RecordUnreadable)?;
+            signers.push((signer, membership));
+        }
+        signers.sort_by_key(|(signer, membership)| {
+            (
+                membership.role != MembershipRole::Root,
+                membership.created_at,
+                signer.signer_id.clone(),
+            )
+        });
+        Ok(signers)
+    }
+
+    async fn delete_account_signers(
+        &mut self,
+        account_id: &str,
+        signer_id: &str,
+    ) -> RelayResult<bool> {
+        let mut kept = Vec::new();
+        let mut deleted = false;
+        for value in &self.staged.memberships {
+            let stored = AccountSignerRecord::parse(value)?;
+            if stored.account_id == account_id
+                && stored.signer_id == signer_id
+                && stored.role == MembershipRole::Permission
+            {
+                deleted = true;
+            } else {
+                kept.push(value.clone());
+            }
+        }
+        self.staged.memberships = kept;
+        Ok(deleted)
+    }
+
+    async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>> {
+        read(
+            &self.staged.link_requests,
+            link_id,
+            LinkRequestRecord::parse,
+        )
+    }
+
+    async fn insert_link_request(&mut self, record: &LinkRequestRecord) -> RelayResult<bool> {
+        if !self.staged.accounts.contains_key(&record.account_id)
+            || !self.staged.signers.contains_key(&record.signer_id)
+        {
+            return Ok(false);
+        }
+        Ok(insert(
+            &mut self.staged.link_requests,
+            &record.link_id,
+            to_value(record),
+        ))
+    }
+
+    async fn decide_link_request(
+        &mut self,
+        link_id: &str,
+        outcome: LinkOutcome,
+        approval_signature: Option<&str>,
+        decided_at: u64,
+    ) -> RelayResult<bool> {
+        let Some(mut record) = self.lock_link_request(link_id).await? else {
+            return Ok(false);
+        };
+        if record.outcome.is_some() {
+            return Ok(false);
+        }
+        record.outcome = Some(outcome);
+        record.decided_at = Some(decided_at);
+        record.approval_signature = approval_signature.map(str::to_owned);
+        // The record parser owns the outcome/signature invariant.
+        let value = to_value(&record);
+        LinkRequestRecord::parse(&value)?;
+        self.staged.link_requests.insert(link_id.to_owned(), value);
+        Ok(true)
+    }
+
+    async fn remove_link_request(&mut self, link_id: &str, removed_at: u64) -> RelayResult<bool> {
+        let Some(mut record) = self.lock_link_request(link_id).await? else {
+            return Ok(false);
+        };
+        if record.outcome != Some(LinkOutcome::Approved) || record.removed_at.is_some() {
+            return Ok(false);
+        }
+        record.removed_at = Some(removed_at);
+        self.staged
+            .link_requests
+            .insert(link_id.to_owned(), to_value(&record));
+        Ok(true)
     }
 
     async fn lock_oauth_client(

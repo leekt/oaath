@@ -21,7 +21,8 @@
 //! additionally guards on the terminal column being null and reports whether
 //! *this* call performed the transition. Revocation and owner-inbox reads are
 //! later-stage additions to this contract. The signer/account registry state
-//! model lives in `registry.rs`, and the portal session model in `session.rs`.
+//! model lives in `registry.rs`, the portal session model in `session.rs`, and
+//! the link request model in `link.rs`.
 
 pub mod memory;
 pub mod postgres;
@@ -29,6 +30,7 @@ pub mod postgres;
 use async_trait::async_trait;
 
 use crate::error::RelayResult;
+use crate::link::{LinkOutcome, LinkRequestRecord};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
 use crate::records::{
     AuthorizationCodeRecord, AuthorizationDecisionRecord, AuthorizationRequestRecord,
@@ -131,6 +133,38 @@ pub trait RelayTransaction: Send {
     async fn insert_account_signer(&mut self, record: &AccountSignerRecord) -> RelayResult<bool>;
 
     async fn lock_account(&mut self, account_id: &str) -> RelayResult<Option<AccountRecord>>;
+    /// The account at this lowercase address.
+    async fn lock_account_by_address(
+        &mut self,
+        address: &str,
+    ) -> RelayResult<Option<AccountRecord>>;
+    /// Every membership of the account with its signer: the root first, then
+    /// in join order.
+    async fn list_account_signers(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Vec<(SignerRecord, AccountSignerRecord)>>;
+    /// Deletes the signer's permission memberships of the account; a root
+    /// membership is never deleted. `true` only when this call deleted one.
+    async fn delete_account_signers(
+        &mut self,
+        account_id: &str,
+        signer_id: &str,
+    ) -> RelayResult<bool>;
+
+    async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>>;
+    /// `false` when the identifier exists or the account or signer is unknown.
+    async fn insert_link_request(&mut self, record: &LinkRequestRecord) -> RelayResult<bool>;
+    /// `true` only when this call decided the undecided link.
+    async fn decide_link_request(
+        &mut self,
+        link_id: &str,
+        outcome: LinkOutcome,
+        approval_signature: Option<&str>,
+        decided_at: u64,
+    ) -> RelayResult<bool>;
+    /// `true` only when this call set `removed_at` on the approved link.
+    async fn remove_link_request(&mut self, link_id: &str, removed_at: u64) -> RelayResult<bool>;
 
     async fn lock_oauth_client(
         &mut self,

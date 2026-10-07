@@ -616,3 +616,70 @@ async fn invalidates_off_chain_and_revokes_the_access_token() {
         .await;
     assert_eq!(foreign.status, 401);
 }
+
+#[tokio::test]
+async fn the_root_removing_a_dapp_signer_invalidates_its_grant() {
+    let h = harness();
+    let root = Root::Ecdsa(root_key());
+    let (id, _, _, artifact, tokens) = approved_grant(&h, &root).await;
+    let (root_id, cookie) = sign_in(&h, &root).await;
+    let account = h
+        .send(portal_call(
+            "GET",
+            &format!("/portal/signers/{root_id}/accounts"),
+            Some(&cookie),
+            None,
+        ))
+        .await
+        .ok(200)["accounts"][0]
+        .clone();
+    let account_id = text(&account, "account_id");
+    let members = h
+        .send(portal_call(
+            "GET",
+            &format!("/portal/accounts/{account_id}/members"),
+            Some(&cookie),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    let dapp = &members["members"][1];
+    assert_eq!(dapp["role"], "permission");
+    assert_eq!(dapp["grant_id"], json!(id));
+    assert_eq!(dapp["link_id"], Value::Null);
+
+    let removed = h
+        .send(portal_call(
+            "DELETE",
+            &format!(
+                "/portal/accounts/{account_id}/members/{}",
+                text(dapp, "signer_id")
+            ),
+            Some(&cookie),
+            None,
+        ))
+        .await;
+    assert_eq!(removed.ok(200), &json!({ "removed": 1 }));
+    // The existing invalidation owner recorded it for the grant's capability.
+    let view = h
+        .send(bearer_get(
+            &format!("/oauth/grants/{id}"),
+            text(&tokens, "access_token"),
+        ))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(view["status"], "invalidated");
+    let mut transaction = h.store.begin().await.unwrap();
+    let invalidation = transaction
+        .lock_capability_invalidation(&id)
+        .await
+        .unwrap()
+        .unwrap();
+    transaction.rollback().await;
+    assert_eq!(
+        json!(invalidation.capability_hash),
+        artifact["capabilityHash"]
+    );
+}

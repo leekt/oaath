@@ -23,6 +23,11 @@
 //! POST /portal/sessions/challenge                    portal  sign-in challenge
 //! POST /portal/sessions                              portal  prove a signer, set cookie
 //! DELETE /portal/sessions                            portal  sign out, clear cookie
+//! POST /portal/links                                 portal  ask to join an account
+//! GET  /portal/links/{linkId}                        portal  read a link (requester, root)
+//! POST /portal/links/{linkId}/approve|reject         portal  the root decides a link
+//! GET  /portal/accounts/{accountId}/members          portal  the root lists members
+//! DELETE /portal/accounts/{accountId}/members/{id}   portal  the root removes a member
 //! ```
 //!
 //! A signer's accounts, account creation, and grant prepare and approved
@@ -64,6 +69,10 @@ use crate::bootstrap::{BootstrapConfiguration, capture_chains, serve_bootstrap};
 use crate::clock::RelayClock;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::kms::RelayKms;
+use crate::link::{
+    LinkOutcome, create_link, decide_link, identifier_segment, list_members, read_link,
+    remove_member,
+};
 use crate::oauth::{
     LoginDecision, OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, grant,
     login_decision, parse_form, prepare_grant, push_authorization_request, read_transaction,
@@ -492,6 +501,45 @@ impl Relay {
                 let session = session_signer(store, clock, headers).await?;
                 let body = body_record(headers, body, self.max_body_bytes).await?;
                 return reply(201, &create_account(store, clock, &body, &session).await?);
+            }
+            if group == Some("links") && (2..=4).contains(&count) {
+                let session = session_signer(store, clock, headers).await?;
+                if count == 2 {
+                    require_method(method, &Method::POST)?;
+                    let body = body_record(headers, body, self.max_body_bytes).await?;
+                    return reply(201, &create_link(store, clock, &body, &session).await?);
+                }
+                let link_id = identifier_segment(third)?;
+                let outcome = match fourth {
+                    None => {
+                        require_method(method, &Method::GET)?;
+                        return reply(200, &read_link(store, clock, link_id, &session).await?);
+                    }
+                    Some("approve") => LinkOutcome::Approved,
+                    Some("reject") => LinkOutcome::Rejected,
+                    Some(_) => return Err(RelayErrorCode::NotFound),
+                };
+                require_method(method, &Method::POST)?;
+                let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
+                let body = body_record(headers, body, self.max_body_bytes).await?;
+                let view =
+                    decide_link(store, clock, issuer, link_id, &body, &session, outcome).await?;
+                return reply(200, &view);
+            }
+            if group == Some("accounts") && fourth == Some("members") && (count == 4 || count == 5)
+            {
+                let session = session_signer(store, clock, headers).await?;
+                let account_id = identifier_segment(third)?;
+                if count == 4 {
+                    require_method(method, &Method::GET)?;
+                    return reply(200, &list_members(store, account_id, &session).await?);
+                }
+                require_method(method, &Method::DELETE)?;
+                let signer_id = identifier_segment(segment(4))?;
+                let kms = self.kms.as_ref();
+                let removed =
+                    remove_member(store, clock, kms, account_id, signer_id, &session).await?;
+                return reply(200, &removed);
             }
             if group == Some("transactions") && (count == 3 || count == 4) {
                 let oauth = self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?;

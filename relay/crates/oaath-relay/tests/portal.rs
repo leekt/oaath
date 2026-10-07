@@ -326,6 +326,7 @@ async fn refuses_a_second_root_and_a_membership_on_an_unknown_account() {
         signer_id: signer_id.to_owned(),
         role: MembershipRole::Root,
         request_id: None,
+        link_id: None,
         created_at: CLOCK_START,
     };
     let mut transaction = h.store.begin().await.unwrap();
