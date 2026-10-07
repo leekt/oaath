@@ -246,7 +246,7 @@ async fn requires_the_signers_own_active_session_for_its_private_routes() {
             "POST",
             "/portal/accounts",
             cookie,
-            Some(json!({ "root_signer_id": signer_id })),
+            Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
         )
     };
     h.send(create(None)).await.failure(E::Unauthenticated);

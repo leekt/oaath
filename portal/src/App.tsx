@@ -257,7 +257,21 @@ function AccountStep({
     setBusy(true);
     setError(null);
     try {
-      const created = await portalApi.createAccount({ root_signer_id: signer.signer_id });
+      const body = {
+        root_signer_id: signer.signer_id,
+        creation_key: Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join(""),
+      };
+      // A lost reply is retried once with the same key: it answers the same
+      // account, never a second one.
+      const created = await portalApi
+        .createAccount(body)
+        .catch((failure: unknown) =>
+          failure instanceof PortalApiError && failure.code === "network_unavailable"
+            ? portalApi.createAccount(body)
+            : Promise.reject(failure),
+        );
       setAccounts((current) => [
         ...(current ?? []).filter((account) => account.account_id !== created.account_id),
         { ...created, role: "root", status: "active" },

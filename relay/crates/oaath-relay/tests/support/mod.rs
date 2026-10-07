@@ -302,6 +302,11 @@ impl Harness {
     }
 }
 
+/// A fresh idempotency key for one account creation.
+pub fn creation_key() -> String {
+    oaath_relay::authorization::challenge::random_identifier()
+}
+
 pub fn code_challenge() -> String {
     sha256_base64url(CODE_VERIFIER)
 }

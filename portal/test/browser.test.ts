@@ -538,7 +538,14 @@ describe("portal in Chrome", () => {
         path: "/portal/sessions",
         body: { signer_id: "signer-wallet", nonce: NONCE, signature: `0x${"99".repeat(65)}` },
       },
-      { method: "POST", path: "/portal/accounts", body: { root_signer_id: "signer-wallet" } },
+      {
+        method: "POST",
+        path: "/portal/accounts",
+        body: {
+          root_signer_id: "signer-wallet",
+          creation_key: expect.stringMatching(/^[0-9a-f]{32}$/u),
+        },
+      },
       {
         method: "POST",
         path: "/portal/transactions/par-1/decision",

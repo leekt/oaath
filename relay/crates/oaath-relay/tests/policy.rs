@@ -45,7 +45,7 @@ async fn owner(h: &Harness, root: &Root) -> Owner {
             "POST",
             "/portal/accounts",
             Some(&cookie),
-            Some(json!({ "root_signer_id": signer_id })),
+            Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
         ))
         .await
         .ok(201)

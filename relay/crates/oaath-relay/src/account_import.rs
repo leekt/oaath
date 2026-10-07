@@ -270,6 +270,7 @@ pub async fn import_account(
             address: account_address.clone(),
             root_signer_id: root_signer_id.to_owned(),
             account_index: None,
+            creation_key: None,
             owner_validator: owner_validator_for(&owner),
             profile: profile.to_json().to_string(),
             created_at: now,

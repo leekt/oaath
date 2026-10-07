@@ -127,14 +127,20 @@ pub trait RelayTransaction: Send {
         &mut self,
         signer_id: &str,
     ) -> RelayResult<Vec<(AccountRecord, AccountSignerRecord)>>;
-    /// `false` when the identifier, the address, or the root signer's index
-    /// is taken, or the root signer is unknown.
+    /// `false` when the identifier, the address, the root signer's index or
+    /// creation key is taken, or the root signer is unknown.
     async fn insert_account(&mut self, record: &AccountRecord) -> RelayResult<bool>;
     /// `false` for an unknown account or signer, a second root, or a repeated
     /// (account, signer, request) row.
     async fn insert_account_signer(&mut self, record: &AccountSignerRecord) -> RelayResult<bool>;
 
     async fn lock_account(&mut self, account_id: &str) -> RelayResult<Option<AccountRecord>>;
+    /// The root's derived account created under this idempotency key.
+    async fn lock_account_by_creation_key(
+        &mut self,
+        root_signer_id: &str,
+        creation_key: &str,
+    ) -> RelayResult<Option<AccountRecord>>;
     /// The account at this lowercase address.
     async fn lock_account_by_address(
         &mut self,
