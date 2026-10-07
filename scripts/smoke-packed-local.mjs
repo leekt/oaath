@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { createLocalAnvilFixture } from "@oaath/testing/anvil";
 import { createUserOperationObserver } from "@oaath/sdk/advanced";
 import { createCetaneChainPorts, classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/cetane";
-import { kernelDeployment, NONCE_ALIGNMENT_PERMISSION_ID, verifyKernelPermissionNonceAlignmentCalls } from "@oaath/sdk/kernel";
+import { kernelDeployment, NONCE_ALIGNMENT_PERMISSION_ID, readKernelModules, verifyKernelPermissionNonceAlignmentCalls } from "@oaath/sdk/kernel";
 import { createPublicClient, http } from "cetane";
 import { decodeEventLog, getAddress, getCreate2Address, keccak256 } from "cetane/utils";
 import { entryPointAbi } from "@oaath/protocol";
@@ -63,6 +63,19 @@ try {
   const event = receipt.logs.map(log => { try { return decodeEventLog({ abi: entryPointAbi, ...log }); } catch { return null; } }).find(log => log?.eventName === "UserOperationEvent" && log.args.userOpHash === first.id);
   assert.ok(event);
   const reference = { chainId: 421614, entryPoint: kernelDeployment({ chainId: 421614 }).entryPoint.address, account: event.args.sender.toLowerCase(), nonce: event.args.nonce.toString(), userOperationHash: first.id };
+  const inventory = await readKernelModules(reader, { address: reference.account, version: "4", budget: { maxRequests: 64, timeout: 5000 } });
+  assert.equal(inventory.root?.status, "state-confirmed");
+  assert.ok(inventory.validators.some(module => module.status === "state-confirmed"));
+  assert.equal(inventory.permissions.length, 1);
+  assert.match(inventory.permissions[0].id, /^0x[0-9a-f]{8}$/);
+  assert.equal(inventory.permissions[0].status, "state-confirmed");
+  assert.ok(inventory.permissions[0].policies.length >= 2);
+  assert.ok(inventory.requests <= 64);
+  // An exhausted scan is not evidence that no other authority exists.
+  const partial = await readKernelModules(reader, { address: reference.account, version: "4", blockNumber: inventory.blockNumber, budget: { maxRequests: 1, timeout: 5000 } });
+  assert.equal(partial.complete, false);
+  assert.equal(partial.reason, "budget");
+  assert.equal(partial.requests, 1);
   const ports = () => createCetaneChainPorts({ 421614: {
     publicRpcUrls: [fixture.rpcUrl(421614)], headers: { "x-oaath-fixture": "observation" },
   } }, { maxRequests: 64, signal: new AbortController().signal, fetch: request => {
@@ -108,7 +121,8 @@ console.log("packed local fixture: raw CREATE2 deployment, two chains, one appro
 `,
     "surface.ts": `
 import type { Oaath } from "@oaath/sdk";
-import { type KernelRuntime, kernelPermissionNonce, materializeKernelPermission } from "@oaath/sdk/kernel";
+import { type KernelModuleSnapshot, type KernelRuntime, kernelPermissionNonce, materializeKernelPermission, readKernelModules } from "@oaath/sdk/kernel";
+export const inventory: (...input: Parameters<typeof readKernelModules>) => Promise<KernelModuleSnapshot> = readKernelModules;
 import type { ObserveUserOperationResult } from "@oaath/sdk/advanced";
 import { classifyUserOperationError, readUserOperationFailure } from "@oaath/sdk/cetane";
 import type { UserOperationFailureCode } from "@oaath/sdk";

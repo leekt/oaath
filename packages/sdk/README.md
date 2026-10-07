@@ -58,6 +58,28 @@ interval. A validated operation consumes a slot even if execution reverts.
 Reopening a runtime does not reset quota, and missing receipts still cannot
 authorize resubmission.
 
+For an existing Kernel v4 account, `readKernelModules` from `@oaath/sdk/kernel`
+exposes Cetane's bounded authority inventory:
+
+```ts
+const inventory = await readKernelModules(client, {
+  address: accountAddress,
+  version: "4",
+  budget: { maxRequests: 64, timeout: 5_000 },
+});
+```
+
+It returns the root, validators, executors, fallbacks, hooks, and permissions
+with their IDs, signers, and policies. Entries distinguish `state-confirmed`
+from `history-derived`; unresolved module context remains visible. State reads
+use one block number. Supply known `permissionIds` or fallback `selectors` when
+opaque installation calldata prevents discovery. `complete: false` and `reason`
+report incomplete history, unknown context, or an exhausted budget. Even a
+state-confirmed entry is an observation at that block, not signing authority or
+finality evidence. Kernel's contextless module events cannot prove exhaustive
+enumeration; never turn an incomplete inventory into a claim that authority is
+absent. This helper supports v4 only and sends no transactions.
+
 The reset policy is pinned by `OAATH_KERNEL_RATE_LIMIT_POLICY` and
 `OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH` from `@oaath/sdk/kernel`.
 The matching module must already be deployed on the action chain; binding
