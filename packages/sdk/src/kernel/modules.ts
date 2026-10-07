@@ -79,10 +79,17 @@ export const KERNEL_WEBAUTHN_VALIDATOR = "0x6f781fff97b830daa2e11ee0ad6344aff713
 export const KERNEL_WEBAUTHN_VALIDATOR_RUNTIME_CODE_HASH =
   "0x694c733f786af4134b8874ecf61bb3234bff90d97f1fa117979debddbea655f0" as const;
 
+/** Exact zero-salt CREATE2 inputs are in KernelWeightedModules.json. The local
+ * V09 validator / signer source is a267d794; their EIP-712 runtime immutables are
+ * chain-specific, so code presence is proven at the creation-input-bound address. */
+export const KERNEL_WEIGHTED_VALIDATOR = "0xbd4bb9cefef38942fd5ab965cca403ed6419d2f9" as const;
+export const KERNEL_WEIGHTED_SIGNER = "0x240ce78c1f3ec2544b996fd3172aaafc268d53d3" as const;
+
 const PINNED_VALIDATORS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}`>>> =
   Object.freeze({
     p256: "0x9906ab44ff795883c5a725687a2705be4118b0f3",
     webauthn: KERNEL_WEBAUTHN_VALIDATOR,
+    "weighted-ecdsa": KERNEL_WEIGHTED_VALIDATOR,
   });
 
 /**
@@ -117,6 +124,7 @@ const PINNED_SIGNERS: Readonly<Partial<Record<KernelBuiltInKeyKind, `0x${string}
   Object.freeze({
     ecdsa: "0x6a6f069e2a08c2468e7724ab3250cdbfba14d4ff",
     webauthn: KERNEL_WEBAUTHN_SIGNER,
+    "weighted-ecdsa": KERNEL_WEIGHTED_SIGNER,
   });
 
 /**

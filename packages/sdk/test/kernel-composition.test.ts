@@ -225,6 +225,13 @@ function customKey(
 type MatrixKeyKind = KernelBuiltInKeyKind | typeof customKind;
 
 const keyProfiles: Readonly<Record<MatrixKeyKind, () => Readonly<KeyProfile>>> = Object.freeze({
+  "weighted-ecdsa": () =>
+    kernelKey({
+      kind: "weighted-ecdsa",
+      guardians: [{ address: ecdsaAccount.address, weight: 1 }],
+      threshold: 1,
+      signers: [ecdsaAccount],
+    }),
   ecdsa: () => kernelKey({ account: ecdsaAccount, validator }),
   p256: () => kernelKey({ credential: p256Credential, sign: p256Sign }),
   webauthn: () =>
@@ -289,6 +296,8 @@ describe("Kernel composition matrix", () => {
     ["p256", "session"],
     ["webauthn", "owner"],
     ["webauthn", "session"],
+    ["weighted-ecdsa", "owner"],
+    ["weighted-ecdsa", "session"],
     // The same factory, the same two authorities, a kind this SDK never authored.
     [customKind, "owner"],
     [customKind, "session"],
@@ -328,7 +337,9 @@ describe("Kernel composition matrix", () => {
         // A caller-bound kind installs the validator its own profile named; raw
         // P-256 installs the pinned reviewed one, which is not that address.
         const authorityModule =
-          kind === "p256" || kind === "webauthn" ? pinnedValidatorModule(kind) : validator;
+          kind === "p256" || kind === "webauthn" || kind === "weighted-ecdsa"
+            ? pinnedValidatorModule(kind)
+            : validator;
         expect(kind === "p256" ? authorityModule !== validator : true).toBe(true);
         expect(operator.policy).toBeNull();
         expect(runtime.authorityModule).toBe(authorityModule);

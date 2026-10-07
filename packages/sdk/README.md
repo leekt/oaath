@@ -323,6 +323,37 @@ chain is not implied. Other root validators fail with `kernel_runtime_binding_mi
 After binding, the same key approves `approveKernelPermission`; the owner runtime
 signs revocations prepared with `encodeKernelPermissionUninstallCalls` from
 `@oaath/protocol`, as well as ordinary owner operations.
+Weighted Kernel v4 roots use the reviewed local `WeightedECDSAValidatorV09` and
+`WeightedECDSASigner` from plugin commit `a267d794`:
+
+```ts
+const key = kernelKey({
+  kind: "weighted-ecdsa",
+  guardians: [{ address: alice.address, weight: 1 }, { address: bob.address, weight: 2 },
+    { address: carol.address, weight: 1 }],
+  threshold: 3,
+  signers: [alice, bob], // Digest-signing accounts or caller-owned signing capabilities.
+});
+const runtime = createKernelRuntime({ deployment, operator: ownerOperator({ key }), reads });
+const account = await runtime.bindAccount({ address });
+```
+
+The complete guardian configuration is separate from the participating quorum.
+There may be 1–32 distinct guardians; weights and threshold are positive uint24s.
+Signers are captured and sorted once, and must meet threshold before any signature
+is requested. Plain `key.sign(hash)` collects the sorted ERC-1271 quorum used by
+`approveKernelPermission`. `runtime.signOperation(prepared)` instead collects the
+contract's proposal/final signatures, binding the full operation and configuration
+epoch. Bind again after reload or a configuration change. An unreadable or changed
+configuration fails before requesting signatures; no signing path submits or retries.
+The same key works through `sessionOperator`; an enable operation may use a proven
+absent signer configuration only when its packages install that exact key.
+Supply gas for the full quorum: the estimation placeholder contains only a final
+signature, avoiding the contract's non-guardian proposal revert. The module pins
+identify reproducible CREATE2 inputs, not public-chain deployment evidence. These
+modules require Kernel v4 / EntryPoint 0.9. Weighted profiles are Kernel API keys;
+the protocol's hosted/phone Grant credential schema remains ECDSA, P-256 and WebAuthn.
+
 `sequence` is the current EntryPoint nonce sequence for this account and key;
 `gas` contains canonical decimal strings. The low-level prepared-operation
 schema calls its context label `grantId`; no Grant is created or needed here.

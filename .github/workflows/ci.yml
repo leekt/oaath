@@ -69,6 +69,7 @@ jobs:
       - run: bun run format:check
       - run: bun run --filter @oaath/sdk check:rate-limit-artifact
       - run: bun run --filter @oaath/contracts webauthn:check
+      - run: bun run --filter @oaath/contracts weighted:check
       - run: bun run --filter @oaath/sdk test:anvil
       - run: bun run --filter @oaath/testing test:anvil
       - name: Phone-owned service workflow
@@ -87,6 +88,7 @@ jobs:
       - run: bun run smoke:protocol
       - run: bun run smoke:cetane
       - run: bun run smoke:kernel-import
+      - run: bun run smoke:weighted-root
       - run: bun run smoke:passkey
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome

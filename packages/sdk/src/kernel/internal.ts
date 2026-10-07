@@ -19,6 +19,7 @@ import {
   type KernelBuiltInKeyKind,
   type KernelCustomKeyKind,
   type KernelRuntimeErrorCode,
+  type KeyOperationContext,
   type KeyProfile,
   OaathKernelRuntimeError,
 } from "./types.js";
@@ -149,7 +150,9 @@ export const KEY_PROFILE_KEYS: readonly string[] = Object.freeze([
  * modules from the pinned registry and may not carry caller-bound ones.
  */
 export function isBuiltInKeyKind(value: unknown): value is KernelBuiltInKeyKind {
-  return value === "ecdsa" || value === "p256" || value === "webauthn";
+  return (
+    value === "ecdsa" || value === "p256" || value === "webauthn" || value === "weighted-ecdsa"
+  );
 }
 
 /** True for one consumer-authored kind: `custom:` plus a bounded slug. */
@@ -206,12 +209,16 @@ export function captureKeyProfile(value: unknown): Readonly<KeyProfile> {
     "Kernel key profile verify capability",
   );
 
-  async function verify(hash: `0x${string}`, signature: `0x${string}`): Promise<boolean> {
+  async function verify(
+    hash: `0x${string}`,
+    signature: `0x${string}`,
+    context?: Readonly<KeyOperationContext>,
+  ): Promise<boolean> {
     if (!isHash(hash) || typeof signature !== "string") return false;
     const lowered = signature.toLowerCase();
     if (!isBytes(lowered)) return false;
     try {
-      return (await capabilityVerify(hash, lowered)) === true;
+      return (await capabilityVerify(hash, lowered, context)) === true;
     } catch {
       return false;
     }
@@ -226,16 +233,23 @@ export function captureKeyProfile(value: unknown): Readonly<KeyProfile> {
       record.resolveValidator,
       "Kernel key profile validator resolution",
     ),
-    async sign(hash: `0x${string}`): Promise<`0x${string}`> {
+    async sign(
+      hash: `0x${string}`,
+      context?: Readonly<KeyOperationContext>,
+    ): Promise<`0x${string}`> {
       if (!isHash(hash)) return inputInvalid("Kernel key profile signing hash is invalid");
-      const produced = await invokeCapability(sign, hash, "Kernel key signing failed");
+      const produced = await invokeCapability(
+        () => sign(hash, context),
+        undefined,
+        "Kernel key signing failed",
+      );
       if (typeof produced !== "string" || !isBytes(produced.toLowerCase()) || produced === "0x") {
         return runtimeFail("kernel_runtime_signature_invalid", "Kernel key signature is invalid");
       }
       const signature = produced.toLowerCase() as `0x${string}`;
       // Normalize-then-verify: the exact bytes that will be submitted are the
       // bytes verified against the bound public material.
-      if (!(await verify(hash, signature))) {
+      if (!(await verify(hash, signature, context))) {
         return runtimeFail(
           "kernel_runtime_signature_invalid",
           "Kernel key signature does not verify against the bound public material",

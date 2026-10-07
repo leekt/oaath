@@ -44,6 +44,11 @@ export {
   KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "./kernel/deployment/v4-artifacts.js";
 
+import {
+  readWeightedConfiguration,
+  type WeightedConfigurationRead,
+} from "./kernel/deployment/weighted.js";
+
 import { type KernelRuntimeErrorCode, OaathKernelRuntimeError } from "./kernel/types.js";
 import {
   type PreparedPaymaster,
@@ -213,6 +218,7 @@ export interface KernelValidityTimeRange {
 }
 
 export type KernelV4AccountReadRequest =
+  | Readonly<WeightedConfigurationRead>
   | Readonly<{ type: "chain_id"; chainId: number }>
   | Readonly<{
       type: "code";
@@ -760,6 +766,8 @@ export function createKernelV4Reads(client: KernelV4ReadClient): KernelV4Account
   return Object.freeze({
     async read(request: KernelV4AccountReadRequest): Promise<unknown> {
       if (request.type === "chain_id") return client.getChainId();
+      if (request.type === "kernel_weighted_configuration")
+        return readWeightedConfiguration(client, request);
       if (request.type === "code") {
         return (await client.getCode({ address: request.address })) ?? "0x";
       }

@@ -57,6 +57,13 @@ const customSigner = `0x${"33".repeat(20)}` as const;
 /** Diagnosis and composition never sign here, so the signing capabilities are unused. */
 const keyProfiles: Readonly<Record<KernelBuiltInKeyKind, () => Readonly<KeyProfile>>> =
   Object.freeze({
+    "weighted-ecdsa": () =>
+      kernelKey({
+        kind: "weighted-ecdsa",
+        guardians: [{ address: ecdsaAccount.address, weight: 1 }],
+        threshold: 1,
+        signers: [ecdsaAccount],
+      }),
     ecdsa: () => kernelKey({ account: ecdsaAccount, validator }),
     p256: () => kernelKey({ credential: p256Credential, sign: () => Promise.resolve("0x") }),
     webauthn: () =>
@@ -108,6 +115,14 @@ const EXPECTED_FACTS: Readonly<Record<KernelCapability, Expectation>> = Object.f
   // Root P-256 authority is the phone's Secure Enclave key holding the account:
   // one pinned reviewed validator, chain-independent like every other pin.
   owner_p256: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
+  "owner_weighted-ecdsa": Object.freeze({
+    status: "available",
+    evidence: "pinned_reviewed_module",
+  }),
+  "session_weighted-ecdsa": Object.freeze({
+    status: "available",
+    evidence: "pinned_reviewed_module",
+  }),
   owner_webauthn: Object.freeze({ status: "available", evidence: "pinned_reviewed_module" }),
   // A consumer-authored kind resolves no pinned module on either axis, so both
   // its axes are available on caller-bound evidence alone: the validator and
@@ -138,6 +153,8 @@ const capabilities = [
   "owner_ecdsa",
   "owner_p256",
   "owner_webauthn",
+  "owner_weighted-ecdsa",
+  "session_weighted-ecdsa",
   "owner_custom",
   "session_ecdsa",
   "session_webauthn",
@@ -167,6 +184,10 @@ function operatorFor(capability: KernelCapability): Readonly<OperatorProfile> {
       return ownerOperator({ key: keyProfiles.ecdsa() });
     case "owner_p256":
       return ownerOperator({ key: keyProfiles.p256() });
+    case "owner_weighted-ecdsa":
+      return ownerOperator({ key: keyProfiles["weighted-ecdsa"]() });
+    case "session_weighted-ecdsa":
+      return sessionOperator({ key: keyProfiles["weighted-ecdsa"](), policies: [scope] });
     case "owner_webauthn":
       return ownerOperator({ key: keyProfiles.webauthn() });
     case "owner_custom":

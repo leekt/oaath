@@ -17,7 +17,9 @@
     "lint": "forge fmt --check && node scripts/artifact.mjs --check",
     "test": "forge test",
     "webauthn:check": "node scripts/webauthn-artifact.mjs --check",
-    "webauthn:generate": "node scripts/webauthn-artifact.mjs --write"
+    "webauthn:generate": "node scripts/webauthn-artifact.mjs --write",
+    "weighted:check": "node scripts/weighted-artifact.mjs --check",
+    "weighted:generate": "node scripts/weighted-artifact.mjs --write"
   },
   "devDependencies": {
     "viem": "2.55.8"

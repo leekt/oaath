@@ -71,6 +71,7 @@ export type { KernelKeyInput, KernelPublicKeyInput } from "./kernel/key/kernel-k
 export { kernelKey } from "./kernel/key/kernel-key.js";
 export type { P256KeyInput, P256SignRequest } from "./kernel/key/p256.js";
 export type { WebAuthnAssertionRequest, WebAuthnKeyInput } from "./kernel/key/webauthn.js";
+export type { WeightedEcdsaGuardian, WeightedEcdsaKeyInput } from "./kernel/key/weighted-ecdsa.js";
 export {
   OAATH_KERNEL_RATE_LIMIT_POLICY,
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
@@ -190,6 +191,7 @@ export type {
   KernelUserOperationGas,
   KernelValidation,
   KernelValidityTimeRange,
+  KeyOperationContext,
   KeyProfile,
   OperatorProfile,
   SelectedCreateKernelRuntimeInput as CreateKernelRuntimeInput,

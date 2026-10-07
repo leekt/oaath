@@ -67,7 +67,7 @@ export class OaathKernelRuntimeError extends Error {
 }
 
 /** The credential kinds this SDK authors, each with its own reviewed modules. */
-export type KernelBuiltInKeyKind = "ecdsa" | "p256" | "webauthn";
+export type KernelBuiltInKeyKind = "ecdsa" | "p256" | "webauthn" | "weighted-ecdsa";
 /**
  * One consumer-authored credential kind, bounded to `custom:` followed by 1 to
  * 32 lowercase alphanumeric or hyphen characters. The prefix is what keeps a
@@ -92,6 +92,14 @@ export type KernelOperatorAuthority = "owner" | "session";
  * locally: a produced signature must verify against this profile's own bound
  * public material before it is ever wrapped in an authority envelope.
  */
+/** Runtime-proven context for modules that bind signatures to configuration epochs. */
+export interface KeyOperationContext {
+  readonly operation: Readonly<PreparedUserOperation>;
+  readonly module: `0x${string}`;
+  readonly permissionId: `0x${string}` | null;
+  readonly configurationEpoch: string;
+}
+
 export interface KeyProfile {
   readonly kind: KernelKeyKind;
   /** Exact ERC-7579 validator moduleData that installs this key. */
@@ -118,9 +126,16 @@ export interface KeyProfile {
   /** Fixed-width placeholder signature for gas estimation; never authorizes anything. */
   readonly dummySignature: `0x${string}`;
   /** Signs a 32-byte hash and returns normalized Kernel-native signature bytes. */
-  readonly sign: (hash: `0x${string}`) => Promise<`0x${string}`>;
+  readonly sign: (
+    hash: `0x${string}`,
+    context?: Readonly<KeyOperationContext>,
+  ) => Promise<`0x${string}`>;
   /** Local verification of normalized signature bytes against this key's public material. */
-  readonly verify: (hash: `0x${string}`, signature: `0x${string}`) => Promise<boolean>;
+  readonly verify: (
+    hash: `0x${string}`,
+    signature: `0x${string}`,
+    context?: Readonly<KeyOperationContext>,
+  ) => Promise<boolean>;
 }
 
 /**
