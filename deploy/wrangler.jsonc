@@ -1,0 +1,21 @@
+{
+	"name": "oaath-dca",
+	"account_id": "d6b72c2632db34a5e1ba0bd3a3bad5f5",
+	"main": "worker.ts",
+	"compatibility_date": "2026-10-07",
+	"workers_dev": false,
+	"preview_urls": false,
+	"routes": [{ "pattern": "dca.taek.tech", "custom_domain": true }],
+	"vpc_services": [
+		{
+			"binding": "DCA_API",
+			"service_id": "01a117ad-40e9-7e12-af85-4da527557b6c"
+		}
+	],
+	"assets": {
+		"directory": "../dist/hosted",
+		"binding": "ASSETS",
+		"html_handling": "none",
+		"run_worker_first": true
+	}
+}

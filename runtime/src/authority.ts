@@ -131,13 +131,14 @@ export async function authorize(id: string) {
 		const predicted = String(
 			await read(config.factory, factory.abi, "predict", [values]),
 		).toLowerCase();
+		const consentOrigin = config.consentOrigin ?? config.origin;
 		const bindingInput: OaathBindingInput = {
-			issuer: "https://automation.oaath.local",
+			issuer: consentOrigin,
 			applicationId: p.app_id,
 			applicationName: "Automation",
 			clientId: p.app_id,
-			origin: "https://automation.oaath.local",
-			redirectUri: "https://automation.oaath.local/callback",
+			origin: consentOrigin,
+			redirectUri: `${consentOrigin}/callback`,
 			deviceId: id.slice(2),
 			userHandle: p.account,
 			context: {

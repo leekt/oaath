@@ -168,7 +168,7 @@ React and the supplied shadcn/ui primitives provide the interaction foundation. 
 - Open content regions with a single tonal panel for supporting context.
 - Readable body copy, explicit labels, and technical detail behind disclosures.
 
-This record is derived from `sdk/src/styles.css`, `sdk/src/react.tsx`, the supplied `sdk/src/ui` components, the compiled `sdk/dist/styles.css`, and the DCA example shell. The four creation/review screenshots in `.impeccable/review` confirm the desktop and mobile composition. The interface ships no raster imagery; those screenshots are review evidence.
+This record is derived from `sdk/src/styles.css`, `sdk/src/react.tsx`, the supplied `sdk/src/ui` components, the compiled `sdk/dist/styles.css`, and the DCA example shells. The hosted wallet entry in `examples/dca/hosted/app.tsx` and its generated shell styles in `deploy/build.mjs` extend the same system without adding a new token palette. Creation/review and hosted desktop/mobile captures in `.impeccable/review` document the composition. The hosted surface brief records the review verdict and evidence limits. The interface ships no raster imagery; screenshots are review evidence.
 
 ## Colors
 
@@ -210,6 +210,8 @@ The DCA shell centers the header, main content, and footer in a maximum-width co
 
 The creator uses two flexible tracks in a 1.25:1 ratio with a generous column gap (64px). This is the implemented ratio, rather than the provisional two-thirds description in the surface brief. Main content remains open; the supporting panel aligns to its top. The main heading region leaves a clear pause before the task. Activity is separated by a horizontal rule, a top inset (32px), and a section gap (64px).
 
+The hosted wallet entry reuses the two-track composition for the introductory copy and testnet statement. After connection, a full-width account region holds balances, funding details and setup state above the supplied creator, separated by a fine rule. Its mobile columns use a 32px gap, and the connected heading/action row can wrap. The public testnet label stays in the quiet environment position in the header.
+
 At the creator breakpoint (720px and below), the main grid becomes one column with a smaller gap (28px), and the statement/action panel follows the main content. Shell insets reduce to 22px; the header reduces to 78px. The field pair stays two equal columns with a 14px gap. Activity spacing reduces to 40px. Title rows and activity buttons may wrap. Values can use at most 56% of a statement row, and history tables scroll inside their own wrapper.
 
 Use the frontmatter spacing steps for form rhythm and component interiors. Keep section-scale whitespace larger than field-scale whitespace; do not fill it with additional panels. The shared dialog switches its footer to a horizontal arrangement and gains rounded corners at the library breakpoint (640px).
@@ -242,11 +244,15 @@ The pale supporting panel groups a live purchase statement, or the next owner ac
 
 Moving into review, another instruction, status, or back to creation focuses the page heading programmatically. The heading is focusable without entering the normal Tab order. The selected view enters with a brief opacity animation (0.92 to 1 over 180ms, ease-out), keyed by the selected instruction and review commitment. The panel also has a background-color transition (200ms, ease-out). The creator's reduced-motion media rule suppresses its descendant transitions and animations. Preserve these behaviors when extending the flow; do not add motion to financial values.
 
+The hosted login transition waits for account data before focusing the account-setup heading or, for an already deployed account, the creator heading. Disconnect returns focus to the wallet-entry heading. The connected account heading becomes subordinate when the creator is present, preserving one primary task heading.
+
 ### Navigation, disclosures, and history
 
 The example shell uses a compact text brand link and quiet environment text. Returning to the list uses a ghost action with a left arrow. Technical addresses and onchain terms use a native disclosure with a labeled summary, line icon, and ruled boundaries. Its technical values wrap anywhere; serialized data wraps inside a bounded scroll region (260px maximum height).
 
 Saved automations are full-width clickable rows, with a thin lower divider, descriptive secondary text, explicit state, and a pale hover wash. Execution history uses a semantic table with fine horizontal rules and horizontal overflow when needed. Empty states are short text in the normal reading flow.
+
+The hosted account region keeps funding addresses behind a native disclosure and shows balances in ordinary readable text. Once account setup is requested, persistent status text replaces the setup button; an available transaction hash adds a labeled explorer link. Refresh account remains the explicit confirmation check. Retain this state across reloads, and do not offer another setup send while its result is unresolved.
 
 ### Messages and cancellation
 

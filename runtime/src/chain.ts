@@ -20,7 +20,7 @@ export const executor = JSON.parse(
 	),
 );
 export const stats = { methods: {} as Record<string, number>, submissions: 0 };
-export const budget = new RpcBudget();
+export const budget = new RpcBudget(config.rpcBudget ?? 20000);
 const upstream = http(config.rpcUrl, { timeout: 8000 });
 export async function rpc(
 	method: string,

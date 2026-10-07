@@ -21,6 +21,9 @@
     "runtime/src/**/*.ts",
     "scripts/**/*.ts",
     "sdk/src/**/*.tsx",
-    "examples/dca/src/**/*.tsx"
+    "examples/dca/src/**/*.tsx",
+    "examples/dca/hosted/**/*.ts",
+    "examples/dca/hosted/**/*.tsx",
+    "deploy/**/*.ts"
   ]
 }
