@@ -13,6 +13,7 @@ import {
   hashGrantPolicy,
   hashOwnerSigningRequest,
   hashPermissionRequest,
+  isKernelExistingAccountProfile,
   type PermissionRequest,
   parseKernelAccountProfile,
   parseOperatorCredentialProfile,
@@ -27,6 +28,7 @@ import {
   type KernelPermissionDecision,
   kernelKey,
   prepareDerivedAccountPermissionApproval,
+  prepareKernelPermissionApproval,
 } from "@oaath/sdk/kernel";
 import type { GrantDetail, PortalAccount, PrepareGrantResponse } from "./api.js";
 import { assertionFields, bytesFromBase64Url, findWallet } from "./session.js";
@@ -135,6 +137,21 @@ export async function rootKey(signer: RememberedSigner, typedData: unknown) {
   return refuse("root-unsupported");
 }
 
+/** The SDK's reads-backed preparation for an imported (existing) account. */
+async function prepareImportedAccountApproval(request: Readonly<PermissionRequest>) {
+  // Module discovery and chain reads load only when an imported account signs.
+  const { IMPORT_CHAIN_ID, importChainReads } = await import("./account-import.js");
+  try {
+    return await prepareKernelPermissionApproval({
+      request,
+      chainId: IMPORT_CHAIN_ID,
+      reads: importChainReads(`${location.origin}/rpc/${IMPORT_CHAIN_ID}`),
+    });
+  } catch {
+    return refuse("account-unreadable");
+  }
+}
+
 /**
  * Prepares the approval with the SDK, refuses unless the relay's signing
  * request is identical, then asks the root for its one signature. Returns the
@@ -150,11 +167,15 @@ export async function signGrantApproval(input: {
 }): Promise<string> {
   const { request, prepared, chainId, signer, account } = input;
   if (chainId === undefined) return refuse("request-mismatch");
-  const approval = prepareDerivedAccountPermissionApproval({
-    request,
-    chainId,
-    account: account.address,
-  });
+  // An imported account is bound on chain first: the SDK proves its root owner
+  // through the portal's budgeted read proxy. A derived one needs no read.
+  const approval = isKernelExistingAccountProfile(request.logicalAccount)
+    ? await prepareImportedAccountApproval(request)
+    : prepareDerivedAccountPermissionApproval({
+        request,
+        chainId,
+        account: account.address,
+      });
   if (
     approval.signingRequest.expectedDigest !== prepared.signing_request.expectedDigest ||
     hashOwnerSigningRequest(approval.signingRequest) !==

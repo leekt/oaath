@@ -1505,6 +1505,77 @@ describe("importing an existing account through the portal's chain-read proxy", 
     await retry.close();
     await again.page.close();
     await dappPage.page.close();
+
+    // Grants on the imported account: the portal prepares through the SDK's
+    // reads-backed binding over its /rpc proxy, and signs only if the relay's
+    // install digest is the same.
+    const owner = owned.toLowerCase();
+    const root = await browser.newPage();
+    await root.setViewport({ width: 390, height: 844 });
+    await installWallet(root);
+    await root.goto(`${portal}/accounts`);
+    await click(root, "::-p-text(E2E Wallet)");
+    await click(root, `button[aria-label='Smart account ${owner}']`);
+    await root.locator("button::-p-text(New policy)").click();
+    await root.type("#policy-name", "Imported payments");
+    await root.type(".policy-target", `0x${"ab".repeat(20)}`);
+    await click(root, "::-p-text(Save policy)");
+    await root.waitForSelector("button[aria-label='Edit Imported payments']");
+
+    const device = await browser.createBrowserContext();
+    const memberDapp = await openDapp(dapp, "#login:not([disabled])", device);
+    const member = await startLogin(memberDapp);
+    await addAuthenticator(member);
+    await click(member, "::-p-text(Add signer)");
+    await click(member, "::-p-text(New passkey)");
+    await member.waitForSelector("::-p-text(This signer has no account yet.)");
+    await click(member, "::-p-text(Link to an existing account)");
+    await member.type("#link-account", owner);
+    await click(member, "::-p-text(Request access)");
+    const shared = await member.waitForSelector("#link-url");
+    const linkUrl = (await shared?.evaluate((node) => node.textContent)) ?? "";
+    await root.goto(linkUrl);
+    await click(root, "::-p-text(E2E Wallet)");
+    await click(root, "::-p-text(spend within “Imported payments”)");
+    let before = walletSignatures;
+    await click(root, "::-p-text(Approve and sign)");
+    await root.waitForSelector("::-p-text(Signer added)");
+    expect(walletSignatures).toBe(before + 1);
+    await click(member, `button[aria-label='Smart account ${owner}, Signer']`);
+    expect(await outcome(memberDapp.page)).toBe("signed-in");
+    const reader = await device.newPage();
+    await reader.goto(`${portal}/`);
+    const linkId = linkUrl.split("/").pop() ?? "";
+    const memberGrant = await reader.evaluate(async (id: string) => {
+      const response = await fetch(`/portal/grants/${id}`);
+      return (await response.json()) as {
+        status: string;
+        permission_request: { logicalAccount: { address?: string } };
+        enable: { account: string };
+      };
+    }, linkId);
+    expect(memberGrant.status).toBe("approved");
+    expect(memberGrant.permission_request.logicalAccount.address).toBe(owner);
+    expect(memberGrant.enable.account).toBe(owner);
+    await device.close();
+
+    // A dapp's oaath_grant on the imported account.
+    const grantDapp = await browser.newPage();
+    await grantDapp.goto(`${dapp}/`);
+    const pushed = await pushGrant(grantDapp);
+    const review = await openGrant(pushed);
+    await click(review, "::-p-text(E2E Wallet)");
+    await click(review, `button[aria-label='Smart account ${owner}, Owner']`);
+    await review.waitForSelector("::-p-text(Approve and sign):not([disabled])");
+    before = walletSignatures;
+    const redeemed = await approveAndRedeem(grantDapp, review, pushed);
+    expect(walletSignatures).toBe(before + 1);
+    expect(redeemed.status).toBe(200);
+    expect(redeemed.grant.enable.account).toBe(owner);
+    expect(redeemed.read.status).toBe("approved");
+    await review.close();
+    await grantDapp.close();
+    await root.close();
   });
 });
 

@@ -80,6 +80,8 @@ function failure(error: unknown): string {
     case "request-invalid":
     case "digest-mismatch":
       return "This request does not match what the app asked for, so OAAth will not sign it.";
+    case "account-unreadable":
+      return "The account could not be read on Arbitrum Sepolia, so nothing was signed. Try again.";
     case "wallet-unavailable":
       return "Your wallet is not available in this browser. Open it and try again.";
     case "wallet-account-mismatch":
