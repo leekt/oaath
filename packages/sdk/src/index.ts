@@ -50,7 +50,12 @@ export type {
   OaathWalletApprovals,
   OaathWalletOptions,
 } from "./client/local-realm.js";
-export type { OaathLogin, OaathLoginOptions, OaathLoginSigner } from "./client/oauth-login.js";
+export type {
+  OaathAuthorizationLauncher,
+  OaathLogin,
+  OaathLoginOptions,
+  OaathLoginSigner,
+} from "./client/oauth-login.js";
 export { completeOAAthLogin, loginWithOAAth } from "./client/oauth-login.js";
 export type { OaathOAuthApprovals, OaathOAuthOptions } from "./client/oauth-realm.js";
 export type {

@@ -2,17 +2,17 @@
  * Real-Chromium proof for the packed MV3 extension.
  *
  * The actual example extension is copied into a clean consumer and its worker
- * is bundled against packed @oaath tarballs. One loopback-only relay and an
- * owned deterministic chain fixture let the page submit exactly once. The
- * test then force-closes Chrome's extension service worker, asks the still-open
- * dapp for status, and requires a distinct worker lifetime to recover the same
- * durable ID without another submission.
+ * is bundled against packed @oaath tarballs. Pairing runs the extension's real
+ * `chrome.identity.launchWebAuthFlow` against a loopback OAAth issuer whose
+ * account root approves at once; the dapp then submits exactly once through a
+ * local Anvil chain and its fixture bundler. The test force-closes Chrome's
+ * extension service worker, asks the still-open dapp for status, and requires
+ * a distinct worker lifetime to recover the same durable ID without another
+ * submission.
  *
- * Evidence limit: the chain is an owned fixture, not Anvil. This proves the
- * packed extension, real IndexedDB, MV3 worker death/wake, durable status, and
- * no-resubmission invariant. Local Anvil execution, retention time advancement,
- * unrelated-log filtering, and the broader origin-isolation matrix have their
- * own focused evidence.
+ * Evidence limit: the issuer is a loopback stand-in for the portal (it signs
+ * with the SDK's own approval preparation); the portal and relay have their own
+ * end-to-end proof.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -46,45 +46,27 @@ const extensionFiles = Object.fromEntries(
   ),
 );
 
-// The reusable example fixture owns a fixed narrated clock. The extension uses
-// its production Date.now clock, so the clean-consumer copy substitutes only
-// that one evidence timestamp and otherwise runs the repository-owned fixture.
-const fakeChainSource = await readFile(
-  new URL("../examples/browser/fake-chain.mjs", import.meta.url),
-  "utf8",
-);
-const chromiumChainSource = fakeChainSource.replace(
-  "observedAt: 1_800_000_000",
-  "observedAt: Math.floor(Date.now() / 1_000)",
-);
-assert(chromiumChainSource !== fakeChainSource, "fake chain clock substitution did not apply");
-
 const SMOKE = String.raw`
-import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
+import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import {
-  hashPermissionRequest,
-  OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
-  OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-  OAATH_PERMISSION_DECISION_VERSION,
-  parseGrantPolicy,
-} from "@oaath/protocol";
-import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
-import { approveKernelPermission, createKernelRuntime, kernelDeployment, kernelKey, kernelPermissionCapabilityHash, ownerOperator, sessionOperator } from "@oaath/sdk/kernel";
-import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
+  createKernelRuntime,
+  ECDSA_VALIDATOR,
+  kernelDeployment,
+  kernelKey,
+  ownerOperator,
+} from "@oaath/sdk/kernel";
+import { createLocalOAuthIssuer, createLocalOwnerAnvilFixture } from "@oaath/testing/anvil";
 import puppeteer from "puppeteer-core";
 import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
-import { createFakeChain } from "./fake-chain.mjs";
 
 const CHAIN_ID = 421_614;
 const BUNDLE_ID = "chromium-mv3-restart";
 const TARGET = "0x" + "44".repeat(20);
 const SELECTOR = "0xa9059cbb";
 const CALL_DATA = SELECTOR + "0".repeat(128);
-const TRANSACTION_HASH = "0x" + "44".repeat(32);
-const OWNER_TOKEN = randomUUID();
 const OWNER_ACCOUNT = privateKeyToAccount(generatePrivateKey());
 const TIMEOUT_MS = 20_000;
 const GRANT_LIFETIME_SECONDS = 1_800;
@@ -176,240 +158,67 @@ function destroyedTarget(browser, target) {
   );
 }
 
-const chain = createFakeChain(CHAIN_ID);
-const relayStore = createMemoryRelayStore();
-const counts = { approvals: 0, observations: 0, submissions: 0 };
-let relay = null;
-let approveRequest = null;
-let serviceOrigin = null;
-
-const server = createServer(async (incoming, outgoing) => {
-  try {
-    const requestUrl = new URL(incoming.url ?? "/", "http://127.0.0.1");
-    if (requestUrl.pathname === "/app") {
-      outgoing.writeHead(200, {
-        "cache-control": "no-store",
-        "content-type": "text/html; charset=utf-8",
-      });
-      outgoing.end(
-        "<!doctype html><html><head><meta charset=utf-8><title>OAAth MV3 smoke</title></head>" +
-          "<body><main id=ready>ready</main></body></html>",
-      );
-      return;
-    }
-    if (relay === null || serviceOrigin === null) fail("relay is not ready");
-    const chunks = [];
-    for await (const chunk of incoming) chunks.push(chunk);
-    const body = Buffer.concat(chunks);
-    const headers = new Headers();
-    for (let index = 0; index < incoming.rawHeaders.length; index += 2) {
-      const name = incoming.rawHeaders[index];
-      const value = incoming.rawHeaders[index + 1];
-      if (name !== undefined && value !== undefined) headers.append(name, value);
-    }
-    const request = new Request(serviceOrigin + requestUrl.pathname + requestUrl.search, {
-      method: incoming.method,
-      headers,
-      ...(body.length === 0 ? {} : { body }),
-    });
-    const response = await relay(request);
-    if (
-      request.method === "POST" &&
-      requestUrl.pathname === "/authorization/requests" &&
-      response.status === 201
-    ) {
-      const created = await response.clone().json();
-      if (typeof created.requestId !== "string" || approveRequest === null) {
-        fail("authorization request was not capturable");
-      }
-      await approveRequest(created.requestId);
-    }
-    outgoing.writeHead(response.status, Object.fromEntries(response.headers));
-    outgoing.end(Buffer.from(await response.arrayBuffer()));
-  } catch {
-    outgoing.writeHead(500, { "content-type": "application/json" });
-    outgoing.end('{"error":{"code":"smoke_adapter_failed"}}');
-  }
+// The dapp: one plain page on its own loopback origin.
+const server = createServer((incoming, outgoing) => {
+  outgoing.writeHead(200, {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+  });
+  outgoing.end(
+    "<!doctype html><html><head><meta charset=utf-8><title>OAAth MV3 smoke</title></head>" +
+      "<body><main id=ready>ready</main></body></html>",
+  );
 });
 
 let browser = null;
+let chain = null;
+let issuer = null;
 try {
   await import("./build.mjs");
   await listen(server);
   const address = server.address();
   if (address === null || typeof address === "string") fail("loopback server has no port");
-  serviceOrigin = "http://127.0.0.1:" + address.port;
-  const redirectUri = serviceOrigin + "/callback";
+  const dappOrigin = "http://127.0.0.1:" + address.port;
 
-  const accountProfile = Object.freeze({
-    version: OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
-    kind: "kernel",
-    accountIndex: "0",
-    kernelVersion: "0.4.0",
-    factoryRoute: "kernel_factory",
-    entryPoint: Object.freeze({ version: "0.9" }),
-    ownerCredential: Object.freeze({
-      version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
-      kind: "ecdsa",
-      address: OWNER_ACCOUNT.address.toLowerCase(),
+  // A local chain with the pinned Kernel stack and a handleOps fixture bundler.
+  chain = await createLocalOwnerAnvilFixture({ chainId: CHAIN_ID, kernelVersion: "0.4.0" });
+  const descriptor = (await chain.chainDescriptors())[CHAIN_ID];
+  const rpcUrl = descriptor.publicRpcUrls[0];
+  const bundlerUrl = descriptor.bundlerUrl;
+  const credential = {
+    version: "oaath.owner-credential-profile/v1",
+    kind: "ecdsa",
+    address: OWNER_ACCOUNT.address.toLowerCase(),
+  };
+  // The root's factory-derived account, read from the chain's own factory.
+  const [ports] = createCetaneChainPorts({ [CHAIN_ID]: { publicRpcUrls: [rpcUrl] } });
+  const ownerRuntime = createKernelRuntime({
+    deployment: kernelDeployment({ chainId: CHAIN_ID }),
+    operator: ownerOperator({ key: kernelKey({ credential, validator: ECDSA_VALIDATOR }) }),
+    reads: ports.reads,
+  });
+  const rootAccount = (
+    await ownerRuntime.bindAccount({ accountIndex: "0", initialPackages: ownerRuntime.packages })
+  ).account;
+  const funded = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "anvil_setBalance",
+      params: [rootAccount, "0xde0b6b3a7640000"],
     }),
   });
-
-  const chainPort = {
+  expect(funded.ok, "the local account could not be funded");
+  issuer = await createLocalOAuthIssuer({
     chainId: CHAIN_ID,
-    reads: (request) => chain.capability.reads.read(request),
-    async observation(request) {
-      counts.observations += 1;
-      return chain.capability.observation.read(request);
+    account: rootAccount,
+    root: {
+      credential,
+      key: kernelKey({ account: OWNER_ACCOUNT, validator: ECDSA_VALIDATOR }),
     },
-    bundler: (request) =>
-      chain.capability.routes
-        .find((entry) => entry.kind === "erc4337-bundler")
-        .bundler.probe(request),
-    quote: (request) => chain.capability.quote(request),
-    async submission(request) {
-      counts.submissions += 1;
-      if (counts.submissions !== 1) fail("a second submission reached the chain fixture");
-      const session = await chain.capability.submission.open(request);
-      try {
-        return await session.send();
-      } finally {
-        await session.close();
-      }
-    },
-    usage:
-      chain.capability.usage === null
-        ? null
-        : (request) => chain.capability.usage(request),
-    feePayer:
-      chain.capability.routes.find((entry) => entry.kind === "erc4337-handleops")?.feePayer ??
-      null,
-    staticPaymasterConfigurationHash:
-      chain.capability.sponsorship?.kind === "erc7902-static"
-        ? chain.capability.sponsorship.configurationHash
-        : null,
-  };
-
-  relay = createRelayHandler({
-    ownerRouting: { async resolveOwner() { return { ownerDeviceId: "chromium-phone", ownerSubject: "chromium-owner" }; } },
-    store: relayStore,
-    authentication: {
-      async authenticate(request) {
-        const header = request.headers.get("authorization") ?? "";
-        if (header === "Bearer " + OWNER_TOKEN) {
-          return {
-            role: "owner",
-            clientId: "owner-console",
-            subject: "chromium-owner",
-            redirectUris: [],
-          };
-        }
-        return {
-          role: "client",
-          clientId: "chromium-client",
-          subject: "chromium-subject",
-          redirectUris: [redirectUri],
-        };
-      },
-    },
-    kms: {
-      async encrypt(plaintext) {
-        return "chromium-smoke-kms:v1:" + Buffer.from(plaintext, "utf8").toString("base64");
-      },
-      async decrypt(reference) {
-        const prefix = "chromium-smoke-kms:v1:";
-        if (!reference.startsWith(prefix)) fail("unknown smoke ciphertext");
-        return Buffer.from(reference.slice(prefix.length), "base64").toString("utf8");
-      },
-    },
-    clock: { now: () => Date.now() },
-    bootstrap: {
-      resolve: async () => ({
-        application: {
-          applicationId: "chromium-app",
-          applicationName: "OAAth Chromium Smoke",
-        },
-        context: {
-          version: "oaath.workspace-account-context/v1",
-          workspaceId: "personal-1",
-          workspaceKind: "personal",
-          accountId: "account-1",
-        },
-        account: accountProfile,
-        ownerValidator: chain.validator,
-        chainIds: [chain.capability.chainId],
-      }),
-    },
-    chains: [chainPort],
   });
-
-  const ownerFetch = async (path, init) => {
-    if (relay === null || serviceOrigin === null) fail("relay is unavailable");
-    const headers = new Headers(init?.headers);
-    headers.set("authorization", "Bearer " + OWNER_TOKEN);
-    return (
-      await relay(
-        new Request(serviceOrigin + path, {
-          ...init,
-          headers,
-        }),
-      )
-    ).json();
-  };
-
-  approveRequest = async (requestId) => {
-    counts.approvals += 1;
-    if (counts.approvals !== 1) fail("owner approval ran more than once");
-    const state = await ownerFetch("/authorization/requests/" + requestId);
-    if (typeof state.requestedScope !== "string") fail("owner review scope is unavailable");
-    const scope = JSON.parse(state.requestedScope);
-    const ownerKey = kernelKey({ account: OWNER_ACCOUNT, validator: chain.validator });
-    const deployment = kernelDeployment({ chainId: CHAIN_ID });
-    const ownerRuntime = createKernelRuntime({
-      deployment,
-      operator: ownerOperator({ key: ownerKey }),
-      reads: chain.capability.reads,
-    });
-    const descriptor = await ownerRuntime.bindAccount({
-      accountIndex: "0",
-      initialPackages: [...ownerRuntime.packages],
-    });
-    const sessionRuntime = createKernelRuntime({
-      deployment,
-      operator: sessionOperator({
-        key: kernelKey({
-          account: { address: scope.operatorCredential.address, sign: async () => "0x" },
-          validator: chain.validator,
-        }),
-        policies: deriveSessionPolicyProfiles(parseGrantPolicy(scope.policy)),
-      }),
-      reads: chain.capability.reads,
-    });
-    const installApproval = await approveKernelPermission({
-      owner: ownerKey,
-      runtime: sessionRuntime,
-      account: descriptor,
-      nonce: "0",
-    });
-    const decided = await ownerFetch("/authorization/requests/" + requestId + "/decision", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        outcome: "approved",
-        artifact: JSON.stringify({
-          version: OAATH_PERMISSION_DECISION_VERSION,
-          kind: "approve",
-          requestId,
-          requestHash: hashPermissionRequest({ ...scope, requestId }),
-          decidedAt: Math.floor(Date.now() / 1_000),
-          approvedPolicy: scope.policy,
-          capabilityHash: kernelPermissionCapabilityHash(installApproval),
-          installApproval,
-        }),
-      }),
-    });
-    if (typeof decided.code !== "string") fail("owner decision was not accepted");
-  };
 
   const executablePath = await chromeExecutable();
   browser = await puppeteer.launch({
@@ -442,7 +251,7 @@ try {
 
   const dapp = await browser.newPage();
   await bounded(
-    dapp.goto(serviceOrigin + "/app", { waitUntil: "domcontentloaded" }),
+    dapp.goto(dappOrigin + "/app", { waitUntil: "domcontentloaded" }),
     "dapp navigation",
   );
   const discovered = await dapp.evaluate(() =>
@@ -470,7 +279,12 @@ try {
   );
   const paired = await popup.evaluate(
     async (input) => {
-      await chrome.storage.local.set({ url: input.url, chain: input.chain });
+      await chrome.storage.local.set({
+        issuer: input.issuer,
+        chain: input.chain,
+        rpcUrl: input.rpcUrl,
+        bundlerUrl: input.bundlerUrl,
+      });
       return chrome.runtime.sendMessage({
         type: "popup",
         command: "pair",
@@ -485,22 +299,25 @@ try {
       });
     },
     {
-      url: serviceOrigin,
+      issuer: issuer.url,
       chain: CHAIN_ID,
-      origin: serviceOrigin,
+      rpcUrl,
+      bundlerUrl,
+      origin: dappOrigin,
       target: TARGET,
       selector: SELECTOR,
       expiresIn: GRANT_LIFETIME_SECONDS,
     },
   );
   if (paired?.ok !== true || paired.result?.state !== "active") {
-    fail("the extension did not pair the dapp");
+    fail("the extension did not pair the dapp: " + JSON.stringify(paired?.error ?? paired));
   }
   const account = paired.result.account;
   if (typeof account !== "string") fail("the paired account is unavailable");
+  expect(account === rootAccount, "the paired account is not the root's account");
   const pairedStatus = await popup.evaluate(
     (origin) => chrome.runtime.sendMessage({ type: "popup", command: "status", origin }),
-    serviceOrigin,
+    dappOrigin,
   );
   const grantExpiresAt = pairedStatus?.result?.expiresAt;
   if (
@@ -527,8 +344,7 @@ try {
     advertisedRange?.status === "experimental" &&
     Object.keys(advertisedRange).sort().join(",") === "status,supported";
   expect(validityAdvertised, "the extension did not advertise exact validity-range support");
-  expect(counts.submissions === 0, "capability discovery submitted an operation");
-  expect(chain.sends.length === 0, "capability discovery reached the chain submission path");
+  expect(chain.bundlerSubmissionCount === 0, "capability discovery submitted an operation");
 
   // The status read exposes the current Grant expiry. Its fixed lifetime
   // recovers the approved lower bound, making this active 300-second interval
@@ -580,7 +396,7 @@ try {
     "#confirmation",
     (element) => element.textContent,
   );
-  expect(confirmationText.includes("origin   " + serviceOrigin), "confirmation lost the origin");
+  expect(confirmationText.includes("origin   " + dappOrigin), "confirmation lost the origin");
   expect(confirmationText.includes("account  " + account), "confirmation lost the account");
   expect(
     confirmationText.includes("chain    0x" + CHAIN_ID.toString(16)),
@@ -596,13 +412,11 @@ try {
       "until    " + validUntil + " seconds (" + validUntilUtc + ")",
     );
   expect(rangePresented, "confirmation lost the exact inclusive validity range");
-  expect(counts.submissions === 0, "the extension submitted before wallet confirmation");
-  expect(chain.sends.length === 0, "the chain received a call before wallet confirmation");
+  expect(chain.bundlerSubmissionCount === 0, "the extension submitted before wallet confirmation");
   await confirmationPage.click("#approve");
   const sent = await bounded(sending, "approved wallet_sendCalls");
   expect(sent?.id === BUNDLE_ID, "wallet_sendCalls returned another ID");
-  expect(counts.submissions === 1, "wallet_sendCalls did not submit exactly once");
-  expect(chain.sends.length === 1, "the chain retained another submission count");
+  expect(chain.bundlerSubmissionCount === 1, "wallet_sendCalls did not submit exactly once");
 
   const targetPredicate = workerTargetFor(extensionId);
   const firstWorkerTarget = await browser.waitForTarget(targetPredicate, { timeout: TIMEOUT_MS });
@@ -613,7 +427,6 @@ try {
   await destroyed;
   expect(!browser.targets().includes(firstWorkerTarget), "the first MV3 worker survived close");
 
-  const observationsBeforeRecovery = counts.observations;
   const nextWorkerTarget = browser.waitForTarget(
     (target) => target !== firstWorkerTarget && targetPredicate(target),
     { timeout: TIMEOUT_MS },
@@ -628,15 +441,10 @@ try {
   expect(status?.status === 200, "recovered status was not confirmed");
   expect(status?.atomic === true, "recovered status lost atomic execution");
   expect(
-    status?.receipts?.[0]?.transactionHash === TRANSACTION_HASH,
-    "recovered status returned another receipt",
+    /^0x[0-9a-f]{64}$/u.test(status?.receipts?.[0]?.transactionHash ?? ""),
+    "recovered status returned no receipt",
   );
-  expect(
-    counts.observations > observationsBeforeRecovery,
-    "recovered status did not observe the exact operation",
-  );
-  expect(counts.submissions === 1, "status recovery submitted another operation");
-  expect(chain.sends.length === 1, "status recovery changed the retained submission");
+  expect(chain.bundlerSubmissionCount === 1, "status recovery submitted another operation");
 
   const duplicate = await dapp.evaluate(async (bundle) => {
     try {
@@ -647,17 +455,16 @@ try {
     }
   }, request);
   expect(duplicate.ok === false && duplicate.code === 5720, "duplicate ID did not return 5720");
-  expect(counts.submissions === 1, "duplicate ID submitted another operation");
-  expect(chain.sends.length === 1, "duplicate ID changed exact submission history");
-  expect(counts.approvals === 1, "worker recovery requested owner approval again");
+  expect(chain.bundlerSubmissionCount === 1, "duplicate ID submitted another operation");
+  expect(issuer.approvalCount === 1, "worker recovery requested owner approval again");
 
   process.stdout.write(
     "\n" +
       JSON.stringify({
         id: BUNDLE_ID,
         status: status.status,
-        submissions: counts.submissions,
-        observations: counts.observations,
+        submissions: chain.bundlerSubmissionCount,
+        approvals: issuer.approvalCount,
         workerRestarted: true,
         duplicateCode: duplicate.code,
         validityAdvertised,
@@ -667,8 +474,8 @@ try {
 } finally {
   await browser?.close().catch(() => undefined);
   await closeServer(server).catch(() => undefined);
-  await relayStore.close().catch(() => undefined);
-  chain.stop();
+  await issuer?.close().catch(() => undefined);
+  await chain?.close().catch(() => undefined);
 }
 `;
 
@@ -676,14 +483,14 @@ let consumer;
 try {
   consumer = await createConsumer({
     label: "chromium-extension",
-    packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server"],
+    // @oaath/testing still depends on @oaath/server until B3.
+    packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/server", "@oaath/testing"],
     dependencies: {
       esbuild: "0.28.1",
       "puppeteer-core": "25.5.0",
     },
     files: {
       ...extensionFiles,
-      "fake-chain.mjs": chromiumChainSource,
       "smoke.mjs": SMOKE,
     },
   });
@@ -707,7 +514,7 @@ try {
   console.log(`  bundle           ${report.id}, status ${report.status}`);
   console.log("  validity         advertised and presented with inclusive UTC bounds");
   console.log(
-    `  worker restart   forced death, distinct wake, ${report.observations} observations`,
+    `  worker restart   forced death, distinct wake, ${report.approvals} portal approval`,
   );
   console.log(
     `  submission       ${report.submissions}; duplicate refused with ${report.duplicateCode}`,

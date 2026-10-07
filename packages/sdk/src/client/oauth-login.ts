@@ -45,6 +45,14 @@ export interface OaathLoginOptions {
   readonly timeoutMs?: number;
 }
 
+/**
+ * Opens the issuer's authorization page somewhere other than a popup, for
+ * example `chrome.identity.launchWebAuthFlow` in an extension worker, and
+ * resolves with the URL the issuer redirected to (`redirectUri` plus the
+ * authorization response). Rejecting means the user did not finish.
+ */
+export type OaathAuthorizationLauncher = (authorizationUrl: string) => Promise<string>;
+
 export interface OaathLoginSigner {
   readonly id: string;
   readonly kind: OwnerCredentialProfile["kind"];
@@ -73,7 +81,7 @@ function randomToken(): string {
   return base64Url(crypto.getRandomValues(new Uint8Array(32)));
 }
 
-function captureOptions(value: OaathLoginOptions) {
+function captureOptions(value: OaathLoginOptions, launched = false) {
   const invalid = (message: string): never => clientFail("oaath_client_input_invalid", message);
   if (!value || typeof value !== "object") return invalid("login options are required");
   const { issuer, clientId, redirectUri, timeoutMs = DEFAULT_TIMEOUT_MS } = value;
@@ -93,7 +101,8 @@ function captureOptions(value: OaathLoginOptions) {
     return invalid("issuer must be an http(s) URL without a trailing slash");
   if (typeof clientId !== "string" || !/^[A-Za-z0-9._~-]{1,256}$/u.test(clientId))
     return invalid("clientId is invalid");
-  if (redirectUrl.origin !== location.origin)
+  // A launcher delivers the response itself; a popup posts it to this page.
+  if (!launched && redirectUrl.origin !== location.origin)
     return invalid("redirectUri must be on this page's origin");
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1)
     return invalid("timeoutMs must be a positive integer");
@@ -189,6 +198,60 @@ export async function authorizeThroughPopup(
   extra: Readonly<Record<string, string>>,
 ): Promise<Readonly<OaathPopupAuthorization>> {
   const options = captureOptions(value);
+  return authorize(options, extra, (url) => {
+    popup.location.href = url;
+    return authorizationResponse(popup, options.redirectOrigin, options.timeoutMs);
+  });
+}
+
+/**
+ * The same authorization through a caller-owned launcher instead of a popup.
+ * The launcher's redirect must be `redirectUri` itself; everything after it is
+ * checked exactly as a popup's response is.
+ */
+export async function authorizeWithLauncher(
+  launch: OaathAuthorizationLauncher,
+  value: OaathLoginOptions,
+  extra: Readonly<Record<string, string>>,
+): Promise<Readonly<OaathPopupAuthorization>> {
+  const options = captureOptions(value, true);
+  return authorize(options, extra, async (url) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new OaathClientError("oaath_client_login_timeout", "sign-in timed out")),
+        options.timeoutMs,
+      );
+    });
+    let redirect: string;
+    try {
+      redirect = await Promise.race([launch(url), expired]);
+    } catch (cause) {
+      if (cause instanceof OaathClientError) throw cause;
+      return clientFail("oaath_client_access_denied", "the sign-in was not finished", null, null, {
+        cause,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    let response: URL;
+    try {
+      response = new URL(redirect);
+    } catch {
+      return clientFail("oaath_client_issuer_rejected", "the launcher returned no redirect");
+    }
+    const expected = new URL(options.redirectUri);
+    if (response.origin !== expected.origin || response.pathname !== expected.pathname)
+      return clientFail("oaath_client_issuer_rejected", "the redirect is not the redirectUri");
+    return response.searchParams;
+  });
+}
+
+async function authorize(
+  options: ReturnType<typeof captureOptions>,
+  extra: Readonly<Record<string, string>>,
+  open: (authorizationUrl: string) => Promise<URLSearchParams>,
+): Promise<Readonly<OaathPopupAuthorization>> {
   const verifier = randomToken();
   const challenge = base64Url(
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
@@ -208,12 +271,12 @@ export async function authorizeThroughPopup(
   })) as { request_uri?: unknown } | null;
   if (typeof pushed?.request_uri !== "string")
     return clientFail("oaath_client_issuer_rejected", "issuer returned no request_uri");
-  popup.location.href = `${options.issuer}/authorize?${new URLSearchParams({
-    client_id: options.clientId,
-    request_uri: pushed.request_uri,
-  })}`;
-
-  const response = await authorizationResponse(popup, options.redirectOrigin, options.timeoutMs);
+  const response = await open(
+    `${options.issuer}/authorize?${new URLSearchParams({
+      client_id: options.clientId,
+      request_uri: pushed.request_uri,
+    })}`,
+  );
   if (response.get("state") !== state)
     return clientFail("oaath_client_state_mismatch", "authorization response state differs");
   // RFC 9207: the response must come from the issuer this authorization asked.

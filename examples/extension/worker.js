@@ -1,9 +1,10 @@
 /**
- * The extension's service worker: one service-approved OAAth realm per page origin.
+ * The extension's service worker: one portal-approved OAAth realm per page origin.
  *
  * Authority boundaries:
- * - Service approvals never hold owner authority — pairing still routes the owner's
- *   review through the service's own authorization flow (the phone).
+ * - The extension never holds owner authority: pairing opens the issuer's portal
+ *   (`chrome.identity.launchWebAuthFlow`), where the account's root reviews and
+ *   signs the request.
  * - One Grant per origin, in that origin's own IndexedDB database; nothing is
  *   shared across origins, so one dapp can never spend another's scope.
  * - The page's identity is `sender.origin` as Chrome reports it. Message
@@ -21,37 +22,67 @@ import {
 } from "./transaction-confirmation-presentation.js";
 
 const DEFAULT_SETTINGS = Object.freeze({
-  url: "http://127.0.0.1:8787",
+  issuer: "https://oaath.taek.tech",
   chain: 421_614,
+  rpcUrl: "https://sepolia-rollup.arbitrum.io/rpc",
+  bundlerUrl: "",
 });
 
-/** origin -> { url, promise }: initialization and pairing are shared by first callers. */
+/** origin -> { key, promise }: initialization and pairing are shared by first callers. */
 const realms = new Map();
 
 async function settings() {
   const stored = await chrome.storage.local.get(DEFAULT_SETTINGS);
-  const url =
-    typeof stored.url === "string" && stored.url.length > 0 ? stored.url : DEFAULT_SETTINGS.url;
+  const text = (key) =>
+    typeof stored[key] === "string" && stored[key].length > 0 ? stored[key] : DEFAULT_SETTINGS[key];
   const chain =
     typeof stored.chain === "number" && Number.isSafeInteger(stored.chain) && stored.chain >= 1
       ? stored.chain
       : DEFAULT_SETTINGS.chain;
-  return { url, chain };
+  return {
+    issuer: text("issuer"),
+    chain,
+    rpcUrl: text("rpcUrl"),
+    bundlerUrl: text("bundlerUrl"),
+  };
+}
+
+/** The issuer client for this extension's redirect URI, registered once per issuer. */
+async function clientFor(issuer, redirectUri) {
+  const key = `client:${issuer}:${redirectUri}`;
+  const stored = (await chrome.storage.local.get(key))[key];
+  if (typeof stored === "string" && stored.length > 0) return stored;
+  const response = await fetch(`${issuer}/oauth/clients`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_name: "OAAth extension", redirect_uris: [redirectUri] }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || typeof body?.client_id !== "string")
+    throw new Error("the issuer refused to register this extension");
+  await chrome.storage.local.set({ [key]: body.client_id });
+  return body.client_id;
+}
+
+/** The portal opens in a browser-owned window; its redirect comes back here. */
+function launch(url) {
+  return chrome.identity.launchWebAuthFlow({ url, interactive: true }).then((redirect) => {
+    if (typeof redirect !== "string") throw new Error("the sign-in was not finished");
+    return redirect;
+  });
 }
 
 async function realmFor(origin) {
   const configured = await settings();
+  const key = JSON.stringify(configured);
   const cached = realms.get(origin);
   const entry =
-    cached?.url === configured.url
+    cached?.key === key
       ? cached
-      : { url: configured.url, promise: initializeRealm(origin, configured, cached?.promise) };
+      : { key, promise: initializeRealm(origin, configured, cached?.promise) };
   realms.set(origin, entry);
   try {
-    const realm = await entry.promise;
-    // A chain change reuses this service-bound realm and its provider map.
-    realm.chain = configured.chain;
-    return realm;
+    return await entry.promise;
   } catch (error) {
     if (realms.get(origin) === entry) realms.delete(origin);
     throw error;
@@ -63,18 +94,28 @@ async function initializeRealm(origin, configured, previous) {
     const old = await previous.catch(() => null);
     if (old) await old.close().catch(() => undefined);
   }
+  // A path keeps the redirect URI canonical: OAAth refuses a bare trailing slash.
+  const redirectUri = chrome.identity.getRedirectURL("oaath");
+  const clientId = await clientFor(configured.issuer, redirectUri);
   const oaath = createOAAth({
-    approvals: { kind: "service", url: configured.url },
-    origin,
-    // One database per (service, origin): a service change starts fresh
-    // rather than resuming authority issued by another service.
-    stores: { kind: "indexeddb", name: `oaath-extension:${configured.url}:${origin}` },
+    chains: {
+      [configured.chain]: {
+        publicRpcUrls: [configured.rpcUrl],
+        ...(configured.bundlerUrl ? { bundlerUrl: configured.bundlerUrl } : {}),
+      },
+    },
+    approvals: { kind: "oauth", issuer: configured.issuer, clientId, redirectUri, launch },
+    // The issuer binds the Grant to the redirect URI's origin: this extension.
+    origin: new URL(redirectUri).origin,
+    // One database per (issuer, page origin): an issuer change starts fresh
+    // rather than resuming authority another issuer approved.
+    stores: { kind: "indexeddb", name: `oaath-extension:${configured.issuer}:${origin}` },
   });
   try {
     const connection = await oaath.connect();
     return {
       origin,
-      url: configured.url,
+      issuer: configured.issuer,
       chain: configured.chain,
       connection,
       // Closes the connection, then the realm's own database.
@@ -150,7 +191,7 @@ async function handlePopup(message) {
       ok: true,
       result: {
         origin,
-        url: realm.url,
+        issuer: realm.issuer,
         chain: realm.chain,
         state: grant?.state ?? (realm.pairing ? "requested" : "unpaired"),
         account: grant ? await grant.account(realm.chain).catch(() => null) : null,
@@ -175,8 +216,8 @@ async function handlePopup(message) {
       if (current?.state === "active" || current?.state === "revoking") {
         return rpcError(-32000, "this origin already holds a permission; revoke it first");
       }
-      // The owner still reviews and approves through the service's own flow;
-      // this only submits the request and waits for the decision.
+      // The account root reviews and signs in the issuer's portal; this only
+      // opens it and waits for the decision.
       grant = await realm.connection.requestPermission({
         chainScope: "all",
         permissions: [

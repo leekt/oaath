@@ -63,7 +63,13 @@ import {
 } from "./grant-handle.js";
 import { deriveOperatorCredentialProfile } from "./key-credential.js";
 import { localAdmissionInvalidation } from "./local-permission.js";
-import { authorizeThroughPopup, type OaathLogin, openAuthorizationPopup } from "./oauth-login.js";
+import {
+  authorizeThroughPopup,
+  authorizeWithLauncher,
+  type OaathAuthorizationLauncher,
+  type OaathLogin,
+  openAuthorizationPopup,
+} from "./oauth-login.js";
 import { loadServiceSession, saveServiceSession, serviceSessionKeyId } from "./service-session.js";
 import { STORE_NAMES } from "./store-configuration.js";
 import { captureStores, type OaathStores, type OwnedStores, openStores } from "./stores.js";
@@ -82,6 +88,12 @@ export interface OaathOAuthApprovals {
   readonly redirectUri: string;
   /** How long the user may take in the popup. Defaults to five minutes. */
   readonly timeoutMs?: number;
+  /**
+   * Opens the portal somewhere other than a popup and resolves with the
+   * redirect URL, e.g. `chrome.identity.launchWebAuthFlow` in an extension.
+   * `redirectUri` may then be off this page's origin.
+   */
+  readonly launch?: OaathAuthorizationLauncher;
 }
 
 /** `createOAAth` options whose Grants the account root approves in the portal. */
@@ -124,12 +136,16 @@ export function createOAuthRealm(
       "issuer",
       "clientId",
       "redirectUri",
-      ...(Object.hasOwn(initialApprovals, "timeoutMs") ? ["timeoutMs"] : []),
+      ...["timeoutMs", "launch"].filter((key) => Object.hasOwn(initialApprovals, key)),
     ],
     "OAuth approvals",
     new WeakSet(),
   );
   if (approvals.kind !== "oauth") return fail("OAuth approvals kind is required");
+  const launch =
+    approvals.launch === undefined
+      ? null
+      : clientCapability<OaathAuthorizationLauncher>(approvals.launch, "OAuth launcher");
   const popupOptions = Object.freeze({
     issuer: approvals.issuer as string,
     clientId: approvals.clientId as string,
@@ -397,7 +413,7 @@ export function createOAuthRealm(
   async function requestPermission(input: unknown): Promise<Readonly<OaathGrantHandle>> {
     assertOpen();
     // Open inside the user's gesture, before anything is awaited.
-    const popup = openAuthorizationPopup();
+    const popup = launch ? null : openAuthorizationPopup();
     try {
       const captured = capturePermissionInput(input, now());
       const { deviceId, operatorCredential } = await session();
@@ -409,9 +425,10 @@ export function createOAuthRealm(
         expires_at: captured.expiresAt,
         device_id: deviceId,
       };
-      const { token, login } = await authorizeThroughPopup(popup, popupOptions, {
-        authorization_details: JSON.stringify([detail]),
-      });
+      const extra = { authorization_details: JSON.stringify([detail]) };
+      const { token, login } = popup
+        ? await authorizeThroughPopup(popup, popupOptions, extra)
+        : await authorizeWithLauncher(launch as OaathAuthorizationLauncher, popupOptions, extra);
       const { request, artifact } = verifyGrant(token, login, {
         policy: captured.policy,
         expiresAt: captured.expiresAt,
@@ -423,7 +440,7 @@ export function createOAuthRealm(
       await writePointer(request);
       return await adoptApprovedPermission(connection, request, artifact);
     } finally {
-      popup.close();
+      popup?.close();
     }
   }
 

@@ -67,25 +67,13 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
   let token: Record<string, unknown> | null = null;
   const popups: { closed: boolean }[] = [];
 
-  async function authorize(href: string, popup: object) {
+  /** The portal's decision for one authorization URL, as its redirect query. */
+  async function authorize(href: string): Promise<Record<string, string>> {
     const url = new URL(href);
     const parId = url.searchParams.get("request_uri")!.split(":").pop()!;
     const par = pars.get(parId)!;
-    const reply = (query: Record<string, string>) => {
-      const event = new Event("message");
-      Object.defineProperties(event, {
-        data: {
-          value: { type: RESPONSE, url: `${REDIRECT}?${new URLSearchParams(query)}` },
-        },
-        origin: { value: ORIGIN },
-        source: { value: popup },
-      });
-      window.dispatchEvent(event);
-    };
-    if (behaviour === "cancel") {
-      reply({ error: "access_denied", state: par.get("state")!, iss: ISSUER });
-      return;
-    }
+    if (behaviour === "cancel")
+      return { error: "access_denied", state: par.get("state")!, iss: ISSUER };
     const [detail] = JSON.parse(par.get("authorization_details")!);
     const requestedAt = Math.floor(Date.now() / 1000);
     // The relay's compose.
@@ -148,8 +136,25 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
         },
       ],
     };
-    reply({ code: "code-1", state: par.get("state")!, iss: ISSUER });
+    return { code: "code-1", state: par.get("state")!, iss: ISSUER };
   }
+
+  /** The redirect page posting the response back to its opener. */
+  async function answerPopup(href: string, popup: object) {
+    const query = await authorize(href);
+    const event = new Event("message");
+    Object.defineProperties(event, {
+      data: { value: { type: RESPONSE, url: `${REDIRECT}?${new URLSearchParams(query)}` } },
+      origin: { value: ORIGIN },
+      source: { value: popup },
+    });
+    window.dispatchEvent(event);
+  }
+
+  /** An extension-style launcher: the portal's redirect URL, returned directly. */
+  const launch = vi.fn(
+    async (href: string) => `${REDIRECT}?${new URLSearchParams(await authorize(href))}`,
+  );
 
   const issuerFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
@@ -180,7 +185,7 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
           set href(value: string) {
             // The portal answers later, as a real window does.
             if (value.startsWith(`${ISSUER}/authorize`))
-              setTimeout(() => void authorize(value, popup), 0);
+              setTimeout(() => void answerPopup(value, popup), 0);
           },
         },
       };
@@ -203,5 +208,5 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
     clientId: CLIENT,
     redirectUri: REDIRECT,
   };
-  return { approvals, window, popups, pars, root };
+  return { approvals, window, popups, pars, root, launch };
 }
