@@ -1162,4 +1162,76 @@ describe("adding a passkey on a second device to an existing account", () => {
     await root.close();
     await device.close();
   });
+
+  it("links with a policy template: the root's one signature is the member's enable", async () => {
+    // The owner keeps a template for the account.
+    const root = await browser.newPage();
+    await root.setViewport({ width: 390, height: 844 });
+    await installWallet(root);
+    await root.goto(`${portal}/accounts`);
+    await click(root, "::-p-text(E2E Wallet)");
+    const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
+    const address = /0x[0-9a-f]{40}/u.exec(
+      (await owned?.evaluate((node) => node.getAttribute("aria-label"))) ?? "",
+    )?.[0];
+    if (!address) throw new Error("no root account");
+    await owned?.click();
+    // The policies section renders once its templates load; locators retry.
+    await root.locator("button::-p-text(New policy)").click();
+    await root.type("#policy-name", "Payments");
+    await root.type(".policy-target", `0x${"ab".repeat(20)}`);
+    await click(root, "::-p-text(Save policy)");
+    await root.waitForSelector("button[aria-label='Edit Payments']");
+    expect(
+      await root.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+
+    // A new passkey on another device asks to join.
+    const device = await browser.createBrowserContext();
+    const dappPage = await openDapp(dapp, "#login:not([disabled])", device);
+    const popup = await startLogin(dappPage);
+    await addAuthenticator(popup);
+    await click(popup, "::-p-text(Add signer)");
+    await click(popup, "::-p-text(New passkey)");
+    await popup.waitForSelector("::-p-text(This signer has no account yet.)");
+    await click(popup, "::-p-text(Link to an existing account)");
+    await popup.type("#link-account", address);
+    await click(popup, "::-p-text(Request access)");
+    const shared = await popup.waitForSelector("#link-url");
+    const linkUrl = (await shared?.evaluate((node) => node.textContent)) ?? "";
+    const linkId = linkUrl.split("/").pop() ?? "";
+
+    // The owner gives it the template and signs the member's enable once.
+    await root.goto(linkUrl);
+    await click(root, "::-p-text(E2E Wallet)");
+    await click(root, "::-p-text(spend within “Payments”)");
+    const signatures = walletSignatures;
+    await click(root, "::-p-text(Approve and sign)");
+    await root.waitForSelector("::-p-text(Signer added)");
+    expect(walletSignatures).toBe(signatures + 1);
+    await root.waitForSelector("::-p-text(1 policy)");
+
+    // The member signs in as the account, and reads its approved grant.
+    await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
+    expect(await outcome(dappPage.page)).toBe("signed-in");
+    const reader = await device.newPage();
+    await reader.goto(`${portal}/`);
+    const grant = await reader.evaluate(async (id: string) => {
+      const response = await fetch(`/portal/grants/${id}`);
+      return (await response.json()) as {
+        status: string;
+        permission_request: {
+          operatorCredential: { kind: string };
+          application: { clientId: string };
+        };
+        enable: { account: string };
+      };
+    }, linkId);
+    expect(grant.status).toBe("approved");
+    expect(grant.permission_request.operatorCredential.kind).toBe("webauthn");
+    expect(grant.permission_request.application.clientId).toBe("oaath-portal");
+    expect(grant.enable.account).toBe(address);
+    await root.close();
+    await device.close();
+  });
 });

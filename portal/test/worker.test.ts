@@ -129,6 +129,27 @@ describe("portal worker", () => {
     expect(portal.headers.get("set-cookie")).toBe(SET_COOKIE);
     expect(requests[0]?.method).toBe("DELETE");
     expect(requests[0]?.headers.get("cookie")).toBe("a=1");
+    // A template edit is a same-origin PUT; PATCH is not a portal method.
+    for (const [method, status] of [
+      ["PUT", 200],
+      ["PATCH", 405],
+    ] as const) {
+      const response = await worker.fetch(
+        new Request(`${ORIGIN}/portal/accounts/a/policies/t`, {
+          method,
+          headers: {
+            origin: ORIGIN,
+            "sec-fetch-site": "same-origin",
+            "content-type": "application/json",
+          },
+          body: "{}",
+        }),
+        env,
+      );
+      expect(response.status).toBe(status);
+    }
+    expect(requests[1]?.method).toBe("PUT");
+    expect(requests).toHaveLength(2);
 
     const oauth = await worker.fetch(
       new Request(`${ORIGIN}/oauth/token`, {

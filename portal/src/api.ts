@@ -196,6 +196,8 @@ export interface PortalLink {
   readonly expires_at: number;
   readonly typed_data: MembershipApprovalTypedData;
   readonly digest: `0x${string}`;
+  /** Set when the root approved with a policy template. */
+  readonly grant_id: string | null;
 }
 
 /** `GET /portal/accounts/{id}/members`: the root's view of its account. */
@@ -216,6 +218,44 @@ export interface PortalMember {
 }
 export interface MembersResponse {
   readonly members: readonly PortalMember[];
+}
+
+/** A template's policy: a GrantPolicy without its validity window. */
+export interface TemplatePolicy {
+  readonly calls: readonly {
+    readonly target: `0x${string}`;
+    readonly selector: `0x${string}`;
+    /** Decimal wei. */
+    readonly valueLimit: string;
+  }[];
+  readonly perChainOperationLimit: {
+    readonly count: number;
+    readonly intervalSeconds: number | null;
+  };
+}
+
+/** `/portal/accounts/{id}/policies`: the root's templates. */
+export interface PolicyTemplate {
+  readonly template_id: string;
+  readonly name: string;
+  readonly policy: TemplatePolicy;
+  readonly lifetime_seconds: number;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+export interface PolicyTemplateInput {
+  readonly name: string;
+  readonly policy: TemplatePolicy;
+  readonly lifetime_seconds: number;
+}
+
+/** `GET /portal/grants/{id}`: a member grant, for its root or member. */
+export interface MemberGrantView {
+  readonly grant_id: string;
+  readonly status: "approved" | "rejected" | "invalidated";
+  readonly permission_request: PermissionRequest;
+  readonly decision: unknown;
+  readonly enable: unknown;
 }
 
 /** A failed portal call with the relay's structured code, never its prose. */
@@ -241,7 +281,7 @@ export function transactionIdFromRequestUri(requestUri: string | null): string |
 
 async function call<Response>(
   path: string,
-  init?: { method: "POST"; body: unknown } | { method: "DELETE" },
+  init?: { method: "POST" | "PUT"; body: unknown } | { method: "DELETE" },
 ) {
   const sent = init && "body" in init ? JSON.stringify(init.body) : null;
   let response: globalThis.Response;
@@ -305,6 +345,56 @@ export const portalApi = {
       method: "POST",
       body: { signature },
     }),
+  /** Approval with a template: the root's signature is the member's enable. */
+  approveLinkWithTemplate: (id: string, templateId: string, artifact: string) =>
+    call<PortalLink>(`/portal/links/${segment(id)}/approve`, {
+      method: "POST",
+      body: { template_id: templateId, artifact },
+    }),
+  prepareLinkGrant: (id: string, templateId: string) =>
+    call<PrepareGrantResponse>(`/portal/links/${segment(id)}/prepare`, {
+      method: "POST",
+      body: { template_id: templateId },
+    }),
+  policies: (accountId: string) =>
+    call<{ readonly policies: readonly PolicyTemplate[] }>(
+      `/portal/accounts/${segment(accountId)}/policies`,
+    ),
+  createPolicy: (accountId: string, body: PolicyTemplateInput) =>
+    call<PolicyTemplate>(`/portal/accounts/${segment(accountId)}/policies`, {
+      method: "POST",
+      body,
+    }),
+  updatePolicy: (accountId: string, templateId: string, body: PolicyTemplateInput) =>
+    call<PolicyTemplate>(`/portal/accounts/${segment(accountId)}/policies/${segment(templateId)}`, {
+      method: "PUT",
+      body,
+    }),
+  deletePolicy: (accountId: string, templateId: string) =>
+    call<Record<string, never>>(
+      `/portal/accounts/${segment(accountId)}/policies/${segment(templateId)}`,
+      { method: "DELETE" },
+    ),
+  prepareAssignment: (accountId: string, signerId: string, templateId: string) =>
+    call<PrepareGrantResponse>(
+      `/portal/accounts/${segment(accountId)}/members/${segment(signerId)}/grants/prepare`,
+      { method: "POST", body: { template_id: templateId } },
+    ),
+  assignGrant: (
+    accountId: string,
+    signerId: string,
+    body: {
+      readonly template_id: string;
+      readonly request_id: string;
+      readonly requested_at: number;
+      readonly artifact: string;
+    },
+  ) =>
+    call<{ readonly grant_id: string }>(
+      `/portal/accounts/${segment(accountId)}/members/${segment(signerId)}/grants`,
+      { method: "POST", body },
+    ),
+  memberGrant: (grantId: string) => call<MemberGrantView>(`/portal/grants/${segment(grantId)}`),
   rejectLink: (id: string) =>
     call<PortalLink>(`/portal/links/${segment(id)}/reject`, { method: "POST", body: {} }),
   members: (accountId: string) =>

@@ -143,12 +143,12 @@ export async function rootKey(signer: RememberedSigner, typedData: unknown) {
 export async function signGrantApproval(input: {
   readonly request: Readonly<PermissionRequest>;
   readonly prepared: PrepareGrantResponse;
-  readonly detail: GrantDetail;
+  /** Where the SDK reads the pinned deployment; the approval itself is all-chain. */
+  readonly chainId: number | undefined;
   readonly signer: RememberedSigner;
-  readonly account: PortalAccount;
+  readonly account: Pick<PortalAccount, "address">;
 }): Promise<string> {
-  const { request, prepared, detail, signer, account } = input;
-  const chainId = detail.chains[0];
+  const { request, prepared, chainId, signer, account } = input;
   if (chainId === undefined) return refuse("request-mismatch");
   const approval = prepareDerivedAccountPermissionApproval({
     request,

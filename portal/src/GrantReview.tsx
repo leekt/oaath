@@ -141,7 +141,7 @@ export function GrantReview({
         await signGrantApproval({
           request: prepared.request,
           prepared: prepared.response,
-          detail,
+          chainId: detail.chains[0],
           signer,
           account,
         }),

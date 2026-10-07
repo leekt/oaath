@@ -11,16 +11,18 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { encode } from "uqr";
 import {
+  type PolicyTemplate,
   type PortalAccount,
   PortalApiError,
   type PortalLink,
   type PortalMember,
   portalApi,
 } from "./api.js";
-import { signMembershipApproval } from "./membership.js";
+import { signMemberGrant, signMembershipApproval } from "./membership.js";
+import { Policies, templateSummary } from "./Policies.js";
 import { Frame, message, Notice, SignerStep } from "./shared.js";
 import { type RememberedSigner, rememberSigner, shortAddress, signerDetail } from "./signers.js";
 
@@ -39,6 +41,9 @@ function linkMessage(error: unknown): string {
       return "Only the account's owner can approve this request.";
     case "link-mismatch":
     case "link-invalid":
+    case "grant-mismatch":
+    case "grant-invalid":
+    case "digest-mismatch":
       return "OAAth sent a request that doesn't match what you were shown. Nothing was signed.";
     case "passkey-cancelled":
       return "The passkey prompt was dismissed.";
@@ -284,8 +289,41 @@ function LinkReview({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [account, setAccount] = useState<PortalAccount | null>(null);
+  const [templates, setTemplates] = useState<readonly PolicyTemplate[]>([]);
+  /** "login" or the template the member is given. */
+  const [access, setAccess] = useState("login");
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
+  useEffect(() => {
+    portalApi.signerAccounts(signer.signer_id).then(
+      (response) =>
+        setAccount(response.accounts.find((entry) => entry.account_id === link.account_id) ?? null),
+      () => {},
+    );
+    portalApi.policies(link.account_id).then(
+      (response) => setTemplates(response.policies),
+      () => {},
+    );
+  }, [signer.signer_id, link.account_id]);
+  // A raw P-256 key has no operator kind: it can only sign in.
+  const policyCapable = link.signer.kind !== "p256";
+
+  async function approve(): Promise<PortalLink> {
+    const template = templates.find((entry) => entry.template_id === access);
+    if (!template)
+      return portalApi.approveLink(linkId, await signMembershipApproval(link, linkId, signer));
+    if (!account) throw new Error("account unavailable");
+    const prepared = await portalApi.prepareLinkGrant(linkId, template.template_id);
+    const artifact = await signMemberGrant({
+      prepared,
+      member: link.signer.profile,
+      template,
+      account,
+      signer,
+    });
+    return portalApi.approveLinkWithTemplate(linkId, template.template_id, artifact);
+  }
 
   async function run(decide: () => Promise<PortalLink>) {
     setBusy(true);
@@ -311,7 +349,7 @@ function LinkReview({
             <span className="mono">{shortAddress(link.address)}</span>.
           </p>
         )}
-        <Members accountId={link.account_id} />
+        {account && <Members account={account} signer={signer} />}
       </section>
     );
   const expires = new Date(link.expires_at * 1000).toLocaleTimeString([], {
@@ -337,30 +375,45 @@ function LinkReview({
       <fieldset className="access">
         <legend>Access</legend>
         <label>
-          <input type="radio" name="access" defaultChecked />
+          <input
+            type="radio"
+            name="access"
+            checked={access === "login"}
+            onChange={() => setAccess("login")}
+          />
           Sign in only
           <span className="choice-detail">
             Can sign in to apps as this account. Can't move funds or approve transactions.
           </span>
         </label>
-        <label className="disabled">
-          <input type="radio" name="access" disabled />
-          Sign in and spend within a policy
-          <span className="choice-detail">Coming soon</span>
-        </label>
+        {templates.map((template) => (
+          <label key={template.template_id} className={policyCapable ? undefined : "disabled"}>
+            <input
+              type="radio"
+              name="access"
+              disabled={!policyCapable}
+              checked={access === template.template_id}
+              onChange={() => setAccess(template.template_id)}
+            />
+            Sign in and spend within “{template.name}”
+            <span className="choice-detail">{templateSummary(template)}</span>
+          </label>
+        ))}
+        {templates.length === 0 && (
+          <p className="choice-detail">
+            Add a policy under Your accounts to let a signer spend within limits.
+          </p>
+        )}
+        {!policyCapable && templates.length > 0 && (
+          <p className="choice-detail">This kind of key can only sign in.</p>
+        )}
       </fieldset>
-      <p className="quiet">You sign once with {signer.label}. Nothing is sent on-chain.</p>
+      <p className="quiet">
+        You sign once with {signer.label}. Nothing is sent on-chain
+        {access === "login" ? "." : "; the signer's first payment installs the policy."}
+      </p>
       <div className="actions">
-        <button
-          type="button"
-          className="primary"
-          disabled={busy}
-          onClick={() =>
-            run(async () =>
-              portalApi.approveLink(linkId, await signMembershipApproval(link, linkId, signer)),
-            )
-          }
-        >
+        <button type="button" className="primary" disabled={busy} onClick={() => run(approve)}>
           Approve and sign
         </button>
         <button
@@ -406,39 +459,68 @@ const CONFIRM: Readonly<Record<MemberAction, { label: string; note: string }>> =
   remove: { label: "Confirm removal", note: "They leave this account. Nothing changes on-chain." },
 };
 
-function Members({ accountId }: { accountId: string }) {
+/** One signer of the account, with every membership that admitted it. */
+interface MemberEntry {
+  readonly signer_id: string;
+  readonly name: string;
+  readonly member: PortalMember;
+  /** Grants the signer holds on the account (dapp or template). */
+  readonly grants: number;
+}
+
+function entries(members: readonly PortalMember[]): MemberEntry[] {
+  const bySigner = new Map<string, PortalMember[]>();
+  for (const member of members)
+    bySigner.set(member.signer_id, [...(bySigner.get(member.signer_id) ?? []), member]);
+  return [...bySigner.values()].map((rows) => {
+    const [first] = rows as [PortalMember, ...PortalMember[]];
+    const label = rows.find((row) => row.label !== null)?.label ?? null;
+    return {
+      signer_id: first.signer_id,
+      name:
+        label ??
+        (rows.every((row) => row.grant_id) ? "App signer" : (KIND_LABEL[first.kind] ?? first.kind)),
+      member: rows.find((row) => row.role === "root") ?? first,
+      grants: rows.filter((row) => row.grant_id !== null).length,
+    };
+  });
+}
+
+/** The account's members and policies, for its owner. */
+function Members({ account, signer }: { account: PortalAccount; signer: RememberedSigner }) {
+  const accountId = account.account_id;
   const [members, setMembers] = useState<readonly PortalMember[] | null>(null);
+  const [templates, setTemplates] = useState<readonly PolicyTemplate[]>([]);
   const [confirming, setConfirming] = useState<{
     readonly signerId: string;
     readonly action: MemberAction;
   } | null>(null);
+  const [assigning, setAssigning] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const load = useCallback(
+    () =>
+      portalApi.members(accountId).then(
+        (response) => setMembers(response.members),
+        (failure: unknown) => setError(linkMessage(failure)),
+      ),
+    [accountId],
+  );
   useEffect(() => {
-    portalApi.members(accountId).then(
-      (response) => setMembers(response.members),
+    load();
+    portalApi.policies(accountId).then(
+      (response) => setTemplates(response.policies),
       (failure: unknown) => setError(linkMessage(failure)),
     );
-  }, [accountId]);
+  }, [accountId, load]);
 
-  async function act(member: PortalMember, action: MemberAction) {
+  async function run(work: () => Promise<unknown>) {
     setBusy(true);
     setError(null);
     try {
-      if (action === "remove") {
-        await portalApi.removeMember(accountId, member.signer_id);
-        setMembers((current) =>
-          (current ?? []).filter((entry) => entry.signer_id !== member.signer_id),
-        );
-      } else {
-        const { status } = await portalApi.setMemberStatus(accountId, member.signer_id, action);
-        setMembers((current) =>
-          (current ?? []).map((entry) =>
-            entry.signer_id === member.signer_id ? { ...entry, status } : entry,
-          ),
-        );
-      }
+      await work();
+      await load();
     } catch (failure) {
       setError(linkMessage(failure));
     }
@@ -446,96 +528,158 @@ function Members({ accountId }: { accountId: string }) {
     setBusy(false);
   }
 
+  function act(member: PortalMember, action: MemberAction) {
+    return run(() =>
+      action === "remove"
+        ? portalApi.removeMember(accountId, member.signer_id)
+        : portalApi.setMemberStatus(accountId, member.signer_id, action),
+    );
+  }
+
+  /** A fresh grant from a template: the owner signs the member's enable once. */
+  function assign(member: PortalMember, templateId: string) {
+    const template = templates.find((entry) => entry.template_id === templateId);
+    if (!template) return;
+    return run(async () => {
+      const prepared = await portalApi.prepareAssignment(
+        accountId,
+        member.signer_id,
+        template.template_id,
+      );
+      const artifact = await signMemberGrant({
+        prepared,
+        member: member.profile,
+        template,
+        account,
+        signer,
+      });
+      await portalApi.assignGrant(accountId, member.signer_id, {
+        template_id: template.template_id,
+        request_id: prepared.permission_request.requestId,
+        requested_at: prepared.permission_request.requestedAt,
+        artifact,
+      });
+    });
+  }
+
   return (
-    <section aria-labelledby="members-heading" className="members">
-      <h2 id="members-heading">Members</h2>
-      {members === null && !error && (
-        <p className="quiet" aria-live="polite">
-          Loading members…
-        </p>
-      )}
-      {members && (
-        <ul className="choices">
-          {members.map((member) => {
-            const name =
-              member.label ??
-              (member.grant_id ? "App signer" : (KIND_LABEL[member.kind] ?? member.kind));
-            const pending = confirming?.signerId === member.signer_id ? confirming.action : null;
-            const toggle = member.status === "suspended" ? "restore" : "suspend";
-            return (
-              <li key={`${member.signer_id}:${member.link_id ?? member.grant_id ?? "root"}`}>
-                <div className="choice member">
-                  <span className="choice-text">
-                    <span className="choice-title">
-                      {name}
-                      {member.status === "suspended" && (
-                        <span className="status-badge"> Suspended</span>
-                      )}
+    <>
+      <section aria-labelledby="members-heading" className="members">
+        <h2 id="members-heading">Members</h2>
+        {members === null && !error && (
+          <p className="quiet" aria-live="polite">
+            Loading members…
+          </p>
+        )}
+        {members && (
+          <ul className="choices">
+            {entries(members).map(({ signer_id, name, member, grants }) => {
+              const pending = confirming?.signerId === signer_id ? confirming.action : null;
+              const toggle = member.status === "suspended" ? "restore" : "suspend";
+              const assignable =
+                member.role !== "root" &&
+                member.status === "active" &&
+                member.kind !== "p256" &&
+                templates.length > 0;
+              return (
+                <li key={signer_id}>
+                  <div className="choice member">
+                    <span className="choice-text">
+                      <span className="choice-title">
+                        {name}
+                        {member.status === "suspended" && (
+                          <span className="status-badge"> Suspended</span>
+                        )}
+                      </span>
+                      <span className="choice-detail">
+                        {ROLE_LABEL[member.role]} · {KIND_LABEL[member.kind] ?? member.kind} ·{" "}
+                        <span className="mono">{signerDetail(member.profile)}</span>
+                        {grants > 0 && ` · ${grants} polic${grants === 1 ? "y" : "ies"}`}
+                      </span>
                     </span>
-                    <span className="choice-detail">
-                      {ROLE_LABEL[member.role]} · {KIND_LABEL[member.kind] ?? member.kind} ·{" "}
-                      <span className="mono">{signerDetail(member.profile)}</span>
-                    </span>
-                  </span>
-                  {member.role !== "root" && pending && (
-                    <div className="member-actions">
-                      <p className="choice-detail">{CONFIRM[pending].note}</p>
-                      <button
-                        type="button"
-                        className="danger"
-                        disabled={busy}
-                        onClick={() => act(member, pending)}
-                      >
-                        {CONFIRM[pending].label}
-                      </button>
-                      <button
-                        type="button"
-                        className="link"
-                        disabled={busy}
-                        onClick={() => setConfirming(null)}
-                      >
-                        Keep as is
-                      </button>
-                    </div>
-                  )}
-                  {member.role !== "root" && !pending && (
-                    <div className="member-actions">
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={busy}
-                        aria-label={`${toggle === "suspend" ? "Suspend" : "Restore"} ${name}`}
-                        onClick={() =>
-                          setConfirming({ signerId: member.signer_id, action: toggle })
-                        }
-                      >
-                        {toggle === "suspend" ? "Suspend" : "Restore"}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={busy}
-                        aria-label={`Remove ${name}`}
-                        onClick={() =>
-                          setConfirming({ signerId: member.signer_id, action: "remove" })
-                        }
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-    </section>
+                    {member.role !== "root" && pending && (
+                      <div className="member-actions">
+                        <p className="choice-detail">{CONFIRM[pending].note}</p>
+                        <button
+                          type="button"
+                          className="danger"
+                          disabled={busy}
+                          onClick={() => act(member, pending)}
+                        >
+                          {CONFIRM[pending].label}
+                        </button>
+                        <button
+                          type="button"
+                          className="link"
+                          disabled={busy}
+                          onClick={() => setConfirming(null)}
+                        >
+                          Keep as is
+                        </button>
+                      </div>
+                    )}
+                    {member.role !== "root" && !pending && (
+                      <div className="member-actions">
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          aria-label={`${toggle === "suspend" ? "Suspend" : "Restore"} ${name}`}
+                          onClick={() => setConfirming({ signerId: signer_id, action: toggle })}
+                        >
+                          {toggle === "suspend" ? "Suspend" : "Restore"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          aria-label={`Remove ${name}`}
+                          onClick={() => setConfirming({ signerId: signer_id, action: "remove" })}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                    {assignable && !pending && (
+                      <div className="member-actions">
+                        <select
+                          aria-label={`Policy for ${name}`}
+                          value={assigning[signer_id] ?? ""}
+                          onChange={(event) =>
+                            setAssigning({ ...assigning, [signer_id]: event.target.value })
+                          }
+                        >
+                          <option value="">Choose a policy…</option>
+                          {templates.map((template) => (
+                            <option key={template.template_id} value={template.template_id}>
+                              {template.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy || !assigning[signer_id]}
+                          onClick={() => assign(member, assigning[signer_id] ?? "")}
+                        >
+                          Give policy and sign
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+      </section>
+      <Policies accountId={accountId} templates={templates} onChange={setTemplates} />
+    </>
   );
 }
 
@@ -586,7 +730,7 @@ export function ManageAccounts() {
           )}
         </section>
       )}
-      {chosen && (
+      {chosen && signer && (
         <section aria-labelledby="account-members-heading">
           <h1 id="account-members-heading" className="mono">
             {shortAddress(chosen.address)}
@@ -594,7 +738,7 @@ export function ManageAccounts() {
           <button type="button" className="link" onClick={() => setChosen(null)}>
             All accounts
           </button>
-          <Members accountId={chosen.account_id} />
+          <Members account={chosen} signer={signer} />
         </section>
       )}
       {error && (

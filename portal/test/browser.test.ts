@@ -23,6 +23,7 @@ import type {
   DecisionRequest,
   GrantDetail,
   IdentifiedSigner,
+  PolicyTemplate,
   PortalAccount,
   PortalLink,
   PortalTransaction,
@@ -235,12 +236,30 @@ function portalLink(id: string): PortalLink {
     },
     // A relay that shows one signer but asks for a signature over another.
     digest: id === "link-tampered" ? `0x${"77".repeat(32)}` : digest,
+    grant_id: null,
   };
 }
+
+const PAYMENTS: PolicyTemplate = {
+  template_id: "template-payments",
+  name: "Payments",
+  policy: {
+    calls: [{ target: `0x${"aa".repeat(20)}`, selector: "0xa9059cbb", valueLimit: "0" }],
+    perChainOperationLimit: { count: 10, intervalSeconds: 86_400 },
+  },
+  lifetime_seconds: 30 * 86_400,
+  created_at: NOW,
+  updated_at: NOW,
+};
 
 async function stubRelay(path: string, method: string, body: unknown) {
   const link = /^\/portal\/links\/(link-[\w-]+)$/u.exec(path);
   if (link?.[1] && method === "GET") return portalLink(link[1]);
+  if (path === `/portal/accounts/${ROOT_ACCOUNT.account_id}/policies` && method === "GET")
+    return { policies: [PAYMENTS] };
+  // A relay that prepares the dapp's grant instead of the member's.
+  if (path === "/portal/links/link-template/prepare" && method === "POST")
+    return grantPreparation(ROOT_ACCOUNT);
   const grant = /^\/portal\/transactions\/(par-grant(?:-tampered)?)(\/prepare)?$/u.exec(path);
   if (grant?.[1] && !grant[2] && method === "GET") return grantTransaction(grant[1]);
   if (grant?.[1] && grant[2] && method === "POST") {
@@ -731,6 +750,33 @@ describe("portal in Chrome", () => {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
     await capture(page, "7-link-review");
+    const before = calls.length;
+    await clickText(page, "Approve and sign");
+    await page.waitForSelector("::-p-text(doesn't match what you were shown)");
+    expect(await walletMethods(page)).not.toContain("eth_signTypedData_v4");
+    expect(calls.slice(before).some((call) => call.path.endsWith("/approve"))).toBe(false);
+    await page.close();
+  });
+
+  it("offers the owner's templates and refuses to sign a grant that is not the member's", async () => {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 390, height: 844 });
+    await installWallet(page);
+    await page.evaluateOnNewDocument(
+      (signers: string) => {
+        localStorage.setItem("oaath.portal.signers/v1", signers);
+      },
+      JSON.stringify([GRANT_SIGNER]),
+    );
+    await page.goto(`${origin}/link/link-template`);
+    await clickText(page, "Test Wallet");
+    await clickText(page, "spend within “Payments”");
+    const review = await page.$eval("main", (node) => (node as HTMLElement).innerText);
+    expect(review).toContain("1 call · 10 operations per chain a day · 30 days");
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await capture(page, "8-link-template");
     const before = calls.length;
     await clickText(page, "Approve and sign");
     await page.waitForSelector("::-p-text(doesn't match what you were shown)");

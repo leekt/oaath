@@ -421,3 +421,20 @@ h1:focus {
   flex-basis: 100%;
   margin: 0;
 }
+
+.link-request .inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.member-actions select {
+  min-height: 2.75rem;
+  min-width: 0;
+  max-width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+}
