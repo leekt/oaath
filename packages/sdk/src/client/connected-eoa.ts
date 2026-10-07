@@ -30,7 +30,10 @@ export interface OaathConnectedEoaPayer {
   readonly wallet: {
     readonly account?: Readonly<{ address: `0x${string}`; type?: string }>;
     readonly signer?: Readonly<{ sign: (request: { hash: `0x${string}` }) => unknown }>;
-    readonly request: (request: ConnectedEoaRpcRequest) => Promise<unknown>;
+    readonly request: (
+      request: ConnectedEoaRpcRequest,
+      options?: { retryCount: 0 },
+    ) => Promise<unknown>;
     readonly sendTransaction?: (
       input: Readonly<{
         to: `0x${string}`;
@@ -129,9 +132,9 @@ export function withConnectedEoaFallback(
     let accounts: unknown;
     try {
       [chain, accounts] = await Promise.all([
-        wallet.request({ method: "eth_chainId" }),
+        wallet.request({ method: "eth_chainId" }, { retryCount: 0 }),
         wallet.localSend === null
-          ? wallet.request({ method: "eth_accounts" })
+          ? wallet.request({ method: "eth_accounts" }, { retryCount: 0 })
           : Promise.resolve([wallet.address]),
       ]);
     } catch {
@@ -155,18 +158,21 @@ export function withConnectedEoaFallback(
       hash =
         wallet.localSend !== null
           ? await wallet.localSend({ to: call.entryPoint, data: call.data, value: 0n })
-          : await wallet.request({
-              method: "eth_sendTransaction",
-              params: [
-                {
-                  from: wallet.address,
-                  to: call.entryPoint,
-                  data: call.data,
-                  value: "0x0",
-                  chainId: toHex(call.chainId),
-                },
-              ],
-            });
+          : await wallet.request(
+              {
+                method: "eth_sendTransaction",
+                params: [
+                  {
+                    from: wallet.address,
+                    to: call.entryPoint,
+                    data: call.data,
+                    value: "0x0",
+                    chainId: toHex(call.chainId),
+                  },
+                ],
+              },
+              { retryCount: 0 },
+            );
     } catch {
       return clientFail(
         "oaath_client_capability_invalid",
