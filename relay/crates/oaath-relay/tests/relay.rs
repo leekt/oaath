@@ -17,7 +17,7 @@ use oaath_relay::bootstrap::{
 use oaath_relay::error::{RelayErrorCode, RelayResult};
 use oaath_relay::store::memory::MemoryRelayStore;
 use oaath_relay::store::{RelayStore, RelayTransaction};
-use oaath_relay::{Relay, records, registry};
+use oaath_relay::{Relay, oauth, records, registry};
 use serde_json::{Value, json};
 use support::*;
 
@@ -98,6 +98,11 @@ ambiguous_transaction! {
     list_signer_accounts(id: &str) -> RelayResult<Vec<(registry::AccountRecord, registry::AccountSignerRecord)>>;
     insert_account(r: &registry::AccountRecord) -> RelayResult<bool>;
     insert_account_signer(r: &registry::AccountSignerRecord) -> RelayResult<bool>;
+    lock_account(id: &str) -> RelayResult<Option<registry::AccountRecord>>;
+    lock_oauth_client(id: &str) -> RelayResult<Option<oauth::records::OAuthClientRecord>>;
+    insert_oauth_client(r: &oauth::records::OAuthClientRecord) -> RelayResult<bool>;
+    lock_par(id: &str) -> RelayResult<Option<oauth::records::ParRecord>>;
+    insert_par(r: &oauth::records::ParRecord) -> RelayResult<bool>;
 }
 
 #[async_trait]

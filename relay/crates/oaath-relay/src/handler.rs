@@ -58,6 +58,10 @@ use crate::bootstrap::{BootstrapConfiguration, capture_chains, serve_bootstrap};
 use crate::clock::RelayClock;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::kms::RelayKms;
+use crate::oauth::{
+    OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, login_decision,
+    parse_form, push_authorization_request, read_transaction, recover_redirect, register_client,
+};
 use crate::portal::{
     assert_same_origin, create_account, register_signer, signer_accounts, signer_by_credential,
 };
@@ -91,6 +95,8 @@ pub struct RelayOptions {
     pub max_body_bytes: Option<u64>,
     /// Optional URL-only bootstrap surface.
     pub bootstrap: Option<BootstrapConfiguration>,
+    /// Optional OAuth 2.0 / OpenID Connect login surface.
+    pub oauth: Option<OAuthConfiguration>,
 }
 
 pub struct Relay {
@@ -104,6 +110,7 @@ pub struct Relay {
     code_ttl_ms: u64,
     max_body_bytes: usize,
     bootstrap: Option<BootstrapConfiguration>,
+    oauth: Option<OAuthConfiguration>,
 }
 
 fn duration(value: Option<u64>, fallback: u64, maximum: u64) -> RelayResult<u64> {
@@ -173,23 +180,35 @@ fn path_segments(path: &str) -> Vec<&str> {
     segments
 }
 
-/// A plain JSON object read from a bounded `application/json` body. The text
-/// is decoded like `Request.text()`: lossy UTF-8 with a leading BOM dropped.
+/// A plain JSON object read from a bounded `application/json` body.
 async fn body_record(
     headers: &HeaderMap,
     body: Body,
     max_body_bytes: usize,
 ) -> RelayResult<Map<String, Value>> {
+    let text = body_text(headers, body, max_body_bytes, "application/json").await?;
+    // `-0` keeps its sign, as `JSON.parse` keeps it, for the protocol parsers.
+    match parse_json(&text) {
+        Ok(Value::Object(record)) => Ok(record),
+        _ => Err(INVALID),
+    }
+}
+
+/// A bounded body of the expected media type, decoded like `Request.text()`:
+/// lossy UTF-8 with a leading BOM dropped.
+async fn body_text(
+    headers: &HeaderMap,
+    body: Body,
+    max_body_bytes: usize,
+    media_type: &str,
+) -> RelayResult<String> {
     let content_type = headers
         .get_all(header::CONTENT_TYPE)
         .iter()
         .map(|value| String::from_utf8_lossy(value.as_bytes()).into_owned())
         .collect::<Vec<_>>()
         .join(", ");
-    if !content_type
-        .to_ascii_lowercase()
-        .starts_with("application/json")
-    {
+    if !content_type.to_ascii_lowercase().starts_with(media_type) {
         return Err(INVALID);
     }
     // Lossy decoding never shrinks a body, so a raw body beyond the bound is
@@ -202,11 +221,7 @@ async fn body_record(
     if text.len() > max_body_bytes {
         return Err(INVALID);
     }
-    // `-0` keeps its sign, as `JSON.parse` keeps it, for the protocol parsers.
-    match parse_json(text) {
-        Ok(Value::Object(record)) => Ok(record),
-        _ => Err(INVALID),
-    }
+    Ok(text.to_owned())
 }
 
 fn exact_body(record: &Map<String, Value>, keys: &[&str]) -> RelayResult<()> {
@@ -253,6 +268,7 @@ impl Relay {
             max_body_bytes: usize::try_from(max_body_bytes)
                 .map_err(|_| RelayErrorCode::Internal)?,
             bootstrap: options.bootstrap,
+            oauth: options.oauth,
         })
     }
 
@@ -269,6 +285,21 @@ impl Relay {
     }
 
     pub async fn handle(&self, request: Request<Body>) -> Response {
+        let head = path_segments(request.uri().path()).first().copied();
+        if matches!(head, Some("oauth" | ".well-known")) {
+            let path = request.uri().path().to_owned();
+            let reply = match self.oauth_route(&path, request).await {
+                Ok(reply) => reply,
+                Err(failure) => {
+                    tracing::debug!(code = %failure.code, "oauth request failed");
+                    RelayReply {
+                        status: failure.status,
+                        body: serde_json::to_vec(&failure.body()).unwrap_or_default(),
+                    }
+                }
+            };
+            return http_response(reply);
+        }
         let reply = match self.route(request).await {
             Ok(reply) => reply,
             Err(code) => {
@@ -277,6 +308,57 @@ impl Relay {
             }
         };
         http_response(reply)
+    }
+
+    /// `/oauth/*` and discovery, answering RFC 6749 error bodies.
+    async fn oauth_route(&self, path: &str, request: Request<Body>) -> OAuthResult<RelayReply> {
+        let (parts, body) = request.into_parts();
+        let (method, headers) = (&parts.method, &parts.headers);
+        let segments = path_segments(path);
+        let oauth = self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?;
+        let store = self.store.as_ref();
+        let clock = self.clock.as_ref();
+        let form = |body| async move {
+            let text = body_text(
+                headers,
+                body,
+                self.max_body_bytes,
+                "application/x-www-form-urlencoded",
+            )
+            .await?;
+            parse_form(&text)
+        };
+        match segments.as_slice() {
+            [".well-known", "openid-configuration"] => {
+                require_method(method, &Method::GET)?;
+                Ok(reply(200, &discovery(&oauth.issuer))?)
+            }
+            ["oauth", "jwks"] => {
+                require_method(method, &Method::GET)?;
+                Ok(reply(200, oauth.key.jwks())?)
+            }
+            ["oauth", "clients"] => {
+                require_method(method, &Method::POST)?;
+                let body = body_record(headers, body, self.max_body_bytes).await?;
+                Ok(reply(201, &register_client(store, clock, &body).await?)?)
+            }
+            ["oauth", "par"] => {
+                require_method(method, &Method::POST)?;
+                let form = form(body).await?;
+                let pushed =
+                    push_authorization_request(store, clock, self.request_ttl_ms, &form).await?;
+                Ok(reply(201, &pushed)?)
+            }
+            ["oauth", "token"] => {
+                require_method(method, &Method::POST)?;
+                let form = form(body).await?;
+                Ok(reply(
+                    200,
+                    &exchange_code(store, clock, oauth, &form).await?,
+                )?)
+            }
+            _ => Err(RelayErrorCode::NotFound.into()),
+        }
     }
 
     /// Limiting happens after authentication so a deployment can key on
@@ -334,6 +416,40 @@ impl Relay {
                 require_method(method, &Method::POST)?;
                 let body = body_record(headers, body, self.max_body_bytes).await?;
                 return reply(201, &create_account(store, clock, &body).await?);
+            }
+            if group == Some("transactions") && (count == 3 || count == 4) {
+                let oauth = self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?;
+                let id = canonical_str(third.unwrap_or_default(), INVALID)?;
+                let kms = self.kms.as_ref();
+                match fourth {
+                    None => {
+                        require_method(method, &Method::GET)?;
+                        return reply(200, &read_transaction(store, clock, id).await?);
+                    }
+                    Some("decision") => {
+                        require_method(method, &Method::POST)?;
+                        let body = body_record(headers, body, self.max_body_bytes).await?;
+                        let decision = login_decision(&body)?;
+                        let redirect = decide_login(
+                            store,
+                            clock,
+                            kms,
+                            &oauth.issuer,
+                            self.code_ttl_ms,
+                            id,
+                            decision,
+                        )
+                        .await?;
+                        return reply(200, &redirect);
+                    }
+                    Some("redirect") => {
+                        require_method(method, &Method::GET)?;
+                        let redirect =
+                            recover_redirect(store, clock, kms, &oauth.issuer, id).await?;
+                        return reply(200, &redirect);
+                    }
+                    Some(_) => {}
+                }
             }
             return Err(RelayErrorCode::NotFound);
         }

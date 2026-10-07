@@ -6,6 +6,10 @@
 //! OAATH_KMS_KEY       64 hex characters: the AES-256-GCM artifact key
 //! OAATH_CONFIG        path to the DEV ONLY JSON config (tokens, owner route,
 //!                     bootstrap selection)
+//! OAATH_ISSUER        OAuth/OIDC issuer URL (no trailing slash); enables
+//!                     /oauth/*, discovery, and the portal transaction routes
+//! OAATH_ID_TOKEN_KEY  path to the ES256 (P-256) PKCS#8 PEM id_token key
+//! OAATH_ID_TOKEN_KID  the key's `kid`
 //! --create-schema     create the current PostgreSQL schema first; fails if
 //!                     any object already exists
 //! ```
@@ -21,6 +25,8 @@ use oaath_relay::bootstrap::{BootstrapConfiguration, StaticBootstrapResolver};
 use oaath_relay::clock::SystemClock;
 use oaath_relay::config::DevConfig;
 use oaath_relay::kms::AesGcmKms;
+use oaath_relay::oauth::OAuthConfiguration;
+use oaath_relay::oauth::id_token::IdTokenKey;
 use oaath_relay::store::RelayStore;
 use oaath_relay::store::memory::MemoryRelayStore;
 use oaath_relay::store::postgres::{
@@ -86,6 +92,11 @@ async fn run() -> Result<(), String> {
         }
     };
 
+    let oauth = match std::env::var("OAATH_ISSUER") {
+        Ok(issuer) if !issuer.is_empty() => Some(oauth_configuration(issuer)?),
+        _ => None,
+    };
+
     tracing::warn!("authentication: DEV static bearer tokens; never deploy this configuration");
     let relay = Relay::new(RelayOptions {
         store: store.clone(),
@@ -101,6 +112,7 @@ async fn run() -> Result<(), String> {
             resolver: Arc::new(StaticBootstrapResolver(bootstrap.selection)),
             chains: bootstrap.chains,
         }),
+        oauth,
     })
     .map_err(|code| format!("relay configuration is invalid ({code})"))?;
 
@@ -118,6 +130,21 @@ async fn run() -> Result<(), String> {
     let _ = store.close().await;
     tracing::info!("OAAth relay stopped");
     Ok(())
+}
+
+/// The issuer and its id_token key. Errors never echo the key.
+fn oauth_configuration(issuer: String) -> Result<OAuthConfiguration, String> {
+    let parsed = url::Url::parse(&issuer).map_err(|_| "OAATH_ISSUER must be a URL")?;
+    if !matches!(parsed.scheme(), "https" | "http") || issuer.ends_with('/') {
+        return Err("OAATH_ISSUER must be an http(s) URL without a trailing slash".into());
+    }
+    let path = std::env::var("OAATH_ID_TOKEN_KEY").map_err(|_| "OAATH_ID_TOKEN_KEY is required")?;
+    let kid = std::env::var("OAATH_ID_TOKEN_KID").map_err(|_| "OAATH_ID_TOKEN_KID is required")?;
+    let pem = std::fs::read_to_string(path).map_err(|_| "OAATH_ID_TOKEN_KEY could not be read")?;
+    let key = IdTokenKey::from_pkcs8_pem(&kid, &pem)
+        .ok_or("OAATH_ID_TOKEN_KEY must be a P-256 PKCS#8 PEM key with a URL-safe kid")?;
+    tracing::info!(%issuer, "oauth: enabled");
+    Ok(OAuthConfiguration { issuer, key })
 }
 
 async fn shutdown() {

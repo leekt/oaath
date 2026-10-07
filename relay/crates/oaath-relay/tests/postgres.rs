@@ -248,11 +248,11 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
     let pool = fixture.pool().await;
     assert!(create_relay_schema(&pool).await.is_err());
     let version: String =
-        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v6 WHERE schema_id = 'oaath'")
+        sqlx::query_scalar("SELECT version FROM oaath_relay_schema_v7 WHERE schema_id = 'oaath'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v6");
+    assert_eq!(version, "oaath.relay-postgres-schema/v7");
     pool.close().await;
 }
 
@@ -532,4 +532,114 @@ async fn recognises_a_passkey_by_credential_id_across_a_restart() {
         json!({ "signer_id": signer, "kind": "webauthn", "profile": profile })
     );
     shutdown(second).await;
+}
+
+fn oauth_form(path: &str, pairs: &[(&str, &str)]) -> axum::http::Request<axum::body::Body> {
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(pairs)
+        .finish();
+    axum::http::Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(axum::body::Body::from(body))
+        .unwrap()
+}
+
+fn redirect_code(reply: &Reply) -> String {
+    url::Url::parse(text(reply.ok(200), "redirect"))
+        .unwrap()
+        .query_pairs()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1
+        .into_owned()
+}
+
+#[tokio::test]
+async fn keeps_a_login_transaction_and_its_code_across_restarts() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+
+    let first = fixture.process(clock.clone()).await;
+    let client = first
+        .send(post(
+            "/oauth/clients",
+            None,
+            Some(json!({ "client_name": "Example dapp", "redirect_uris": [REDIRECT_URI] })),
+        ))
+        .await;
+    let client_id = text(client.ok(201), "client_id").to_owned();
+    let challenge = code_challenge();
+    let pushed = first
+        .send(oauth_form(
+            "/oauth/par",
+            &[
+                ("client_id", &client_id),
+                ("redirect_uri", REDIRECT_URI),
+                ("response_type", "code"),
+                ("code_challenge", &challenge),
+                ("code_challenge_method", "S256"),
+                ("scope", "openid"),
+                ("state", "state-1"),
+            ],
+        ))
+        .await;
+    let id = text(pushed.ok(201), "request_uri")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_owned();
+    let signer = register(&first, ecdsa_profile()).await;
+    let account = create_account(&first, &signer).await.ok(201).clone();
+    shutdown(first).await;
+
+    let second = fixture.process(clock.clone()).await;
+    let read = second
+        .send(portal_request(
+            "GET",
+            &format!("/portal/transactions/{id}"),
+            None,
+        ))
+        .await;
+    assert_eq!(read.ok(200)["client_id"], json!(client_id));
+    let decided = second
+        .send(portal_request(
+            "POST",
+            &format!("/portal/transactions/{id}/decision"),
+            Some(json!({ "outcome": "approved", "signer_id": signer, "account_id": account["account_id"] })),
+        ))
+        .await;
+    let code = redirect_code(&decided);
+    shutdown(second).await;
+
+    let third = fixture.process(clock.clone()).await;
+    let recovered = third
+        .send(portal_request(
+            "GET",
+            &format!("/portal/transactions/{id}/redirect"),
+            None,
+        ))
+        .await;
+    assert_eq!(redirect_code(&recovered), code);
+    let exchange = [
+        ("grant_type", "authorization_code"),
+        ("client_id", client_id.as_str()),
+        ("code", code.as_str()),
+        ("code_verifier", CODE_VERIFIER),
+        ("redirect_uri", REDIRECT_URI),
+    ];
+    let tokens = third.send(oauth_form("/oauth/token", &exchange)).await;
+    assert!(tokens.ok(200)["id_token"].is_string());
+    shutdown(third).await;
+
+    let last = fixture.process(clock).await;
+    let replay = last.send(oauth_form("/oauth/token", &exchange)).await;
+    assert_eq!(replay.status, 400);
+    assert_eq!(
+        replay.body["error_code"],
+        json!("relay_code_already_consumed")
+    );
+    shutdown(last).await;
 }
