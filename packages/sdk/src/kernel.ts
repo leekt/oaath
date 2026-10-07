@@ -9,6 +9,14 @@
  * @author taek <leekt216@gmail.com>
  */
 
+// Cetane owns bounded history discovery and state confirmation. Keep one reader.
+export {
+  type KernelModuleSnapshot,
+  type ObservedModule,
+  type ReadModulesOptions,
+  readKernelModules,
+} from "cetane/accounts/kernel";
+
 export type {
   DiagnoseKernelCapabilityInput,
   KernelCapability,
