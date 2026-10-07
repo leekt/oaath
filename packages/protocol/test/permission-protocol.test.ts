@@ -33,7 +33,7 @@ const operatorAddress = `0x${"44".repeat(20)}` as const;
 const capabilityHash = `0x${"55".repeat(32)}` as const;
 
 const policy: GrantPolicy = {
-  version: "oaath.grant-policy/v2",
+  version: "oaath.grant-policy/v1",
   calls: [
     {
       target,
@@ -51,7 +51,7 @@ const basePolicyCall = policy.calls[0];
 if (!basePolicyCall) throw new Error("missing policy call fixture");
 
 const request: PermissionRequest & { readonly logicalAccount: KernelDerivedAccountProfile } = {
-  version: "oaath.permission-request/v2",
+  version: "oaath.permission-request/v1",
   context: {
     version: "oaath.workspace-account-context/v1",
     workspaceId: "personal-1",
@@ -233,7 +233,7 @@ describe("PermissionRequest current codec", () => {
     const existing = parsePermissionRequest({
       ...request,
       logicalAccount: {
-        version: "oaath.kernel-existing-account-profile/v3",
+        version: "oaath.kernel-existing-account-profile/v1",
         kind: "kernel",
         kernelVersion: "0.3.3",
         address: target,
@@ -288,7 +288,7 @@ describe("PermissionRequest current codec", () => {
   });
 
   it("captures the exact application/account/operator/policy request and creates its Grant", () => {
-    expect(OAATH_PERMISSION_REQUEST_VERSION).toBe("oaath.permission-request/v2");
+    expect(OAATH_PERMISSION_REQUEST_VERSION).toBe("oaath.permission-request/v1");
     expect(OAATH_PERMISSION_REQUEST_HASH_DOMAIN).toBe("@oaath/protocol:permission-request");
     const mutable = clone(request) as unknown as {
       requestId: string;
@@ -316,7 +316,7 @@ describe("PermissionRequest current codec", () => {
 
     const grant = createGrantFromPermissionRequest(parsed);
     expect(grant).toMatchObject({
-      version: "oaath.grant/v3",
+      version: "oaath.grant/v1",
       state: "requested",
       revision: 0,
       requestedAt: 100,
@@ -339,7 +339,7 @@ describe("PermissionRequest current codec", () => {
     expect(hashPermissionRequest(clone(request))).toBe(hashPermissionRequest(request));
     expect(encodePermissionRequest(request)).toMatch(/^0x[0-9a-f]+$/u);
     expect(hashPermissionRequest(request)).toBe(
-      "0xa0cffdba51d5fc72073c8b8fd767e71b7940001fef2eebcc583387b4f676eb22",
+      "0xa34e6252beb4a9573cda9904b29d52f2ed181dc70838b99ccbf0103468a07605",
     );
     expect(
       hashPermissionRequest({ ...clone(request), requestId: "permission-request-2" }),
@@ -425,7 +425,7 @@ describe("PermissionRequest current codec", () => {
     });
     const invalidRequests: unknown[] = [
       { ...clone(request), version: "oaath.permission-request/v0" },
-      { ...clone(request), version: "oaath.permission-request/v1" },
+      { ...clone(request), version: "oaath.permission-request/v0" },
       { ...clone(request), context: undefined },
       { ...clone(request), context: { ...request.context, accountId: "" } },
       { ...clone(request), context: { ...request.context, workspaceKind: "organization" } },
@@ -544,10 +544,10 @@ describe("PermissionDecision current codec", () => {
       expect(hashPermissionDecision(clone(parsed))).toBe(hashPermissionDecision(parsed));
     }
     expect(hashPermissionDecision(approve())).toBe(
-      "0xaa3b3f5a0635e1f65e38f6f393ca6a9893f324b72e5ce30284552064842751e2",
+      "0xfd2b2f71c7a45802124c0ddc34ad50fa81ec4cb05bce17d048785d3720f816e1",
     );
     expect(hashPermissionDecision(reject())).toBe(
-      "0x9baa855a59faaa53a4d307b02cfd89b64af585e0a41c64e93de2b56715cd65d6",
+      "0x37f0f53bcaed630535aa331736478b5e170522bc3b003a4502244fa7242ae8f2",
     );
     expect(hashPermissionDecision(approve({ capabilityHash: `0x${"66".repeat(32)}` }))).not.toBe(
       hashPermissionDecision(approve()),

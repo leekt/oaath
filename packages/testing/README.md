@@ -16,7 +16,7 @@ Always call `close()` in `finally` to release every local process.
 the SDK client; the default is `"0.4.0"`. The v3.3 path installs the actual scoped
 permission with one all-chain approval, then reuses it silently. Fixed fixture
 gas limits prove execution, not production bundler estimation. Recovery descriptor
-`oaath.local-anvil-recovery/v2` binds the existing address and rejects old versions.
+`oaath.local-anvil-recovery/v1` binds the existing address and rejects old versions.
 
 For existing v3.3 owner and local-session flows, use
 `createLocalOwnerAnvilFixture({ chainId, wallet: "browser" })`. Its `wallet`

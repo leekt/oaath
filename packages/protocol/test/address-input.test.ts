@@ -18,7 +18,7 @@ const checked = getAddress(lower);
 const upper = `0x${lower.slice(2).toUpperCase()}` as const;
 const wrong = checked.replace(/[a-f]/u, (letter) => letter.toUpperCase()) as `0x${string}`;
 const policy = (target: `0x${string}`) => ({
-  version: "oaath.grant-policy/v2" as const,
+  version: "oaath.grant-policy/v1" as const,
   calls: [{ target, selector: "0x12345678" as const, valueLimit: "1", argumentEquals: [] }],
   validAfter: 0,
   validUntil: null,

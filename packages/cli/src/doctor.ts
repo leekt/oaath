@@ -15,7 +15,7 @@ export interface ComponentReport {
   readonly runtimeCodeHash: Hex | null;
 }
 export interface DoctorReport {
-  readonly version: "oaath.runtime-readiness/v2";
+  readonly version: "oaath.runtime-readiness/v1";
   readonly chainId: number;
   readonly observedChainId: number | null;
   readonly checkedAt: string;
@@ -67,7 +67,7 @@ async function inspect(component: Component, rpc: RpcReader, block: Hex): Promis
 export async function doctor(chainId: number, rpc: RpcReader): Promise<DoctorReport> {
   const manifest = components(chainId);
   const base = {
-    version: "oaath.runtime-readiness/v2" as const,
+    version: "oaath.runtime-readiness/v1" as const,
     chainId,
     checkedAt: new Date().toISOString(),
   };

@@ -264,7 +264,7 @@ describe("Grant current codec", () => {
     mutableIdentity.logicalAccount.accountIndex = "7";
 
     expect(grant).toMatchObject({
-      version: "oaath.grant/v3",
+      version: "oaath.grant/v1",
       state: "requested",
       revision: 0,
       identity: {
@@ -508,7 +508,7 @@ describe("Grant current codec", () => {
 
   it("rejects non-current, inexact, aliased, and non-dense record graphs", () => {
     const active = activeRecord(activeChildren(), 13, 35);
-    expectRecordInvalid({ ...active, version: "oaath.grant/v1" });
+    expectRecordInvalid({ ...active, version: "oaath.grant/v0" });
     expectRecordInvalid({ ...active, operationId: "forbidden" });
     const missing = { ...active };
     delete missing.updatedAt;

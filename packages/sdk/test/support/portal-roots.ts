@@ -148,7 +148,7 @@ export function portalPermissionRequest(input: {
 }): Readonly<PermissionRequest> {
   const { requestedAt } = input;
   return parsePermissionRequest({
-    version: "oaath.permission-request/v2",
+    version: "oaath.permission-request/v1",
     requestId: `portal-${input.root.kind}`,
     context: {
       version: "oaath.workspace-account-context/v1",
@@ -179,7 +179,7 @@ export function portalPermissionRequest(input: {
     },
     sessionSigner: null,
     policy: {
-      version: "oaath.grant-policy/v2",
+      version: "oaath.grant-policy/v1",
       calls: [
         { target: input.target, selector: "0x12345678", valueLimit: "500", argumentEquals: [] },
       ],

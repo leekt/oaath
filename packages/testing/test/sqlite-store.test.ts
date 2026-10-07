@@ -642,7 +642,7 @@ describe("test-only durable SQLite stores", () => {
     const database = new DatabaseSync(filePath);
     database
       .prepare("UPDATE oaath_test_store_schema_v1 SET version = ?")
-      .run("oaath.sqlite-test-store/v1");
+      .run("oaath.sqlite-test-store/v0");
     database.close();
     expectStoreConstructorError(() => createSqliteGrantStore(filePath), "store_record_invalid");
     expectStoreConstructorError(() => createSqliteOperationStore(filePath), "store_record_invalid");

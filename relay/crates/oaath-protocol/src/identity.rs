@@ -14,7 +14,7 @@ pub const OWNER_CREDENTIAL_PROFILE_VERSION: &str = "oaath.owner-credential-profi
 pub const OPERATOR_CREDENTIAL_PROFILE_VERSION: &str = "oaath.operator-credential-profile/v1";
 pub const KERNEL_ACCOUNT_PROFILE_VERSION: &str = "oaath.kernel-account-profile/v1";
 pub const KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION: &str =
-    "oaath.kernel-existing-account-profile/v3";
+    "oaath.kernel-existing-account-profile/v1";
 const OWNER_CREDENTIAL_PROFILE_HASH_DOMAIN: &str = "@oaath/protocol:owner-credential-profile";
 const OPERATOR_PROFILE_HASH_DOMAIN: &str = "@oaath/protocol:operator-credential-profile";
 const KERNEL_PROFILE_HASH_DOMAIN: &str = "@oaath/protocol:kernel-account-profile";

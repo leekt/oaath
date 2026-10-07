@@ -129,7 +129,7 @@ describe("Operation abandonment", () => {
     const operation = abandoned(prepared());
 
     expect(operation).toEqual({
-      version: "oaath.operation/v5",
+      version: "oaath.operation/v1",
       lane: null,
       submission: null,
       identity,

@@ -320,7 +320,7 @@ describe("Kernel v3.3 session composition", () => {
   it("binds a Grant approval to the account version and existing address", async () => {
     const { approval } = await sessionFixture();
     const profile = {
-      version: "oaath.kernel-existing-account-profile/v3",
+      version: "oaath.kernel-existing-account-profile/v1",
       kind: "kernel",
       kernelVersion: "0.3.3",
       address: account,
@@ -361,7 +361,7 @@ describe("Kernel v3.3 session composition", () => {
     expect(BigInt(enabled.prepared.userOperation.nonce) >> 248n).toBe(1n);
     expect(enabled.prepared.userOperation.verificationGasLimit).toBe("2000000");
     expect(approval).toMatchObject({
-      version: "oaath.kernel.v33-permission-approval/v2",
+      version: "oaath.kernel.v33-permission-approval/v1",
       chainScope: "all",
     });
     expect(Object.hasOwn(approval, "chainId")).toBe(false);
@@ -459,7 +459,7 @@ describe("Kernel v3.3 session composition", () => {
     expect(() =>
       parseKernelV33PermissionApproval({
         ...approval,
-        version: "oaath.kernel.v33-permission-approval/v1",
+        version: "oaath.kernel.v33-permission-approval/v0",
       }),
     ).toThrow();
   });

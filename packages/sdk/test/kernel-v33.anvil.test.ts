@@ -1020,7 +1020,7 @@ function passkeySession() {
     expect(preparation.paymaster).toBeNull();
     await expect(
       restoreKernelPermissionRevocation({
-        preparation: { ...saved, version: "oaath.kernel-permission-revocation/v1" },
+        preparation: { ...saved, version: "oaath.kernel-permission-revocation/v0" },
         reads,
       }),
     ).rejects.toMatchObject({ code: "kernel_runtime_input_invalid" });
@@ -1636,7 +1636,7 @@ function passkeySession() {
     const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
     const now = Number((await harness.client.getBlock()).timestamp);
     const request = parsePermissionRequest({
-      version: "oaath.permission-request/v2",
+      version: "oaath.permission-request/v1",
       requestId: "existing-v33-permission",
       context: {
         version: "oaath.workspace-account-context/v1",
@@ -1652,7 +1652,7 @@ function passkeySession() {
       },
       chainScope: "all",
       logicalAccount: {
-        version: "oaath.kernel-existing-account-profile/v3",
+        version: "oaath.kernel-existing-account-profile/v1",
         kind: "kernel",
         kernelVersion: "0.3.3",
         address,
@@ -1670,7 +1670,7 @@ function passkeySession() {
       },
       sessionSigner: null,
       policy: {
-        version: "oaath.grant-policy/v2",
+        version: "oaath.grant-policy/v1",
         calls: [{ target, selector: "0x12345678", valueLimit: "1", argumentEquals: [] }],
         validAfter: now,
         validUntil: now + 1800,
@@ -1712,7 +1712,7 @@ function passkeySession() {
     );
     expect(ownerSign).toHaveBeenCalledTimes(1);
     expect(decision.installApproval).toMatchObject({
-      version: "oaath.kernel.v33-permission-approval/v2",
+      version: "oaath.kernel.v33-permission-approval/v1",
       account: address,
       digest: prepared.signingRequest.expectedDigest,
     });
@@ -1726,7 +1726,7 @@ function passkeySession() {
       }),
     });
     const approval = decision.installApproval;
-    if (approval.version !== "oaath.kernel.v33-permission-approval/v2")
+    if (approval.version !== "oaath.kernel.v33-permission-approval/v1")
       throw new Error("expected a v3.3 approval");
     const enabled = await materializeKernelV33Permission({
       runtime,

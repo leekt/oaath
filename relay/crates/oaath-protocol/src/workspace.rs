@@ -73,5 +73,5 @@ pub(crate) fn capture_workspace_account_context(
 }
 
 pub fn parse_workspace_account_context(value: &Value) -> ProtocolResult<WorkspaceAccountContext> {
-    capture_workspace_account_context(value, ErrorCode::ServiceBootstrapInvalid)
+    capture_workspace_account_context(value, ErrorCode::WorkspaceAccountContextInvalid)
 }

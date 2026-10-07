@@ -1065,12 +1065,12 @@ describe("aggregate store boundary", () => {
     );
   });
 
-  it("rejects v1 Operation aggregates and store envelopes without migration", async () => {
+  it("rejects old Operation aggregates and store envelopes without migration", async () => {
     const key = { grantId: grantIdentity.grantId, chainId: 31_337, kind: "execution" } as const;
     const operation = preparedOperation();
     let raw: unknown = {
       ...operationEnvelope(operation),
-      version: "oaath.operation-store-record/v1",
+      version: "oaath.operation-store-record/v0",
     };
     const store = new OperationStore({
       async get() {
@@ -1089,7 +1089,7 @@ describe("aggregate store boundary", () => {
     await expectStoreError(() => store.get(key), "store_record_invalid");
     raw = {
       ...operationEnvelope(operation),
-      value: { ...operation, version: "oaath.operation/v1" },
+      value: { ...operation, version: "oaath.operation/v0" },
     };
     await expectStoreError(() => store.get(key), "store_record_invalid");
   });

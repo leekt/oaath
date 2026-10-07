@@ -28,7 +28,7 @@ An unreadable endpoint is never reported as an absent contract.
 
 Exit 0 means the ECDSA session module set and its prerequisites are ready;
 exit 1 means not ready or unreadable; exit 2 means invalid arguments. JSON uses
-the `oaath.runtime-readiness/v2` schema. Readiness is a snapshot, not a guarantee
+the `oaath.runtime-readiness/v1` schema. Readiness is a snapshot, not a guarantee
 of later RPC availability, account ownership, bundler/paymaster service or finality.
 
 The owner validator remains application-selected. `passkeySessionsReady` reports

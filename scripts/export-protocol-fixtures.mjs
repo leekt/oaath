@@ -425,7 +425,7 @@ const DERIVED_ACCOUNT = {
   ownerCredential: OWNER_ECDSA,
 };
 const EXISTING_ACCOUNT = {
-  version: "oaath.kernel-existing-account-profile/v3",
+  version: "oaath.kernel-existing-account-profile/v1",
   kind: "kernel",
   kernelVersion: "0.3.3",
   address: hex("66", 20),
@@ -529,7 +529,7 @@ const EXISTING_WEBAUTHN_ACCOUNT = {
 // --------------------------------------------------------------- grant policy
 
 const POLICY = {
-  version: "oaath.grant-policy/v2",
+  version: "oaath.grant-policy/v1",
   calls: [
     {
       target: hex("11", 20),
@@ -589,7 +589,7 @@ for (const fn of ["parseGrantPolicy", "hashGrantPolicy"]) {
 }
 {
   const fn = "parseGrantPolicy";
-  record(fn, "version v1", { ...POLICY, version: "oaath.grant-policy/v1" });
+  record(fn, "version v0", { ...POLICY, version: "oaath.grant-policy/v0" });
   record(fn, "empty calls", { ...POLICY, calls: [] });
   record(fn, "unsorted calls", { ...POLICY, calls: [POLICY.calls[1], POLICY.calls[0]] });
   record(fn, "duplicate calls", { ...POLICY, calls: [POLICY.calls[1], POLICY.calls[1]] });
@@ -818,7 +818,7 @@ function identifierCases(fn, label, base, path) {
 // ----------------------------------------------------- permission protocol
 
 const REQUEST = {
-  version: "oaath.permission-request/v2",
+  version: "oaath.permission-request/v1",
   requestId: "permission-request-1",
   context: CONTEXT,
   application: {
@@ -930,7 +930,7 @@ for (const fn of ["parsePermissionRequest", "hashPermissionRequest"]) {
 }
 {
   const fn = "parsePermissionRequest";
-  record(fn, "version v1", { ...REQUEST, version: "oaath.permission-request/v1" });
+  record(fn, "version v0", { ...REQUEST, version: "oaath.permission-request/v0" });
   record(fn, "chainScope one", { ...REQUEST, chainScope: "1" });
   record(fn, "expiresAt equals requestedAt", { ...REQUEST, expiresAt: 100 });
   record(fn, "policy validUntil null", set(REQUEST, ["policy", "validUntil"], null));

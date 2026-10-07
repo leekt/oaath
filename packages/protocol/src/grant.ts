@@ -16,7 +16,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OAATH_GRANT_RECORD_VERSION = "oaath.grant/v3" as const;
+export const OAATH_GRANT_RECORD_VERSION = "oaath.grant/v1" as const;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const PERMISSION_ID = /^0x[0-9a-f]{8}$/u;

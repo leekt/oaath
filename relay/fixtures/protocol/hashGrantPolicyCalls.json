@@ -26,7 +26,7 @@
       }
     ],
     "expect": {
-      "ok": "0x02de49e1edbe073350655e9937d25fb8ec72133a4cd7a8d12b58410928214888"
+      "ok": "0xd42ed4f5d002e236c5eefce3e0cbc0752da5ce01de4d2e3a6b5c38de82d6a2d3"
     }
   },
   {
@@ -41,7 +41,7 @@
       }
     ],
     "expect": {
-      "ok": "0x27bce11175b4d5e8e00ee80dde504439c5b05f64acee8cf12d9aa5b3e79d9f53"
+      "ok": "0x87cc179d7b1bfa20618c667d594753cfcb87570f40dec0cb8b502205e484d1fb"
     }
   },
   {
@@ -49,7 +49,7 @@
     "fn": "hashGrantPolicyCalls",
     "inputText": "[{\"target\":\"0x1111111111111111111111111111111111111111\",\"selector\":\"0x12345678\",\"valueLimit\":\"100\",\"argumentEquals\":[{\"index\":1.0,\"value\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"},{\"index\":2,\"value\":\"0x4444444444444444444444444444444444444444444444444444444444444444\"}]},{\"target\":\"0x2222222222222222222222222222222222222222\",\"selector\":\"0xabcdef01\",\"valueLimit\":\"0\",\"argumentEquals\":[]}]",
     "expect": {
-      "ok": "0xf4862365d7197f8af68b42f0a9a0c96dae2b01bafc27b1ebb0b14a8a5872ffd1"
+      "ok": "0x6bd4f1f9b1840ee5ecedf8ca8b53466bd6df2f1bf1505b8fcf89de24b5d7e8a2"
     }
   },
   {
@@ -94,7 +94,7 @@
     "name": "object",
     "fn": "hashGrantPolicyCalls",
     "input": {
-      "version": "oaath.grant-policy/v2",
+      "version": "oaath.grant-policy/v1",
       "calls": [
         {
           "target": "0x1111111111111111111111111111111111111111",

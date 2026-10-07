@@ -7,7 +7,7 @@ import {
   exactRecord as exactRecordValue,
 } from "./internal/exact-record.js";
 
-export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v5" as const;
+export const OAATH_OPERATION_RECORD_VERSION = "oaath.operation/v1" as const;
 
 const HASH = /^0x[0-9a-f]{64}$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;

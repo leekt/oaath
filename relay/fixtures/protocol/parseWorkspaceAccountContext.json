@@ -45,7 +45,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -58,7 +58,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -89,7 +89,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -102,7 +102,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -115,7 +115,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -128,7 +128,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -177,7 +177,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -190,7 +190,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -203,7 +203,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -216,7 +216,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -247,7 +247,7 @@
       "accountId": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -260,7 +260,7 @@
       "accountId": "Account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -273,7 +273,7 @@
       "accountId": "-account"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -286,7 +286,7 @@
       "accountId": ".account"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -335,7 +335,7 @@
       "accountId": "a~b"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -348,7 +348,7 @@
       "accountId": "a b"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -361,7 +361,7 @@
       "accountId": ""
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -374,7 +374,7 @@
       "accountId": "account\n"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -386,7 +386,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -399,7 +399,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -412,7 +412,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -425,7 +425,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -438,7 +438,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -451,7 +451,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -464,7 +464,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -476,7 +476,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -489,7 +489,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -502,7 +502,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -533,7 +533,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -546,7 +546,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -559,7 +559,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -571,7 +571,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -584,7 +584,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -597,7 +597,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -610,7 +610,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -623,7 +623,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -636,7 +636,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -649,7 +649,7 @@
       "accountId": "account-1"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -661,7 +661,7 @@
       "workspaceKind": "personal"
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -674,7 +674,7 @@
       "accountId": null
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -687,7 +687,7 @@
       "accountId": 1
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -718,7 +718,7 @@
       "accountId": []
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -731,7 +731,7 @@
       "accountId": {}
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -744,7 +744,7 @@
       "accountId": true
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -758,7 +758,7 @@
       "unexpected": true
     },
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -766,7 +766,7 @@
     "fn": "parseWorkspaceAccountContext",
     "input": null,
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -774,7 +774,7 @@
     "fn": "parseWorkspaceAccountContext",
     "input": 1,
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -782,7 +782,7 @@
     "fn": "parseWorkspaceAccountContext",
     "input": "x",
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   },
   {
@@ -790,7 +790,7 @@
     "fn": "parseWorkspaceAccountContext",
     "input": [],
     "expect": {
-      "error": "service_bootstrap_invalid"
+      "error": "workspace_account_context_invalid"
     }
   }
 ]

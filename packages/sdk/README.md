@@ -416,11 +416,11 @@ The Monad enable gas floor applies before hashing or signing. Missing signer or
 policy deployments prevent binding. These primitives prepare and sign only;
 submission journaling and observation remain the caller's responsibility when
 using them directly. A missing receipt never authorizes another send.
-The approval schema is `oaath.kernel.v33-permission-approval/v2`; earlier
+The approval schema is `oaath.kernel.v33-permission-approval/v1`; earlier
 chain-bound approval records are rejected and must be recreated.
 
 Custom issuer configurations can execute a v3.3 Grant using an account profile
-with version `oaath.kernel-existing-account-profile/v3`, `kernelVersion: "0.3.3"`,
+with version `oaath.kernel-existing-account-profile/v1`, `kernelVersion: "0.3.3"`,
 the existing `address`, EntryPoint version `0.7` (Kernel `0.3.3`) or `0.9` (Kernel v4), and its current ECDSA
 `ownerCredential`. The issuer supplies a v3.3 approval beside the permission
 decision and binds it with `kernelPermissionCapabilityHash(approval)`. The permission
@@ -618,7 +618,7 @@ Recreate it after reload using the saved reference; `close()` drains active
 bounded observations and closes the supplied capability. A missing or unreadable
 receipt leaves the saved identity unresolved.
 
-Operation records now use `oaath.operation/v5`. Older records are rejected;
+Operation records now use `oaath.operation/v1`. Older records are rejected;
 IndexedDB schema 16 recreates older local state without migration. This pre-1.0
 reset deletes retained keys, Grants, and operation history, so applications must
 reconnect and authorize fresh permissions. It does not revoke onchain authority.

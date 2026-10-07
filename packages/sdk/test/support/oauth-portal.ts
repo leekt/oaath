@@ -78,7 +78,7 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
     const requestedAt = Math.floor(Date.now() / 1000);
     // The relay's compose.
     const request: Record<string, unknown> = {
-      version: "oaath.permission-request/v2",
+      version: "oaath.permission-request/v1",
       requestId: parId,
       context: {
         version: "oaath.workspace-account-context/v1",

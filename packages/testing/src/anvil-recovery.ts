@@ -9,7 +9,7 @@ import { openLocalClientStores } from "./anvil-stores.js";
 
 /** Public test-environment metadata, never credentials or a copy of SDK records. */
 export interface LocalAnvilRecovery {
-  readonly version: "oaath.local-anvil-recovery/v2";
+  readonly version: "oaath.local-anvil-recovery/v1";
   readonly existingAccount: `0x${string}` | null;
   readonly owner: `0x${string}`;
   readonly session: `0x${string}`;
@@ -42,7 +42,7 @@ export function captureLocalAnvilRecovery(value: unknown): Readonly<LocalAnvilRe
     if (
       value === null ||
       typeof value !== "object" ||
-      Reflect.get(value, "version") !== "oaath.local-anvil-recovery/v2"
+      Reflect.get(value, "version") !== "oaath.local-anvil-recovery/v1"
     )
       throw new Error();
     const input = record(value, ["version", "owner", "session", "chains", "existingAccount"]);
@@ -75,7 +75,7 @@ export function captureLocalAnvilRecovery(value: unknown): Readonly<LocalAnvilRe
     });
     if (new Set(chains.map((chain) => chain.chainId)).size !== chains.length) throw new Error();
     return Object.freeze({
-      version: "oaath.local-anvil-recovery/v2",
+      version: "oaath.local-anvil-recovery/v1",
       existingAccount: input.existingAccount === null ? null : address(input.existingAccount),
       owner: address(input.owner),
       session: address(input.session),

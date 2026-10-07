@@ -13,7 +13,7 @@ use crate::capture::{
 use crate::error::{ErrorCode, OrFail, ProtocolResult, ensure};
 use crate::identity::{address_of, b256_of, hex_hash};
 
-pub const GRANT_POLICY_VERSION: &str = "oaath.grant-policy/v2";
+pub const GRANT_POLICY_VERSION: &str = "oaath.grant-policy/v1";
 pub const GRANT_POLICY_HASH_DOMAIN: &str = "@oaath/protocol:grant-policy";
 pub const GRANT_POLICY_CALLS_HASH_DOMAIN: &str = "@oaath/protocol:grant-policy-calls";
 

@@ -10,7 +10,7 @@ owns PKCE S256 challenge derivation. Authorization request/code storage, decisio
 transactions, code consumption, and HTTP responses belong to the Rust relay.
 
 `KernelAccountProfile` distinguishes derived Kernel v4 accounts from existing
-accounts. The latter use `oaath.kernel-existing-account-profile/v3` with the
+accounts. The latter use `oaath.kernel-existing-account-profile/v1` with the
 detected `kernelVersion` (`"0.3.3"` or `"0.4.0"`), an
 `address`, EntryPoint `0.7` for Kernel `0.3.3` or `0.9` for Kernel `0.4.0`, and an ECDSA `ownerCredential`
 (or, on `"0.4.0"`, a raw P-256 one); a WebAuthn owner, factory indices and
@@ -18,7 +18,7 @@ routes are rejected. Permission hashes and Grant identity bind that existing
 address and owner. Parsing the profile does not prove deployment or ownership;
 the runtime checks those facts on each action chain.
 
-`oaath.operation/v5` names its lane and retains nullable `submission` evidence: an
+`oaath.operation/v1` names its lane and retains nullable `submission` evidence: an
 `erc4337-bundler` acknowledgement or an `erc4337-handleops` EntryPoint transaction hash. The closed
 `OperationSubmissionEvidence` type and `parseOperationSubmissionEvidence` own
 that shape. It is transport evidence only; authoritative observation still owns

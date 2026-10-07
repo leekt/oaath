@@ -28,7 +28,7 @@ import { encodeAbiParameters, keccak256 } from "cetane/utils";
 import { requireNonExtractableKey } from "../persistence/interfaces.js";
 import { clientFail, exactClientRecord } from "./errors.js";
 
-export const OAATH_SERVICE_SESSION_VERSION = "oaath.service-session/v2" as const;
+export const OAATH_SERVICE_SESSION_VERSION = "oaath.service-session/v1" as const;
 const STORAGE_DOMAIN = "@oaath/sdk:service-session" as const;
 const PRIVATE_KEY = /^0x[0-9a-f]{64}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})+$/u;

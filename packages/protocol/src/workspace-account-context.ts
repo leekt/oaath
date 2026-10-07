@@ -46,13 +46,13 @@ function captureWorkspaceAccountContext(
 
 export function parseWorkspaceAccountContext(value: unknown): Readonly<WorkspaceAccountContext> {
   return capturedByProtocol(
-    "service_bootstrap_invalid",
+    "workspace_account_context_invalid",
     "workspace account context is invalid",
     () =>
       captureWorkspaceAccountContext(
         value,
         new WeakSet(),
-        protocolFailure("service_bootstrap_invalid"),
+        protocolFailure("workspace_account_context_invalid"),
       ),
   );
 }

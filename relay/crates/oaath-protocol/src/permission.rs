@@ -22,7 +22,7 @@ use crate::workspace::{
     WORKSPACE_ACCOUNT_CONTEXT_VERSION, WorkspaceAccountContext, capture_workspace_account_context,
 };
 
-pub const PERMISSION_REQUEST_VERSION: &str = "oaath.permission-request/v2";
+pub const PERMISSION_REQUEST_VERSION: &str = "oaath.permission-request/v1";
 pub const PERMISSION_DECISION_VERSION: &str = "oaath.permission-decision/v1";
 pub const PERMISSION_REQUEST_HASH_DOMAIN: &str = "@oaath/protocol:permission-request";
 pub const PERMISSION_DECISION_HASH_DOMAIN: &str = "@oaath/protocol:permission-decision";

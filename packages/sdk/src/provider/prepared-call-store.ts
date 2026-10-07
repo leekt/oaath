@@ -41,9 +41,9 @@ import {
   type OaathWalletCallResultCapabilities,
 } from "./result-capabilities.js";
 
-export const OAATH_PREPARED_CALL_CONTEXT_VERSION = "oaath.prepared-call-context/v3" as const;
+export const OAATH_PREPARED_CALL_CONTEXT_VERSION = "oaath.prepared-call-context/v1" as const;
 export const OAATH_PREPARED_CALL_STORE_RECORD_VERSION =
-  "oaath.prepared-call-store-record/v3" as const;
+  "oaath.prepared-call-store-record/v1" as const;
 /** Exclusive local lifetime of one prepared context, owned by this durable codec. */
 export const OAATH_PREPARED_CALL_CONTEXT_LIFETIME_SECONDS = 300;
 
