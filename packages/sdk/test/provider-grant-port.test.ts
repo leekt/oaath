@@ -20,7 +20,6 @@ import {
 import type { OaathGrantHandle } from "../src/index.js";
 import * as publicSdk from "../src/index.js";
 import {
-  ACCOUNT,
   bindingInput,
   bundlerProbe,
   CHAIN_ID,

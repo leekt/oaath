@@ -2,9 +2,9 @@ import { KERNEL_ENTRY_POINT_V07 } from "../../src/kernel/deployment/v33.js";
 /**
  * Browser-client harness.
  *
- * The issuer is the real `@oaath/server` Fetch relay handler running in this
- * process over its in-memory store: the client speaks the wire contract, not a
- * mock of it. Only the chain stays synthetic — reads, bundler probe, submission,
+ * Realms compose through the public injected configuration; the owner approves
+ * in-process with the replayable install an owner device signs. Only the chain
+ * stays synthetic — reads, bundler probe, submission,
  * quote, and observation evidence are injected fixtures, so no test needs Anvil
  * or a network.
  *
@@ -21,29 +21,18 @@ import {
   type OperatorCredentialProfile,
   type PermissionRequest,
   parseGrantPolicy,
-  parseKernelAccountProfile,
-  parseOperatorCredentialProfile,
   sameOperatorCredentialProfile,
 } from "@oaath/protocol";
-import {
-  createMemoryRelayStore,
-  createRelayHandler,
-  type RelayAuthentication,
-  type RelayCaller,
-  type RelayKms,
-} from "@oaath/server";
 import { keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type {
-  Erc7677GasEstimationRequest,
   OaathBundlerProbeCapability,
   OaathChainCapability,
   OaathChainSponsorship,
   OaathSubmissionRoute,
 } from "../../src/advanced.js";
 import { deriveOperatorCredentialProfile } from "../../src/client/key-credential.js";
-import { composeInjectedRealm } from "../../src/create-oaath.js";
-import { createOAAth, type Oaath, type OaathServiceOptions } from "../../src/index.js";
+import { createOAAth, type Oaath } from "../../src/index.js";
 import {
   KERNEL_P256_VERIFIER,
   KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
@@ -70,7 +59,6 @@ import {
   sessionOperator,
 } from "../../src/kernel.js";
 import {
-  KERNEL_V4_ENTRY_POINT_V09,
   KERNEL_V4_FACTORY_V09_CODE_HASH,
   KERNEL_V4_UUPS_IMPLEMENTATION_V09,
 } from "../../src/kernel-v4.js";
@@ -114,7 +102,6 @@ const INCLUSION_BLOCK = 20n;
 const BLOCK_HASH = `0x${"55".repeat(32)}` as const;
 const PARENT_HASH = `0x${"aa".repeat(32)}` as const;
 const TRANSACTION_HASH = `0x${"44".repeat(32)}` as const;
-const KMS_PREFIX = "oaath-sdk-test-kms:v1:";
 
 export const ownerCredential = Object.freeze({
   version: OAATH_OWNER_CREDENTIAL_PROFILE_VERSION,
@@ -191,71 +178,6 @@ export function createClock(start = 1_800_000_000): SecondsClock {
   };
 }
 
-function relayAuthentication(): RelayAuthentication {
-  const callers: ReadonlyMap<string, RelayCaller> = new Map([
-    [
-      CLIENT_TOKEN,
-      {
-        role: "client",
-        clientId: "client-a",
-        subject: SUBJECT,
-        redirectUris: [REDIRECT_URI],
-        organizationAudience: null,
-      },
-    ],
-    [
-      OWNER_TOKEN,
-      {
-        role: "owner",
-        clientId: "owner-console",
-        subject: "owner-subject",
-        redirectUris: [],
-        organizationAudience: null,
-      },
-    ],
-  ]);
-  return {
-    async authenticate(request: Request) {
-      const header = request.headers.get("authorization") ?? "";
-      const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
-      return callers.get(token) ?? null;
-    },
-  };
-}
-
-export function relayKms(): RelayKms {
-  return {
-    async encrypt(plaintext: string) {
-      return `${KMS_PREFIX}${btoa(plaintext)}`;
-    },
-    async decrypt(reference: string) {
-      if (!reference.startsWith(KMS_PREFIX)) throw new Error("unknown ciphertext reference");
-      return atob(reference.slice(KMS_PREFIX.length));
-    },
-  };
-}
-
-/** The relay's own clock is milliseconds; the SDK's protocol clock is seconds. */
-export function createRelay(
-  clock: SecondsClock,
-  options: Record<string, unknown> = {},
-): (request: Request) => Promise<Response> {
-  return createRelayHandler({
-    ownerRouting: {
-      async resolveOwner() {
-        return { ownerDeviceId: "owner-phone", ownerSubject: "owner-subject" };
-      },
-    },
-    store: createMemoryRelayStore(),
-    authentication: relayAuthentication(),
-    kms: relayKms(),
-    clock: { now: () => clock.now() * 1_000 },
-    ...options,
-  });
-}
-
-/** Adapts one synthetic chain fixture into the relay's chain execution ports. */
-/** The chain's configured bundler-route probe. */
 export function bundlerProbe(
   capability: Readonly<OaathChainCapability>,
 ): OaathBundlerProbeCapability["probe"] {
@@ -278,65 +200,6 @@ export function withBundler(
 export function routeFeePayer(capability: Readonly<OaathChainCapability>) {
   const route = capability.routes?.find((entry) => entry.kind === "erc4337-handleops");
   return route?.kind === "erc4337-handleops" ? route.feePayer : null;
-}
-
-export function relayChainPort(fixture: ChainFixture): Record<string, unknown> {
-  const capability = fixture.capability;
-  return {
-    chainId: capability.chainId,
-    ...(capability.gas === undefined ? {} : { gas: capability.gas }),
-    reads: (request: unknown) => capability.reads.read(request as never),
-    observation: (request: unknown) => capability.observation.read(request as never),
-    bundler: (request: unknown) => {
-      if (
-        request !== null &&
-        typeof request === "object" &&
-        (request as { readonly version?: unknown }).version === "oaath.erc7677-gas-estimation/v1"
-      ) {
-        const paymasterService = capability.sponsorship;
-        if (paymasterService?.kind !== "erc7677") {
-          throw new Error("paymaster estimator is unavailable");
-        }
-        const captured = request as Readonly<{
-          prepared: Erc7677GasEstimationRequest["prepared"];
-          userOperation: Erc7677GasEstimationRequest["userOperation"];
-        }>;
-        return paymasterService.estimate(
-          Object.freeze({
-            prepared: captured.prepared,
-            userOperation: captured.userOperation,
-          }),
-        );
-      }
-      return bundlerProbe(capability)(request as never);
-    },
-    quote: (request: unknown) => capability.quote(request as never),
-    // One submission settles per call: open, send once, close.
-    submission: async (request: unknown) => {
-      const session = (await capability.submission.open(request as never)) as {
-        readonly send: () => Promise<unknown>;
-        readonly close: () => Promise<void>;
-      };
-      try {
-        return await session.send();
-      } finally {
-        await session.close();
-      }
-    },
-    usage:
-      capability.usage === null ? null : (request: unknown) => capability.usage?.(request as never),
-    feePayer: routeFeePayer(capability),
-    staticPaymasterConfigurationHash:
-      capability.sponsorship?.kind === "erc7902-static"
-        ? capability.sponsorship.configurationHash
-        : null,
-  };
-}
-
-function authorized(request: Request, token: string): Request {
-  const headers = new Headers(request.headers);
-  headers.set("authorization", `Bearer ${token}`);
-  return new Request(request, { headers });
 }
 
 export interface OwnerDecision {
@@ -420,79 +283,6 @@ async function ownerInstallApproval(
     installNonce: "0",
     packages: [...sessionRuntime.packages],
   });
-}
-
-/**
- * The owner console: it reads the reviewed scope from the relay, derives and
- * signs the replayable install approval, and posts the terminal decision,
- * exactly as a separate owner device would.
- */
-export function createOwnerAuthorization(
-  relay: (request: Request) => Promise<Response>,
-  clock: SecondsClock,
-  options: OwnerDecision = {},
-  reads: OaathChainCapability["reads"] = createChainFixture().capability.reads,
-  validator: `0x${string}` = VALIDATOR,
-) {
-  const calls: string[] = [];
-  return {
-    calls,
-    capability: {
-      async authorize(request: { readonly requestId: string }) {
-        calls.push(request.requestId);
-        const state = (await (
-          await relay(
-            authorized(
-              new Request(`${ISSUER_URL}/authorization/requests/${request.requestId}`),
-              OWNER_TOKEN,
-            ),
-          )
-        ).json()) as { readonly requestedScope: string };
-        const scope = JSON.parse(state.requestedScope) as Record<string, unknown>;
-        const full = { ...scope, requestId: request.requestId };
-        const approvedPolicy = scope.policy;
-        const operator = parseOperatorCredentialProfile(scope.operatorCredential);
-        const installApproval = await ownerInstallApproval(
-          reads,
-          approvedPolicy,
-          operator,
-          options.operatorKey,
-          validator,
-          parseKernelAccountProfile(scope.logicalAccount),
-        );
-        const decision = {
-          version: OAATH_PERMISSION_DECISION_VERSION,
-          kind: "approve",
-          requestId: request.requestId,
-          requestHash: hashPermissionRequest(full),
-          decidedAt: clock.now(),
-          approvedPolicy,
-          capabilityHash: kernelGrantCapabilityHash(installApproval),
-          installApproval,
-        };
-        const body = {
-          outcome: "approved",
-          artifact: JSON.stringify(decision),
-        };
-        const decided = (await (
-          await relay(
-            authorized(
-              new Request(`${ISSUER_URL}/authorization/requests/${request.requestId}/decision`, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify(body),
-              }),
-              OWNER_TOKEN,
-            ),
-          )
-        ).json()) as { readonly code?: string; readonly error?: unknown };
-        if (typeof decided.code !== "string") {
-          throw new Error(`owner decision failed: ${JSON.stringify(decided)}`);
-        }
-        return { code: decided.code };
-      },
-    },
-  };
 }
 
 function quantity(value: bigint): `0x${string}` {
@@ -876,134 +666,6 @@ export function signingProfiles(validator: `0x${string}` = VALIDATOR) {
   };
 }
 
-export interface UrlRealmOptions {
-  readonly clock?: SecondsClock;
-  readonly chain?: ChainFixture;
-  readonly owner?: OwnerDecision;
-  /** The service URL the realm connects to; loopback http is a legal default. */
-  readonly url?: string;
-  /** Shared durable stores, so a second realm simulates a reload. */
-  readonly stores?: RealmStores;
-  /** Shared relay, so a second realm sees the first realm's issuer state. */
-  readonly relay?: (request: Request) => Promise<Response>;
-  /** Tampers with the served bootstrap document before the SDK parses it. */
-  readonly bootstrap?: (document: Record<string, unknown>) => unknown;
-  /** The optional caller-supplied session setting, passed through verbatim. */
-  readonly session?: unknown;
-  /** Remote session-key custody the relay declares and serves. */
-  readonly sessionSigner?: Readonly<{
-    mode: "application_backend" | "oaath_hosted";
-    providerId: string;
-    provider: unknown;
-  }>;
-  readonly paymasterService?: Readonly<{
-    providerId: string;
-    requestTimeoutMs: number;
-    provider: Readonly<{
-      getPaymasterStubData: (request: unknown) => Promise<unknown>;
-      getPaymasterData: (request: unknown) => Promise<unknown>;
-    }>;
-  }>;
-}
-
-export interface UrlRealm {
-  readonly oaath: Readonly<Oaath>;
-  readonly clock: SecondsClock;
-  readonly chain: ChainFixture;
-  readonly stores: CompleteRealmStores;
-  readonly relay: (request: Request) => Promise<Response>;
-  readonly invalidations: () => number;
-  readonly fetched: readonly string[];
-}
-
-/**
- * The URL-only realm against the real relay: the SDK receives one service URL
- * and a client-authenticated transport; identity, account, chains, code
- * pickup, and invalidation all ride the service. The owner console decides
- * out of band as soon as a request is created, exactly like a phone would.
- */
-export function createUrlRealm(options: UrlRealmOptions = {}): UrlRealm {
-  const clock = options.clock ?? createClock();
-  const chain = options.chain ?? createChainFixture();
-  const stores = completeRealmStores(options.stores ?? createMemoryStores());
-  const relay =
-    options.relay ??
-    createRelay(clock, {
-      bootstrap: {
-        resolve: async () => ({
-          application: { applicationId: "app-a", applicationName: "OAAth Example" },
-          context: workspaceContext,
-          account: accountProfile,
-          ownerValidator: VALIDATOR,
-          chainIds: [chain.capability.chainId],
-        }),
-      },
-      chains: [relayChainPort(chain)],
-      ...(options.sessionSigner ? { sessionSigner: options.sessionSigner } : {}),
-      ...(options.paymasterService
-        ? {
-            rateLimit: {
-              async check() {
-                return "allowed" as const;
-              },
-            },
-            paymasterServices: [
-              {
-                chainId: chain.capability.chainId,
-                providerId: options.paymasterService.providerId,
-                requestTimeoutMs: options.paymasterService.requestTimeoutMs,
-                provider: options.paymasterService.provider,
-              },
-            ],
-          }
-        : {}),
-    });
-  const owner = createOwnerAuthorization(relay, clock, options.owner ?? {}, chain.capability.reads);
-  let invalidations = 0;
-  const fetched: string[] = [];
-
-  // The owner decides as soon as the request exists; the SDK's default
-  // authorization then finds the released code through pickup polling.
-  const service = async (request: Request): Promise<Response> => {
-    fetched.push(`${request.method} ${new URL(request.url).pathname}`);
-    if (request.method === "POST" && new URL(request.url).pathname === "/invalidations") {
-      invalidations += 1;
-    }
-    if (
-      options.bootstrap &&
-      request.method === "GET" &&
-      new URL(request.url).pathname === "/bootstrap"
-    ) {
-      const response = await relay(authorized(request, CLIENT_TOKEN));
-      const document = (await response.json()) as Record<string, unknown>;
-      return new Response(JSON.stringify(options.bootstrap(document)), {
-        status: response.status,
-        headers: { "content-type": "application/json" },
-      });
-    }
-    const response = await relay(authorized(request, CLIENT_TOKEN));
-    if (
-      request.method === "POST" &&
-      new URL(request.url).pathname === "/authorization/requests" &&
-      response.status === 201
-    ) {
-      const created = (await response.clone().json()) as { readonly requestId: string };
-      await owner.capability.authorize({ requestId: created.requestId }).catch(() => undefined);
-    }
-    return response;
-  };
-
-  const oaath = createOAAth({
-    approvals: { kind: "service", url: options.url ?? ISSUER_URL, fetch: service },
-    origin: ORIGIN,
-    stores: { kind: "memory", ...stores },
-    now: clock.now,
-    ...(options.session === undefined ? {} : { session: options.session }),
-  } as OaathServiceOptions);
-
-  return { oaath, clock, chain, stores, relay, invalidations: () => invalidations, fetched };
-}
-
 export interface RealmOptions {
   readonly clock?: SecondsClock;
   readonly stores?: RealmStores;
@@ -1079,36 +741,32 @@ export function createRealm(options: RealmOptions = {}): Realm {
   const owner = createOwnerApproval(clock, options.owner ?? {}, chain.capability.reads, validator);
   let invalidations = 0;
 
-  const oaath = composeInjectedRealm(
-    {
-      binding: (options.binding ?? bindingInput) as typeof bindingInput,
-      invalidation: {
-        invalidateCapability: async (
-          request: Readonly<{ grantId: string; capabilityHash: `0x${string}` }>,
-        ) => {
-          invalidations += 1;
-          if (options.invalidate) return options.invalidate(request);
-          // Admission evidence; chain effect reads must still prove revocation.
-          return {
-            evidenceHash: keccak256(stringToBytes(`invalidated:${request.grantId}`)),
-            invalidatedAt: clock.now(),
-          };
-        },
-      },
-      stores,
-      chains: chains.map((entry) => entry.capability),
-      signing: options.signing ?? signingProfiles(validator),
-      localKeyIds: ["session-key"],
-      now: clock.now,
+  const oaath = createOAAth({
+    binding: (options.binding ?? bindingInput) as typeof bindingInput,
+    // The owner's decision, signed in-process as an owner device would.
+    async approve(request) {
+      const decision = await owner.approve(request);
+      return options.claimedArtifact ? options.claimedArtifact(decision) : decision;
     },
-    {
-      localAuthorization: async (request) => {
-        const decision = await owner.approve(request);
-        return options.claimedArtifact ? options.claimedArtifact(decision) : decision;
+    invalidation: {
+      invalidateCapability: async (
+        request: Readonly<{ grantId: string; capabilityHash: `0x${string}` }>,
+      ) => {
+        invalidations += 1;
+        if (options.invalidate) return options.invalidate(request);
+        // Admission evidence; chain effect reads must still prove revocation.
+        return {
+          evidenceHash: keccak256(stringToBytes(`invalidated:${request.grantId}`)),
+          invalidatedAt: clock.now(),
+        };
       },
-      remoteCustody: null,
     },
-  );
+    stores,
+    chains: chains.map((entry) => entry.capability),
+    signing: options.signing ?? signingProfiles(validator),
+    localKeyIds: ["session-key"],
+    now: clock.now,
+  });
 
   return {
     oaath,

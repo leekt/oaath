@@ -2,9 +2,8 @@ import { createOAAth, type Oaath } from "@oaath/sdk";
 import type { OaathChainCapability } from "@oaath/sdk/advanced";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import { kernelDeployment, kernelKey } from "@oaath/sdk/kernel";
-import { createMemoryRelayStore, createRelayHandler } from "@oaath/server";
 import { IDBFactory } from "fake-indexeddb";
-import { LOCAL_ISSUER, LOCAL_REDIRECT, localClientBinding } from "./anvil-binding.js";
+import { localClientBinding } from "./anvil-binding.js";
 import { createLocalAnvilObservation } from "./anvil-observation.mjs";
 import { openLocalClientStores } from "./anvil-stores.js";
 
@@ -167,47 +166,12 @@ export async function openLocalAnvilRecoveryClient(
         usage: unavailable,
       };
     });
-    // Resume still uses authenticated relay protocol. A new local relay has no
-    // prior request, which the SDK explicitly allows after durable validation.
-    const token = crypto.randomUUID();
-    const relay = createRelayHandler({
-      store: createMemoryRelayStore(),
-      ownerRouting: { resolveOwner: unavailable },
-      authentication: {
-        async authenticate(request) {
-          return request.headers.get("authorization") === `Bearer ${token}`
-            ? {
-                role: "client",
-                clientId: "fixture-client",
-                subject: "fixture-subject",
-                redirectUris: [LOCAL_REDIRECT],
-                organizationAudience: null,
-              }
-            : null;
-        },
-      },
-      kms: { encrypt: unavailable, decrypt: unavailable },
-      clock: { now: () => Date.now() },
-    });
     const validator = recovery.chains[0]?.validator;
     if (!validator) throw new Error("local_fixture_recovery_invalid");
     const client = createOAAth({
       binding: localClientBinding(recovery.owner, recovery.session, recovery.existingAccount),
-      issuer: {
-        url: LOCAL_ISSUER,
-        async fetch(request: Request) {
-          if (
-            request.method !== "POST" ||
-            new URL(request.url).pathname !== "/authorization/resume"
-          )
-            return unavailable();
-          const headers = new Headers(request.headers);
-          headers.set("authorization", `Bearer ${token}`);
-          return relay(new Request(request, { headers }));
-        },
-        async signOut() {},
-      },
-      authorization: { authorize: unavailable },
+      // Recovery approves nothing: it only reopens stored Grants and operations.
+      approve: unavailable,
       invalidation: { invalidateCapability: unavailable },
       stores: storage.stores,
       chains,

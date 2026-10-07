@@ -8,7 +8,6 @@ import {
   CHAIN_ID,
   createChainFixture,
   createRealm,
-  createUrlRealm,
   permissionInput,
   sendCallsInput,
 } from "./support/browser.js";
@@ -17,63 +16,8 @@ const address = `0x${"11".repeat(20)}` as const;
 const hash = `0x${"22".repeat(32)}` as const;
 describe("Grant connected EOA fallback", () => {
   it.each([
-    { status: 503, error: { code: "relay_chain_unavailable" } },
-    { status: 502, error: { code: "relay_chain_unavailable", bundlerRejection: { code: -32500 } } },
-    { status: 503, error: { code: "relay_internal", bundlerRejection: { code: -32500 } } },
-    { status: 503, error: { code: "relay_chain_unavailable", bundlerRejection: { code: -32603 } } },
-    {
-      status: 503,
-      error: {
-        code: "relay_chain_unavailable",
-        bundlerRejection: { code: -32500, message: "private" },
-      },
-    },
-  ])("does not fall back from ambiguous or malformed relay response", async ({ status, error }) => {
-    const service = createUrlRealm();
-    let attempts = 0;
-    let walletReads = 0;
-    const wallet = createWalletClient({
-      account: address,
-      transport: custom({
-        request: async () => {
-          walletReads++;
-          return "0x";
-        },
-      }),
-    });
-    const realm = createUrlRealm({
-      clock: service.clock,
-      relay: async (request) => {
-        if (new URL(request.url).pathname.endsWith("/submissions")) {
-          attempts++;
-          return Response.json({ error }, { status });
-        }
-        return service.relay(request);
-      },
-    });
-    try {
-      const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
-      const operation = await grant.sendCalls({
-        ...(sendCallsInput() as Record<string, unknown>),
-        payer: { kind: "connected-eoa", wallet },
-      });
-      expect(operation.outcome.status).toBe("pending");
-      expect(attempts).toBe(1);
-      expect(walletReads).toBe(0);
-      await operation.wait({ attempts: 1 });
-      expect(attempts).toBe(1);
-      expect(walletReads).toBe(0);
-    } finally {
-      await realm.oaath.close();
-      await service.oaath.close();
-    }
-  });
-
-  it.each([
     { name: "direct", create: createRealm, code: -32500 },
     { name: "direct", create: createRealm, code: -32603 },
-    { name: "relay", create: createUrlRealm, code: -32500 },
-    { name: "relay", create: createUrlRealm, code: -32603 },
   ])("keeps one signed identity through $name after rejection $code", async ({ create, code }) => {
     const base = createChainFixture({ withholdReceipt: () => true });
     let submitted: Readonly<OaathSubmissionRequest> | undefined;

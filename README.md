@@ -9,8 +9,8 @@ matches the application:
 | Workflow | Constructor | Approval |
 | --- | --- | --- |
 | [Owner operation](packages/sdk/README.md#owner-operations) | `createOAAth({ chains, account })` | One wallet signature for one atomic UserOperation; no Grant or enable step. |
-| [Wallet-approved Grant](packages/sdk/README.md#wallet-approved-grants) | `createOAAth({ chains, account, approvals: { kind: "wallet", owner } })` | One connected-wallet approval, then scoped session operations; no phone or relay. |
-| [Phone service](#service-approvals) | `createOAAth({ approvals: { kind: "service", url } })` | The service selects the account and chains; its owner phone approves the Grant. |
+| [Wallet-approved Grant](packages/sdk/README.md#wallet-approved-grants) | `createOAAth({ chains, account, approvals: { kind: "wallet", owner } })` | One connected-wallet approval, then scoped session operations; no portal or relay. |
+| [Portal-approved Grant](packages/sdk/README.md#login-with-oaath) | `createOAAth({ chains, approvals: { kind: "oauth", issuer, clientId, redirectUri } })` | The account root reviews and signs in the OAAth portal; scoped session operations follow. |
 
 Install from npm (`@oaath/cli` provides the `oaath` command):
 
@@ -33,8 +33,8 @@ const oaath = createOAAth({
 });
 // Owner-only execution: omit `approvals`, then
 //   oaath.account(existingKernelAddress).owner(walletClient).sendCalls(...)
-// Phone service: createOAAth({ approvals: { kind: "service", url } });
-//   the service supplies the account and chains.
+// Portal approval: createOAAth({ chains, approvals: { kind: "oauth", issuer, clientId, redirectUri } });
+//   the account is the one whose root approves in the portal.
 
 const connection = await oaath.connect();
 const grant =
@@ -50,28 +50,15 @@ await operation.wait();
 ```
 
 Owner-only execution and wallet approvals use an existing ECDSA-owned Kernel v3.3 or v4 account;
-the SDK detects its deployment. The phone
-service uses Kernel v4 with a P-256 owner. All paths retain exact operation
+the SDK detects its deployment. Portal approval uses the portal's factory-derived
+Kernel v4 account with an ECDSA, P-256 or WebAuthn root. All paths retain exact operation
 identity for observation after reload. Before adopting a chain, check its
 [runtime readiness](#kernel-runtime); the six-chain production v4 rollout is
 still deferred.
 
-The personal or team-operated phone service uses this model:
-
-| Entity | Owns |
-| --- | --- |
-| Workspace | Personal or team membership and account selection. |
-| Account | The Kernel account profile, configured chains, and enrolled owner phone. |
-| Owner device | Consent and owner signatures for grants and onchain revocation. |
-| Grant | One application's authority over one account, with explicit limits and expiry. |
-| Job | Application intent executed as separately tracked chain-local operations. |
-
-Workspace membership selects service context; it does not confer the phone's
-signing authority. Job completion and grant revocation are separate from
-workspace membership and application authentication. Limits must state their
-unit and whether they apply per call, per chain, or across chains; the current
-policy supports per-call native value and per-chain operation counts, not
-aggregate token budgets across chains.
+Limits must state their unit and whether they apply per call, per chain, or
+across chains; the current policy supports per-call native value and per-chain
+operation counts, not aggregate token budgets across chains.
 
 OAAth owns the complete smart-account authorization journey:
 
@@ -121,8 +108,7 @@ records submission before an external send, and advances only from stronger
 evidence. Missing receipts, timeouts, and unreadable observations never
 authorize another submission or prove an operation dropped. `@oaath/testing`
 carries the concrete SQLite test stores and is never a production dependency.
-`@oaath/server` carries the durable authorization relay, its PostgreSQL store,
-and the experimental phone and APNs preview surfaces.
+`@oaath/server` carries the durable authorization relay and its PostgreSQL store.
 
 The product model and this PoC workflow are implemented. Further decomposition
 of the client, separating the wallet-RPC layer used by the extension, and native
@@ -144,121 +130,6 @@ The Draft profiles are not advertised as stable or as generic conformance.
 ERC-7902 `multiDimensionalNonce`, AA gas parameter overrides, and
 `eip7702Auth` are explicitly unsupported and deferred.
 
-## Service approvals
-
-With `approvals: { kind: "service", url }`, the OAAth service URL is the only
-deployment fact an application supplies to `createOAAth`. `connect()` bootstraps the
-authenticated, versioned service context — client identity, selected workspace, the logical
-account and owner credential, and the chains the service executes on — and
-the SDK derives the rest locally: the origin, a registered same-origin
-redirect target, a device identity, and a fresh session key. The application
-never holds an owner signer and cannot choose a different account, owner, or
-chain surface than the deployment registered.
-
-The relay calls `bootstrap.resolve(caller)` on every authenticated bootstrap
-request. `createServiceDirectory(store)` resolves stored membership and account
-selection into `{ application, context, account, ownerValidator, chainIds }`;
-`null` means no assigned account. The relay derives the client ID, redirect
-URIs, and user handle from authentication, and advertises only selected chains
-with configured ports. `context` carries version
-`oaath.workspace-account-context/v1`, `workspaceId`, `workspaceKind`
-(`personal` or `team`), and `accountId`. A new connection fetches the current
-selection; existing connections retain their captured context.
-
-The permission request carries that context through owner review and binds it
-into the request hash. Resuming a grant checks the stored request against the
-connection's context. `oaath.permission-request/v2` is the only accepted request
-schema; prior requests require fresh authorization.
-
-Local sessions and grant lookup are isolated by authenticated caller,
-workspace, and complete account profile. Switching contexts creates a distinct
-realm; switching back can resume its prior session. The service directory owns
-versioned workspace, application, membership, account, owner-device reference,
-and selection records, with memory and PostgreSQL stores. Membership removal
-blocks subsequent bootstrap resolution and request admission; it does not revoke
-existing grants. The directory also resolves each permission request to the
-registered account's owner device, checking its explicit context and account
-profile rather than the current selection preference. After deployment-authenticated
-pairing, `enrollOwnerDevice` registers a phone and its new P-256 accounts in one
-directory write.
-Account selection UI remains deployment-owned.
-
-```ts
-import { createOAAth } from "@oaath/sdk";
-
-const oaath = createOAAth({ approvals: { kind: "service", url: process.env.OAATH_URL } });
-// Local development: omitting `url` connects to http://localhost:8787.
-
-const connection = await oaath.connect();
-const grant =
-  (await connection.resume()) ??
-  (await connection.requestPermission({
-    chainScope: "all",
-    permissions: [{ calls: [{ target, selectors, valueLimit: "0" }] }],
-    expiresIn: 1800,
-    perChainOperationLimit: 10,
-  }));
-
-const operation = await grant.sendCalls({ chain, calls });
-// Keep { chain: operation.chainId, id: operation.id } with the application's job.
-await operation.wait();
-await oaath.disconnect(grant); // revoke, signOut, forgetLocal, close
-```
-
-`sendCalls` starts a new operation. One unresolved operation occupies each
-grant/chain lane; another send returns `oaath_client_state_conflict`.
-Independent jobs can reserve their own lane with
-`sendCalls({ chain, calls, lane: { id: "run_01", nonceKey: 17n } })`. OAAth
-never allocates lanes. The key must be one the runtime can represent (Kernel:
-1 to 65535), and a lane is refused until the default lane has installed the
-permission on that chain. `revoke()` does not complete while any lane has an
-unresolved operation.
-After reload, resume the grant and call `grant.getOperation({ chain, id })`
-with the saved reference, adding the same `lane` for a laned operation. Its `observe()` and `wait()` methods submit nothing
-and remain available after grant expiry or revocation. A missing local record
-returns `null`; it is not evidence that the operation was never submitted.
-
-Applications never handle permission ids, enable envelopes, operation journals,
-store revisions, or nonce recovery. Persistence is one `stores` setting:
-`{ kind: "indexeddb" }` by default, which fails closed where IndexedDB is
-missing, or an explicit `{ kind: "memory" }`, with optional per-store adapter
-overrides. IndexedDB keeps exactly
-one current schema; a database that does not carry it is deleted and recreated
-rather than migrated, and key custody stores only non-extractable `CryptoKey`
-handles and exposes no export path.
-
-Every port service approvals compose — the issuer transport, the owner-decision
-capability, the stores, the chain adapters, the signing profiles, the clock —
-remains an optional injected override on the same constructor for
-deterministic tests and custom deployments: pass a configuration carrying
-`binding` and the SDK composes exactly what you injected, fetching nothing.
-
-The root import carries only this workflow. Infrastructure lives behind
-explicit subpaths: `@oaath/sdk/kernel` (the version-agnostic Kernel primitives,
-for owner devices and audits; Kernel and EntryPoint versions are optional
-settings), `@oaath/sdk/advanced` (custom-deployment ports, version-named Kernel
-encoders and deployment constants, and the overridden composition), `@oaath/sdk/persistence` (`openIndexedDbStores`,
-the full IndexedDB store set, and record contracts), and `@oaath/sdk/testing`
-(`createMemoryStores`, the deterministic memory store set, never a production
-dependency). Both serve the overridden composition; `createOAAth` options
-name a backend in `stores` instead.
-
-For viem-based applications, `@oaath/sdk/viem` exposes an active Grant as a
-narrow EIP-1193 provider — `eth_accounts` answers the chain-read-derived smart
-account and `eth_sendTransaction` rides `grant.sendCalls` and returns the real
-inclusion transaction hash — so existing viem code executes through OAAth
-without learning its vocabulary:
-
-```ts
-import { createWalletClient, custom } from "viem";
-import { oaathProvider } from "@oaath/sdk/viem";
-
-const wallet = createWalletClient({
-  transport: custom(oaathProvider({ grant, chain })),
-});
-const hash = await wallet.sendTransaction({ account, to, value, data, chain: null });
-```
-
 ## Kernel runtime
 
 The Grant workflow uses Kernel v4 UUPS (`0.4.0`) through EntryPoint `0.9`.
@@ -270,7 +141,7 @@ recovery. See the [SDK example](packages/sdk/README.md), including the lower-lev
 `createKernelRuntime` path. Existing v3.3 accounts also support session Grants through
 `createOAAth({ chains, account, approvals: { kind: "wallet", owner: walletClient } })`,
 with one wallet typed-data approval, browser custody and reload recovery.
-Wallet approvals need no phone or relay. Explicit Grant `signer: "auto"` prefers an
+Wallet approvals need no portal or relay. Explicit Grant `signer: "auto"` prefers an
 available owner for the atomic call bundle; execution review identifies that
 choice and its wider authority before signing.
 
@@ -387,10 +258,8 @@ chains. `revoked` requires finalized permission absence and a consumed approval
 install nonce on every chain in that snapshot, including unused chains. Relay
 invalidation stops service admission; it does not invalidate the owner signature
 onchain. A missing chain transport leaves the Grant `revoking`, even after reload.
-Service-approved `grant.revoke()` requests durable phone custody for every target still
-missing proof. Repeated calls recover the current request; phone approval alone
-leaves the Grant `revoking`. The deployment supplies chain preparation, phone
-delivery and an execution worker, while the client observes the resulting effects.
+A realm without the owner's signer leaves the Grant `revoking` until the owner
+removes the permission onchain; a later `revoke()` observes that and completes.
 Chains outside this snapshot are not covered by its revocation status.
 
 Account descriptors are process-local evidence handles. After a process reload,
@@ -401,9 +270,7 @@ operation deploys it, rebind before preparing the next operation, or EntryPoint
 rejects the stale factory evidence (`AA10 sender already constructed`).
 
 Gas values in the low-level Kernel helpers are caller-supplied decimal strings;
-bring them from your own estimation source. The experimental service-approved ERC-7677
-path makes one post-stub estimate through the deployment's registered bundler
-port. `createKernelReads` adapts any viem-style public client into the account
+bring them from your own estimation source. `createKernelReads` adapts any viem-style public client into the account
 read capability for every supported deployment, and `asViemUserOperation` maps a prepared operation into viem's
 shape for signing and submission.
 
@@ -414,7 +281,6 @@ published specifiers only.
 
 | Example | Shows |
 | --- | --- |
-| `examples/browser` | connect → one all-chain grant → execute → revoke, against injected chain facts or a real local chain |
 | `examples/server` | the Fetch relay over `node:http`, PostgreSQL, and the auth and KMS ports a deployment owns |
 | `examples/all-chain` | one owner approval, chain B introduced afterwards, the same signature materialized on it |
 
@@ -459,13 +325,12 @@ workspace:
 
 ```sh
 bun run check:public-surface # no node:/pg leakage into a browser graph; one-way deps
-bun run smoke:browser        # packed protocol + sdk + server, golden path, realm recreation
 bun run smoke:extension      # packed MV3 extension, forced worker death, durable status recovery
 bun run smoke:server         # packed server, relay round-trip, ./postgres under node
 bun run smoke:all-chain      # two local Anvil chains, one replayable owner approval
 ```
 
-The browser, extension, and server smokes build, pack, and `npm install` the
+The extension and server smokes build, pack, and `npm install` the
 tarballs into a throwaway consumer outside the workspace, so nothing resolves
 through a workspace link and no `src` path is reachable. `smoke:extension`
 loads the actual example artifact in headful Chrome, kills its MV3 worker, and

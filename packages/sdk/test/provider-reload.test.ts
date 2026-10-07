@@ -30,8 +30,6 @@ import {
   createClock,
   createMemoryStores,
   createRealm,
-  type createRelay,
-  createUrlRealm,
   permissionInput,
   type RealmStores,
   TARGET,
@@ -122,7 +120,6 @@ async function activeProvider(input: {
   readonly chain?: ChainFixture;
   readonly stores?: RealmStores;
   readonly clock?: ReturnType<typeof createClock>;
-  readonly relay?: ReturnType<typeof createRelay>;
 }) {
   const realm = createRealm(input);
   const connection = await realm.oaath.connect();
@@ -137,7 +134,7 @@ describe("durable provider recreation", () => {
     const stores = reopenableMemoryStores();
     const clock = createClock();
     const chain = createChainFixture();
-    const before = createUrlRealm({ stores, clock, chain });
+    const before = createRealm({ stores, clock, chain });
     const firstConnection = await before.oaath.connect();
     const firstGrant = await firstConnection.requestPermission(permissionInput());
     const account = await firstGrant.account(CHAIN_ID);
@@ -153,7 +150,7 @@ describe("durable provider recreation", () => {
     if (exactHash === undefined) throw new Error("expected one exact submitted identity");
     await firstConnection.close();
 
-    const after = createUrlRealm({ stores, clock, relay: before.relay, chain });
+    const after = createRealm({ stores, clock, chain });
     const secondConnection = await after.oaath.connect();
     const secondGrant = await secondConnection.resume();
     if (secondGrant === null) throw new Error("expected the Grant to resume");
@@ -193,7 +190,7 @@ describe("durable provider recreation", () => {
     const clock = createClock();
     const chain = createChainFixture();
     const first = await indexedDbStores(factory);
-    const before = createUrlRealm({ stores: first.stores, clock, chain });
+    const before = createRealm({ stores: first.stores, clock, chain });
     const firstConnection = await before.oaath.connect();
     const firstGrant = await firstConnection.requestPermission(permissionInput());
     const account = await firstGrant.account(CHAIN_ID);
@@ -209,10 +206,9 @@ describe("durable provider recreation", () => {
     opened.splice(opened.indexOf(first.database), 1);
 
     const second = await indexedDbStores(factory);
-    const after = createUrlRealm({
+    const after = createRealm({
       stores: second.stores,
       clock,
-      relay: before.relay,
       chain,
     });
     const secondConnection = await after.oaath.connect();
@@ -237,7 +233,7 @@ describe("durable provider recreation", () => {
     const stores = reopenableMemoryStores();
     const clock = createClock();
     const chain = createChainFixture({ withholdReceipt: () => true });
-    const before = createUrlRealm({ stores, clock, chain });
+    const before = createRealm({ stores, clock, chain });
     const firstConnection = await before.oaath.connect();
     const firstGrant = await firstConnection.requestPermission(permissionInput());
     const account = await firstGrant.account(CHAIN_ID);
@@ -248,7 +244,7 @@ describe("durable provider recreation", () => {
     await firstConnection.close();
 
     clock.advance(1_800);
-    const after = createUrlRealm({ stores, clock, relay: before.relay, chain });
+    const after = createRealm({ stores, clock, chain });
     const secondConnection = await after.oaath.connect();
     const resumed = await secondConnection.resume();
     if (resumed === null) throw new Error("expected an observation-capable expired Grant");
@@ -729,7 +725,7 @@ describe("durable crash boundaries", () => {
     const clock = createClock();
     const chain = createChainFixture();
     const first = await indexedDbStores(factory);
-    const before = createUrlRealm({ stores: first.stores, clock, chain });
+    const before = createRealm({ stores: first.stores, clock, chain });
     const firstConnection = await before.oaath.connect();
     const firstGrant = await firstConnection.requestPermission(permissionInput());
     const account = await firstGrant.account(CHAIN_ID);
@@ -761,10 +757,9 @@ describe("durable crash boundaries", () => {
     opened.splice(opened.indexOf(first.database), 1);
 
     const second = await indexedDbStores(factory);
-    const after = createUrlRealm({
+    const after = createRealm({
       stores: second.stores,
       clock,
-      relay: before.relay,
       chain,
     });
     const secondConnection = await after.oaath.connect();

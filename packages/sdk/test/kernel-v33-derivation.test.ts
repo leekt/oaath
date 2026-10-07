@@ -19,7 +19,6 @@ import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { sessionOperator } from "../src/kernel/operator/session.js";
 import { bindKernelAccount, deriveKernelAccount, kernelDeployment } from "../src/kernel.js";
-import {} from "../src/kernel-v4.js";
 import { prepareUserOperation } from "../src/prepared-user-operation.js";
 
 /**

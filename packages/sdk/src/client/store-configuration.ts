@@ -26,7 +26,7 @@ const STORE_PORTS: Readonly<
   cleanup: { label: "cleanup store", methods: ["read", "write", "clear", "close"] },
   context: {
     label: "context store",
-    methods: ["read", "write", "clear", "compareAndSwapPending", "close"],
+    methods: ["read", "write", "clear", "close"],
   },
 });
 

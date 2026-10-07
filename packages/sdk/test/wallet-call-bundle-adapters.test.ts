@@ -16,7 +16,6 @@ import type {
   WalletCallBundleStoreRecord,
 } from "../src/persistence.js";
 import {
-  type WalletCallBundleMutationResult,
   type WalletCallBundleReservationResult,
   WalletCallBundleStore,
 } from "../src/provider/bundle-store.js";

@@ -13,7 +13,6 @@ import {
   type KernelInstall,
   type KernelV4AccountDescriptor,
   type KernelV4AccountReadCapability,
-  type KernelV4Deployment,
   type KernelValidation,
   prepareKernelV4UserOperation,
 } from "../kernel-v4.js";
@@ -38,7 +37,6 @@ import {
   applyKernelGasPolicy,
   captureKernelGasPolicy,
   enableVerificationFloorForNonce,
-  type KernelGasPolicy,
 } from "./gas-policy.js";
 import {
   captureKeyProfile,

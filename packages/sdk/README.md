@@ -3,50 +3,14 @@
 OAAth browser client and Kernel/ZeroDev runtime. See the
 [repository README](https://github.com/leekt/oaath#readme).
 
-With service approvals, `requestPermission` accepts an optional
-`onPending({ requestId, matchCode, expiresAt })` callback before waiting for the
-owner. Display the eight-character code for comparison with the phone and clear
-it when the request settles. `expiresAt` is in Unix milliseconds; the code is
-non-secret display metadata and grants no authority. Wallet approvals do not
-call this callback.
-
-Pending service approvals are encrypted in the configured stores before
-`onPending` runs. After reload, call `connection.resumePendingPermission()` to
-observe that same request and finish an available approval. It returns `null`
-when none is retained; otherwise it returns the request ID, comparison code,
-expiry, status, and an active `grant` when recovery succeeds. Status is
-`pending`, `approved`, `rejected`, `expired`, `withdrawn`, or `unavailable`.
-Two tabs share the same durable redemption claim and cannot consume or claim
-the approval twice. Custom context stores must implement atomic
-`compareAndSwapPending`; the bundled memory, IndexedDB, and testing SQLite
-adapters implement it.
-
-`requestPermission({ signal, ... })`, connection `close()`, and realm `close()`
-stop waiting while preserving the pending request. A later resume makes one
-observation; it does not start another request. Use
-`connection.withdrawPendingPermission()` to withdraw a still-pending request.
-An already-approved result remains approved; withdrawal neither revokes it nor
-redeems its code. Local forgetting deletes the encrypted journal and its key.
-
-If the creation reply was lost, the retained status is `unavailable` with a null
-request ID. If a one-time consume or claim reply was lost, the result is
-`approved` with `grant: null` and `recovery: "uncertain"`. Neither case retries
-the uncertain effect or silently creates a replacement request. Memory stores
-retain recovery state only for their lifetime; browser reload requires IndexedDB.
-
-Service and wallet approvals share one optional `session` setting (`OaathSession`):
-`session?: { kind?: "ecdsa" | "webauthn", custody?: "browser" | "application-backend" | "oaath-hosted", ... }`.
-Omitted, the realm generates an ECDSA session key in the custody the deployment
-declares. `session: { kind: "webauthn", ...webauthnKeyInput }` makes the owner
-review and install the caller's passkey as the operator credential; no session
-key is generated or stored.
-
-The service bootstrap owns custody; `custody` never selects or overrides it. It
-is a requirement: a declared custody that differs, a passkey under backend or
-hosted custody, or remote custody under wallet approvals fails with
+Wallet approvals take one optional `session` setting (`OaathSession`):
+`session?: { kind?: "ecdsa" | "webauthn", custody?: "browser", ... }`.
+Omitted, the realm generates an ECDSA session key in browser custody.
+`session: { kind: "webauthn", ...webauthnKeyInput }` makes the owner review and
+install the caller's passkey as the operator credential; no session key is
+generated or stored. Any other custody fails with
 `oaath_client_capability_unsupported` (source `session_custody_unsupported`)
 before any session key, store, or signer request exists.
-
 
 Custom Kernel sessions can set a fixed-window quota with
 `{ kind: "rate-limit", intervalSeconds: "86400", maximumOperations: "25" }`
@@ -210,7 +174,7 @@ signer of an operation.
 
 ## Wallet-approved Grants
 
-For scoped sessions without an issuer service or phone, add
+For scoped sessions without an issuer or portal, add
 `approvals: { kind: "wallet", owner }` to the same options. `owner` is a
 browser or local wallet implementing `account`, `signMessage`, and `signTypedData`, which approves with one typed-data prompt, or any
 `kernelKey(...)` signing profile the owner operations above accept, which signs
@@ -292,8 +256,8 @@ const operation = await grant.sendCalls(request);
 ```
 
 Default sends (or `signer: "session"`) still use only the approved session.
-`auto` selects owner authority when the realm has a signer; service approvals' public-only
-owner profile selects session. Each accepted plain call bundle encodes one atomic
+`auto` selects owner authority when the realm has a signer; a public-only owner
+profile selects session. Each accepted plain call bundle encodes one atomic
 UserOperation. The API does not split oversized bundles, and an estimate, wallet
 rejection or uncertain submission never changes the selected signer or retries.
 Root execution does not enable the permission or consume its operation limit.
@@ -383,7 +347,7 @@ Supply gas for the full quorum: the estimation placeholder contains only a final
 signature, avoiding the contract's non-guardian proposal revert. The module pins
 identify reproducible CREATE2 inputs, not public-chain deployment evidence. These
 modules require Kernel v4 / EntryPoint 0.9. Weighted profiles are Kernel API keys;
-the protocol's hosted/phone Grant credential schema remains ECDSA, P-256 and WebAuthn.
+the protocol's Grant credential schema remains ECDSA, P-256 and WebAuthn.
 
 `sequence` is the current EntryPoint nonce sequence for this account and key;
 `gas` contains canonical decimal strings. The low-level prepared-operation
@@ -470,8 +434,8 @@ installed and removed atomically without application calls or global nonce
 invalidation. Completion requires finalized permission absence and a consumed
 enable nonce. An uncertain revocation remains `revoking` across reload and is
 observed again without resubmission. Other permissions remain usable.
-V3.3 external prepared-call signing, request-time validity attenuation, and phone
-approval are not supported yet.
+V3.3 external prepared-call signing and request-time validity attenuation are not
+supported yet.
 
 ## Chain ports
 
@@ -689,8 +653,7 @@ retries the transaction. Retain the operation ID and observe it. This option
 cannot be combined with paymaster sponsorship, which remains on the bundler
 route. Custom direct transports must preserve `OaathRpcError` conclusive
 rejections from `@oaath/sdk/cetane`. The relay forwards their closed rejection
-evidence only from submission failures; service-approved clients capture it before
-allowing the same local wallet fallback. Generic relay errors grant no fallback.
+evidence only from submission failures. Generic relay errors grant no fallback.
 
 Custom observation transports answer `transaction_execution` with exactly
 `{ hash, to, blockNumber, blockHash, input }` from the requested chain's

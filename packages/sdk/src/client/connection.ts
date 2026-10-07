@@ -1,27 +1,16 @@
 /**
  * connect, requestPermission, resume, signOut, and close.
  *
- * Issuer mode obtains the decision through Fetch endpoints; local mode obtains
- * the same decision in-process. Protocol application and persistence are shared:
+ * Every approval realm obtains the owner's decision for the reviewed request
+ * (in-process for a wallet, through the portal for OAuth) and hands it here.
+ * Protocol application and persistence are shared:
  *
  * ```text
- * requestPermission  PKCE verifier
- *                    -> POST /authorization/requests   (the reviewed scope)
- *                    -> the injected authorization capability returns the code
- *                       the owner's decision released
- *                    -> POST /authorization/codes/consume
- *                    -> POST /authorization/artifacts/{id}/claim
+ * requestPermission  the reviewed request -> the realm's approval
  *                    -> applyPermissionDecision  (protocol owns the binding)
  *                    -> activate + persist       (GrantStore owns durability)
- * resume             the durable Grant is authoritative for authority; the relay
- *                    round-trip proves fresh client authentication, so an absent
- *                    relay record never revokes a Grant and a recorded rejection
- *                    always does
+ * resume             the durable Grant is authoritative for authority
  * ```
- *
- * The scope the owner reviews is exactly the permission request without the
- * relay-assigned `requestId`, so the decision's `requestHash` binds the same
- * bytes the owner saw and the client can reconstruct nothing wider.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -33,18 +22,14 @@ import {
   captureDenseArray,
   captureRecord,
   createGrantFromPermissionRequest,
-  deriveCodeChallenge,
   exactCapturedRecord,
   type Grant,
   type GrantPolicy,
   OAATH_GRANT_POLICY_VERSION,
-  OAATH_ISSUER_VERSION,
   OAATH_PERMISSION_REQUEST_VERSION,
   type PermissionDecision,
   type PermissionRequest,
-  type PermissionSessionSigner,
   parseGrantPolicy,
-  parseIssuerIdentity,
   parsePermissionDecision,
   parsePermissionRequest,
   sameGrantIdentity,
@@ -66,73 +51,18 @@ import type { WalletCallBundleStore } from "../provider/bundle-store.js";
 import type { PreparedCallStore } from "../provider/prepared-call-store.js";
 import type { GrantStore, GrantStoreRecord, OperationStoreAdapter } from "../store.js";
 import type { OaathBinding } from "./binding.js";
-import {
-  clientCapability,
-  clientFail,
-  exactClientRecord,
-  mapClientFailure,
-  OaathClientError,
-} from "./errors.js";
+import { clientFail, exactClientRecord, mapClientFailure, OaathClientError } from "./errors.js";
 import {
   createGrantHandle,
   type OaathCapabilityInvalidationCapability,
   type OaathChainCapability,
   type OaathGrantHandle,
-  type OaathOwnerRevocationCapability,
 } from "./grant-handle.js";
-
-import {
-  createPendingAuthorizationJournal,
-  type PendingSnapshot,
-} from "./pending-authorization.js";
 
 const MAX_PERMISSIONS = 16;
 const MAX_EXPIRES_IN = 86_400;
 const MAX_OPERATION_COUNT = 2 ** 32 - 1;
 const MAX_UINT48 = 2 ** 48 - 1;
-const VERIFIER_BYTES = 32;
-
-function sameSessionSigner(
-  approved: Readonly<PermissionSessionSigner> | null,
-  current: Readonly<PermissionSessionSigner> | null,
-): boolean {
-  return (
-    (approved === null && current === null) ||
-    (approved !== null &&
-      current !== null &&
-      approved.mode === current.mode &&
-      approved.providerId === current.providerId)
-  );
-}
-
-/**
- * The issuer transport. The caller owns credentials: its `fetch` adds whatever
- * the deployment's authentication port expects, so no token, cookie, or bearer
- * material ever lives in SDK memory.
- */
-export interface OaathIssuerCapability {
-  /** Canonical https issuer base URL. */
-  readonly url: string;
-  readonly fetch: (request: Request) => Promise<Response>;
-  /** Revokes the caller's relay or application authentication, or `null`. */
-  readonly signOut: (() => Promise<unknown>) | null;
-}
-
-/**
- * Drives the owner's decision and returns the authorization code the issuer
- * released to the redirect target. In a browser this is the consent window and
- * the redirect listener; both are the application's, never the SDK's.
- */
-export interface OaathAuthorizationCapability {
-  readonly authorize: (
-    request: Readonly<{
-      requestId: string;
-      redirectUri: string;
-      expiresAt: number;
-      signal?: AbortSignal;
-    }>,
-  ) => Promise<unknown>;
-}
 
 export interface OaathPermissionCallInput {
   readonly target: `0x${string}`;
@@ -146,20 +76,6 @@ export interface OaathPermissionInput {
 }
 
 export interface OaathRequestPermissionInput {
-  /** Stops waiting without withdrawing the retained owner request. */
-  readonly signal?: AbortSignal;
-  /**
-   * Issuer mode only: display this code while waiting for the owner, then clear
-   * it when requestPermission settles. Compare it with the phone; it is not authority.
-   */
-  readonly onPending?: (
-    request: Readonly<{
-      requestId: string;
-      matchCode: string;
-      /** Issuer request expiry in Unix milliseconds. */
-      expiresAt: number;
-    }>,
-  ) => void | Promise<void>;
   readonly chainScope: "all";
   readonly permissions: readonly Readonly<OaathPermissionInput>[];
   /** Seconds of Grant lifetime from now. */
@@ -176,23 +92,7 @@ export interface OaathRequestPermissionInput {
       }>;
 }
 
-export interface OaathPendingPermissionResult {
-  /** Null only when request creation was interrupted before its acknowledgement. */
-  readonly requestId: string | null;
-  readonly matchCode: string | null;
-  readonly expiresAt: number;
-  readonly status: "pending" | "rejected" | "expired" | "withdrawn" | "approved" | "unavailable";
-  /** Only a verified, durably applied approval produces a Grant. */
-  readonly grant: Readonly<OaathGrantHandle> | null;
-  /** An uncertain one-time effect cannot be retried or treated as authority. */
-  readonly recovery: "ready" | "uncertain" | null;
-}
-
 export interface OaathConnection {
-  /** Observe/resume the retained request once, without creating another request. */
-  readonly resumePendingPermission: () => Promise<Readonly<OaathPendingPermissionResult> | null>;
-  /** Withdraw only if still pending; an already issued approval remains approved. */
-  readonly withdrawPendingPermission: () => Promise<Readonly<OaathPendingPermissionResult> | null>;
   readonly binding: Readonly<OaathBinding>;
   readonly requestPermission: (input: unknown) => Promise<Readonly<OaathGrantHandle>>;
   /** The realm's persisted authority/operation handle, or `null` when there is none. */
@@ -206,17 +106,10 @@ export type LocalPermissionAuthorization = (
   request: Readonly<PermissionRequest>,
 ) => Promise<unknown>;
 
-type ConnectionAuthority =
-  | Readonly<{
-      kind: "issuer";
-      issuer: Readonly<OaathIssuerCapability>;
-      authorization: Readonly<OaathAuthorizationCapability>;
-    }>
-  | Readonly<{ kind: "local"; approve: LocalPermissionAuthorization }>;
-
 export interface CreateConnectionInput {
   readonly binding: Readonly<OaathBinding>;
-  readonly authority: ConnectionAuthority;
+  /** The realm's approval: the owner's decision for exactly the reviewed request. */
+  readonly approve: LocalPermissionAuthorization;
   readonly grants: GrantStore;
   readonly operations: OperationStoreAdapter;
   readonly walletCallBundles: WalletCallBundleStore;
@@ -227,31 +120,7 @@ export interface CreateConnectionInput {
   readonly ownerKey: Readonly<KeyProfile>;
   readonly sessionKey: Readonly<KeyProfile>;
   readonly invalidation: Readonly<OaathCapabilityInvalidationCapability>;
-  readonly ownerRevocations: Readonly<OaathOwnerRevocationCapability> | null;
-  /**
-   * Remote session-key custody the deployment declared, or null for frontend
-   * custody. Named in every permission request so the owner's approval binds
-   * the custody model through the request hash.
-   */
-  readonly sessionSigner: Readonly<PermissionSessionSigner> | null;
   readonly now: () => number;
-}
-
-/** The reviewed scope: a permission request without its relay-assigned id. */
-type PermissionScope = Omit<PermissionRequest, "requestId">;
-
-function base64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
-}
-
-function newCodeVerifier(): string {
-  const random = globalThis.crypto?.getRandomValues?.bind(globalThis.crypto);
-  if (!random) {
-    return clientFail("oaath_client_capability_invalid", "WebCrypto randomness is unavailable");
-  }
-  return base64Url(random(new Uint8Array(VERIFIER_BYTES)));
 }
 
 function safeCount(value: unknown, label: string, maximum: number): number {
@@ -376,8 +245,6 @@ export interface CapturedPermissionInput {
   readonly requestedAt: number;
   /** Exclusive Grant expiry, Unix seconds. */
   readonly expiresAt: number;
-  readonly onPending: OaathRequestPermissionInput["onPending"];
-  readonly signal: AbortSignal | undefined;
 }
 
 /**
@@ -393,26 +260,10 @@ export function capturePermissionInput(
   const record = captureRecord(value, "requestPermission input", context, fail);
   exactCapturedRecord(
     record,
-    [
-      "chainScope",
-      "permissions",
-      "expiresIn",
-      "perChainOperationLimit",
-      ...(Object.hasOwn(record, "onPending") ? ["onPending"] : []),
-      ...(Object.hasOwn(record, "signal") ? ["signal"] : []),
-    ],
+    ["chainScope", "permissions", "expiresIn", "perChainOperationLimit"],
     "requestPermission input",
     fail,
   );
-  const onPending =
-    record.onPending === undefined
-      ? undefined
-      : clientCapability<NonNullable<OaathRequestPermissionInput["onPending"]>>(
-          record.onPending,
-          "onPending",
-        );
-  if (record.signal !== undefined && !(record.signal instanceof AbortSignal))
-    return fail("signal must be an AbortSignal");
   if (record.chainScope !== "all") {
     return clientFail("oaath_client_input_invalid", "chainScope must be all in 0.1.0");
   }
@@ -424,13 +275,7 @@ export function capturePermissionInput(
     operationLimitFromInput(record.perChainOperationLimit, context),
     context,
   );
-  return Object.freeze({
-    policy,
-    requestedAt,
-    expiresAt,
-    onPending,
-    signal: record.signal as AbortSignal | undefined,
-  });
+  return Object.freeze({ policy, requestedAt, expiresAt });
 }
 
 /**
@@ -466,8 +311,6 @@ export function forwardApprovedPermission(
 export function createConnection(
   input: Readonly<CreateConnectionInput>,
 ): Readonly<OaathConnection> {
-  const cancellation = new AbortController();
-  const pending = createPendingAuthorizationJournal(input);
   let closed = false;
   let closeRequested = false;
   let closing: Promise<void> | null = null;
@@ -511,113 +354,6 @@ export function createConnection(
     }
   }
 
-  function checkSignal(signal: AbortSignal): void {
-    if (!signal.aborted) return;
-    assertUsable();
-    clientFail(
-      "oaath_client_decision_unavailable",
-      "authorization wait was stopped",
-      "authorization_aborted",
-    );
-  }
-
-  async function abortable<Value>(
-    work: Promise<Value>,
-    signal: AbortSignal = cancellation.signal,
-  ): Promise<Value> {
-    const failure = () =>
-      new OaathClientError(
-        closeRequested
-          ? "oaath_client_closed"
-          : signedOut
-            ? "oaath_client_signed_out"
-            : "oaath_client_decision_unavailable",
-        "authorization wait was stopped",
-        "authorization_aborted",
-      );
-    if (signal.aborted) {
-      void work.catch(() => undefined);
-      throw failure();
-    }
-    return new Promise((resolve, reject) => {
-      const abort = () => {
-        signal.removeEventListener("abort", abort);
-        reject(failure());
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      work.then(
-        (value) => {
-          signal.removeEventListener("abort", abort);
-          resolve(value);
-        },
-        (error) => {
-          signal.removeEventListener("abort", abort);
-          reject(error);
-        },
-      );
-    });
-  }
-
-  async function call(
-    method: "GET" | "POST",
-    path: string,
-    body?: unknown,
-    signal: AbortSignal = cancellation.signal,
-  ): Promise<Record<string, unknown>> {
-    if (input.authority.kind !== "issuer")
-      return clientFail("oaath_client_internal", "local approval has no issuer transport");
-    const headers = new Headers();
-    if (body !== undefined) headers.set("content-type", "application/json");
-    const request = new Request(`${input.authority.issuer.url}${path}`, {
-      method,
-      headers,
-      signal,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    let response: Response;
-    try {
-      checkSignal(signal);
-      response = await abortable(input.authority.issuer.fetch(request), signal);
-    } catch (error) {
-      if (error instanceof OaathClientError) throw error;
-      return clientFail("oaath_client_issuer_unavailable", "the issuer could not be reached");
-    }
-    let payload: unknown;
-    try {
-      payload = await abortable(response.json(), signal);
-    } catch (error) {
-      if (error instanceof OaathClientError) throw error;
-      return clientFail("oaath_client_issuer_unavailable", "the issuer response is unreadable");
-    }
-    const record = captureRecord(payload, "issuer response", new WeakSet(), (message) =>
-      clientFail("oaath_client_issuer_unavailable", message),
-    );
-    if (response.ok) return record;
-    const error = exactClientRecord(
-      record.error,
-      ["code"],
-      "issuer error",
-      new WeakSet(),
-      "oaath_client_issuer_unavailable",
-    );
-    return clientFail(
-      "oaath_client_issuer_rejected",
-      "the issuer refused the request",
-      typeof error.code === "string" ? error.code : null,
-    );
-  }
-
-  function text(record: Record<string, unknown>, field: string): string {
-    const value = record[field];
-    if (typeof value !== "string" || value.length < 1) {
-      return clientFail(
-        "oaath_client_issuer_unavailable",
-        `the issuer response field ${field} is invalid`,
-      );
-    }
-    return value;
-  }
-
   async function persistGrant(grant: Grant, expected: number | null): Promise<GrantStoreRecord> {
     try {
       const committed = await input.grants.compareAndSwap({
@@ -658,7 +394,6 @@ export function createConnection(
       ownerKey: input.ownerKey,
       sessionKey: input.sessionKey,
       invalidation: input.invalidation,
-      ownerRevocations: input.ownerRevocations,
       now: input.now,
     });
     handles.push(created);
@@ -686,311 +421,12 @@ export function createConnection(
     }
   }
 
-  function pendingResult(
-    snapshot: Readonly<PendingSnapshot>,
-    status: OaathPendingPermissionResult["status"],
-    grant: Readonly<OaathGrantHandle> | null = null,
-  ): Readonly<OaathPendingPermissionResult> {
-    const { value } = snapshot;
-    return Object.freeze({
-      requestId: value.phase === "creating" ? null : value.request.requestId,
-      matchCode: value.matchCode,
-      expiresAt: value.expiresAt,
-      status,
-      grant,
-      recovery: grant
-        ? "ready"
-        : status === "approved" || status === "unavailable"
-          ? "uncertain"
-          : null,
-    });
-  }
-
-  async function pendingStatus(
-    snapshot: Readonly<PendingSnapshot>,
-  ): Promise<OaathPendingPermissionResult["status"]> {
-    if (snapshot.value.phase === "creating") return "unavailable";
-    const { request } = snapshot.value;
-    const state = await call("POST", "/authorization/resume", { requestId: request.requestId });
-    try {
-      if (
-        state.requestId !== request.requestId ||
-        state.redirectUri !== input.binding.redirectUri ||
-        typeof state.requestedScope !== "string" ||
-        JSON.stringify(
-          parsePermissionRequest({
-            ...JSON.parse(state.requestedScope),
-            requestId: request.requestId,
-          }),
-        ) !== JSON.stringify(request)
-      )
-        throw new Error();
-      if (state.decision !== null) {
-        const decision = exactClientRecord(
-          state.decision,
-          ["outcome", "decidedAt"],
-          "pending decision",
-          new WeakSet(),
-        );
-        if (
-          decision.outcome !== "approved" &&
-          decision.outcome !== "rejected" &&
-          decision.outcome !== "withdrawn"
-        )
-          throw new Error();
-        return decision.outcome;
-      }
-      if (typeof state.expired !== "boolean") throw new Error();
-      return state.expired ? "expired" : "pending";
-    } catch {
-      return clientFail(
-        "oaath_client_state_conflict",
-        "pending authorization does not match the issuer",
-        "pending_authorization_mismatch",
-      );
-    }
-  }
-
-  async function redeem(
-    snapshot: Readonly<PendingSnapshot>,
-    code: string | null,
-    signal = cancellation.signal,
-  ): Promise<Readonly<PendingSnapshot>> {
-    let current = snapshot;
-    const requestId = current.value.request.requestId;
-    if (current.value.phase === "pending") {
-      if (code === null) return clientFail("oaath_client_internal", "a released code is required");
-      checkSignal(signal);
-      current = await pending.write(current, { ...current.value, phase: "consuming" });
-      const consumed = await call(
-        "POST",
-        "/authorization/codes/consume",
-        { code, codeVerifier: current.value.verifier, redirectUri: input.binding.redirectUri },
-        signal,
-      );
-      if (text(consumed, "requestId") !== requestId)
-        return clientFail("oaath_client_state_conflict", "code named another request");
-      current = await pending.write(current, {
-        ...current.value,
-        phase: "claimable",
-        artifactId: text(consumed, "artifactId"),
-      });
-    }
-    if (current.value.phase === "claimable") {
-      checkSignal(signal);
-      current = await pending.write(current, { ...current.value, phase: "claiming" });
-      const claimed = await call(
-        "POST",
-        `/authorization/artifacts/${encodeURIComponent(current.value.artifactId!)}/claim`,
-        undefined,
-        signal,
-      );
-      if (text(claimed, "requestId") !== requestId)
-        return clientFail("oaath_client_state_conflict", "artifact named another request");
-      current = await pending.write(current, {
-        ...current.value,
-        phase: "claimed",
-        artifact: text(claimed, "artifact"),
-      });
-    }
-    return current;
-  }
-
-  async function finishPending(
-    snapshot: Readonly<PendingSnapshot>,
-  ): Promise<Readonly<OaathGrantHandle>> {
-    if (snapshot.value.phase !== "claimed" && snapshot.value.phase !== "settled")
-      return clientFail(
-        "oaath_client_decision_unavailable",
-        "one-time authorization redemption is uncertain",
-        "authorization_redemption_uncertain",
-      );
-    const grant = await applyArtifact(
-      snapshot.value.request,
-      JSON.parse(snapshot.value.artifact!),
-      true,
-    );
-    if (snapshot.value.phase !== "settled") {
-      await pending
-        .write(snapshot, { ...snapshot.value, phase: "settled" })
-        .catch((error: unknown) => {
-          if (
-            !(error instanceof OaathClientError) ||
-            error.source !== "pending_authorization_conflict"
-          )
-            throw error;
-        });
-    }
-    return grant;
-  }
-
-  async function resumePendingPermissionWork(): Promise<Readonly<OaathPendingPermissionResult> | null> {
-    assertUsable();
-    if (input.authority.kind !== "issuer") return null;
-    let snapshot = await pending.read();
-    if (snapshot === null) return null;
-    const status = await pendingStatus(snapshot);
-    if (status !== "approved") return pendingResult(snapshot, status);
-    const context = await input.contexts.read(input.binding.bindingId);
-    if (context && parseClientContext(context).grantId === snapshot.value.request.requestId) {
-      const grant = await resumeWork();
-      if (grant) return pendingResult(snapshot, status, grant);
-    }
-    if (snapshot.value.phase === "consuming" || snapshot.value.phase === "claiming")
-      return pendingResult(snapshot, status);
-    try {
-      let code: string | null = null;
-      if (snapshot.value.phase === "pending") {
-        const released = await call(
-          "GET",
-          `/authorization/requests/${encodeURIComponent(snapshot.value.request.requestId)}/code`,
-        );
-        if (released.outcome !== "approved")
-          return clientFail(
-            "oaath_client_state_conflict",
-            "approval pickup contradicted its decision",
-          );
-        code = text(released, "code");
-      }
-      snapshot = await redeem(snapshot, code);
-      return pendingResult(snapshot, "approved", await finishPending(snapshot));
-    } catch (error) {
-      if (
-        error instanceof OaathClientError &&
-        (error.source === "pending_authorization_conflict" || error.source === "relay_expired")
-      )
-        return pendingResult(snapshot, "approved");
-      throw error;
-    }
-  }
-
-  async function withdrawPendingPermissionWork(): Promise<Readonly<OaathPendingPermissionResult> | null> {
-    assertUsable();
-    if (input.authority.kind !== "issuer") return null;
-    const snapshot = await pending.read();
-    if (snapshot === null) return null;
-    if (snapshot.value.phase === "creating") return pendingResult(snapshot, "unavailable");
-    const response = await call(
-      "POST",
-      `/authorization/requests/${encodeURIComponent(snapshot.value.request.requestId)}/withdraw`,
-      {},
-    );
-    if (
-      response.requestId !== snapshot.value.request.requestId ||
-      !["withdrawn", "approved", "rejected", "expired"].includes(String(response.outcome))
-    )
-      return clientFail("oaath_client_issuer_unavailable", "withdrawal response is invalid");
-    return pendingResult(snapshot, response.outcome as OaathPendingPermissionResult["status"]);
-  }
-
-  async function authorizeAtIssuer(
-    scope: PermissionScope,
-    onPending: OaathRequestPermissionInput["onPending"],
-    signal: AbortSignal,
-  ): Promise<Readonly<PendingSnapshot>> {
-    if (input.authority.kind !== "issuer")
-      return clientFail("oaath_client_internal", "local approval has no issuer transport");
-    const previous = await pending.read();
-    if (previous !== null && previous.value.phase !== "settled") {
-      const status = await pendingStatus(previous);
-      if (status !== "withdrawn" && status !== "rejected" && status !== "expired")
-        return clientFail(
-          "oaath_client_state_conflict",
-          "resume or withdraw the retained permission request first",
-          "authorization_pending",
-        );
-    }
-    checkSignal(signal);
-    let snapshot = await pending.write(previous, {
-      phase: "creating",
-      request: parsePermissionRequest({ ...scope, requestId: crypto.randomUUID() }),
-      redirectUri: input.binding.redirectUri,
-      verifier: newCodeVerifier(),
-      matchCode: null,
-      expiresAt: scope.expiresAt * 1_000,
-      artifactId: null,
-      artifact: null,
-    });
-    const created = await call(
-      "POST",
-      "/authorization/requests",
-      {
-        redirectUri: input.binding.redirectUri,
-        codeChallenge: deriveCodeChallenge(snapshot.value.verifier),
-        requestedScope: JSON.stringify(scope),
-      },
-      signal,
-    );
-    const requestId = text(created, "requestId");
-    if (
-      typeof created.matchCode !== "string" ||
-      !/^[A-Za-z0-9_-]{8}$/u.test(created.matchCode) ||
-      typeof created.expiresAt !== "number" ||
-      !Number.isSafeInteger(created.expiresAt)
-    )
-      return clientFail("oaath_client_issuer_unavailable", "authorization metadata is invalid");
-    snapshot = await pending.write(snapshot, {
-      ...snapshot.value,
-      phase: "pending",
-      request: parsePermissionRequest({ ...scope, requestId }),
-      matchCode: created.matchCode,
-      expiresAt: created.expiresAt,
-    });
-    let authorized: unknown;
-    try {
-      checkSignal(signal);
-      await abortable(
-        Promise.resolve(
-          onPending?.(
-            Object.freeze({
-              requestId,
-              matchCode: created.matchCode,
-              expiresAt: created.expiresAt,
-            }),
-          ),
-        ),
-        signal,
-      );
-      checkSignal(signal);
-      authorized = await abortable(
-        input.authority.authorization.authorize({
-          requestId,
-          redirectUri: input.binding.redirectUri,
-          expiresAt: created.expiresAt,
-          signal,
-        }),
-        signal,
-      );
-    } catch (error) {
-      if (error instanceof OaathClientError) throw error;
-      return clientFail(
-        "oaath_client_decision_unavailable",
-        "the owner decision could not be obtained",
-      );
-    }
-    const code = text(
-      exactClientRecord(
-        authorized,
-        ["code"],
-        "authorization result",
-        new WeakSet(),
-        "oaath_client_capability_invalid",
-      ),
-      "code",
-    );
-    return redeem(snapshot, code, signal);
-  }
-
   async function requestPermissionWork(value: unknown): Promise<Readonly<OaathGrantHandle>> {
     assertUsable();
-    const captured = capturePermissionInput(value, input.now());
-    const { onPending, policy, requestedAt, expiresAt } = captured;
-    const signal =
-      captured.signal === undefined
-        ? cancellation.signal
-        : AbortSignal.any([cancellation.signal, captured.signal]);
-    const scope: PermissionScope = Object.freeze({
+    const { policy, requestedAt, expiresAt } = capturePermissionInput(value, input.now());
+    const request = parsePermissionRequest({
       version: OAATH_PERMISSION_REQUEST_VERSION,
+      requestId: globalThis.crypto.randomUUID(),
       context: input.binding.context,
       application: input.binding.application,
       chainScope: "all",
@@ -999,24 +435,17 @@ export function createConnection(
       policy,
       requestedAt,
       expiresAt,
-      sessionSigner: input.sessionSigner,
+      sessionSigner: null,
     });
-
-    let request: Readonly<PermissionRequest>;
     let artifact: unknown;
-    if (input.authority.kind === "local") {
-      request = parsePermissionRequest({ ...scope, requestId: globalThis.crypto.randomUUID() });
-      try {
-        artifact = await input.authority.approve(request);
-      } catch (error) {
-        if (error instanceof OaathClientError) throw error;
-        return clientFail(
-          "oaath_client_decision_unavailable",
-          "the wallet approval could not be obtained",
-        );
-      }
-    } else {
-      return finishPending(await authorizeAtIssuer(scope, onPending, signal));
+    try {
+      artifact = await input.approve(request);
+    } catch (error) {
+      if (error instanceof OaathClientError) throw error;
+      return clientFail(
+        "oaath_client_decision_unavailable",
+        "the owner approval could not be obtained",
+      );
     }
     return applyArtifact(request, artifact);
   }
@@ -1024,7 +453,6 @@ export function createConnection(
   async function applyArtifact(
     request: Readonly<PermissionRequest>,
     artifact: unknown,
-    recover = false,
   ): Promise<Readonly<OaathGrantHandle>> {
     assertUsable();
     let decision: Readonly<PermissionDecision>;
@@ -1113,26 +541,7 @@ export function createConnection(
     } catch (error) {
       return mapClientFailure(error, "the Grant could not be activated");
     }
-    let stored: GrantStoreRecord;
-    try {
-      stored = await persistGrant(active, null);
-    } catch (error) {
-      if (
-        !recover ||
-        !(error instanceof OaathClientError) ||
-        error.source !== "grant_store_conflict"
-      )
-        throw error;
-      const existing = await input.grants.get(active.identity.grantId);
-      if (
-        !existing ||
-        existing.value.state !== "active" ||
-        !sameGrantIdentity(existing.value.identity, active.identity) ||
-        existing.value.approval.capabilityHash !== decision.capabilityHash
-      )
-        throw error;
-      stored = existing;
-    }
+    const stored = await persistGrant(active, null);
     await writeContext(request, approvedPolicy, installApproval);
     return handle(stored, request, approvedPolicy, installApproval);
   }
@@ -1182,7 +591,7 @@ export function createConnection(
         "grant_identity_mismatch",
       );
     }
-    if (!sameSessionSigner(context.request.sessionSigner, input.sessionSigner)) {
+    if (context.request.sessionSigner !== null) {
       return clientFail(
         "oaath_client_state_conflict",
         "the current session signer does not match the reviewed Grant",
@@ -1190,33 +599,6 @@ export function createConnection(
       );
     }
 
-    // Fresh relay authentication. `relay_not_found` means the relay no longer
-    // retains the authorization request, which says nothing about authority; an
-    // authentication refusal fails closed above inside `call`.
-    let state: Record<string, unknown> | null = null;
-    try {
-      if (input.authority.kind === "issuer")
-        state = await call("POST", "/authorization/resume", { requestId: context.grantId });
-    } catch (error) {
-      if (error instanceof OaathClientError && error.source === "relay_not_found") state = null;
-      else throw error;
-    }
-    if (state !== null && state.decision !== null) {
-      const decision = exactClientRecord(
-        state.decision,
-        ["outcome", "decidedAt"],
-        "issuer decision state",
-        new WeakSet(),
-        "oaath_client_issuer_unavailable",
-      );
-      if (decision.outcome === "rejected") {
-        return clientFail(
-          "oaath_client_permission_rejected",
-          "the issuer recorded a rejection for this Grant",
-          "relay_rejected",
-        );
-      }
-    }
     // A revoking Grant resumes too: it authorizes nothing new (sendCalls
     // requires an active Grant), but its handle is the only path to retrying
     // `revoke()` until every chain's removal is conclusively observed —
@@ -1235,14 +617,8 @@ export function createConnection(
 
   async function signOut(): Promise<void> {
     if (closed) clientFail("oaath_client_closed", "connection is closed");
+    // Realms hold no issuer session: signing out only stops this connection.
     signedOut = true;
-    cancellation.abort();
-    if (input.authority.kind !== "issuer" || !input.authority.issuer.signOut) return;
-    try {
-      await input.authority.issuer.signOut();
-    } catch (error) {
-      return mapClientFailure(error, "issuer sign-out failed");
-    }
   }
 
   function requestPermission(value: unknown): Promise<Readonly<OaathGrantHandle>> {
@@ -1257,13 +633,10 @@ export function createConnection(
     binding: input.binding,
     requestPermission,
     resume,
-    resumePendingPermission: () => withHandleProducer(resumePendingPermissionWork),
-    withdrawPendingPermission: () => withHandleProducer(withdrawPendingPermissionWork),
     signOut,
     async close(): Promise<void> {
       if (closed) return;
       closeRequested = true;
-      cancellation.abort();
       const active =
         closing ??
         (async () => {
@@ -1311,7 +684,7 @@ export function createConnection(
         JSON.stringify(request.logicalAccount) !== JSON.stringify(input.binding.account) ||
         JSON.stringify(request.operatorCredential) !==
           JSON.stringify(input.binding.operatorCredential) ||
-        !sameSessionSigner(request.sessionSigner, input.sessionSigner)
+        request.sessionSigner !== null
       )
         return clientFail(
           "oaath_client_state_conflict",
@@ -1322,58 +695,4 @@ export function createConnection(
     }),
   );
   return connection;
-}
-
-/** Captures the issuer transport exactly. */
-export function captureIssuerCapability(value: unknown): Readonly<OaathIssuerCapability> {
-  const context: CaptureContext = new WeakSet();
-  const record = exactClientRecord(
-    value,
-    ["url", "fetch", "signOut"],
-    "OAAth issuer capability",
-    context,
-    "oaath_client_capability_invalid",
-  );
-  // The protocol's canonical URL rule is the one owner of what an issuer URL
-  // may be, including the loopback development exception the service-approved realm
-  // relies on; restating https-only here would strand `http://localhost`.
-  let url: string;
-  try {
-    url = parseIssuerIdentity({ version: OAATH_ISSUER_VERSION, url: record.url }).url;
-  } catch {
-    return clientFail("oaath_client_capability_invalid", "issuer url must be a canonical URL");
-  }
-  if (url !== record.url) {
-    return clientFail("oaath_client_capability_invalid", "issuer url must already be canonical");
-  }
-  return Object.freeze({
-    url,
-    fetch: clientCapability<OaathIssuerCapability["fetch"]>(record.fetch, "issuer fetch"),
-    signOut:
-      record.signOut === null
-        ? null
-        : clientCapability<NonNullable<OaathIssuerCapability["signOut"]>>(
-            record.signOut,
-            "issuer signOut",
-          ),
-  });
-}
-
-/** Captures the owner-decision capability exactly. */
-export function captureAuthorizationCapability(
-  value: unknown,
-): Readonly<OaathAuthorizationCapability> {
-  const record = exactClientRecord(
-    value,
-    ["authorize"],
-    "OAAth authorization capability",
-    new WeakSet(),
-    "oaath_client_capability_invalid",
-  );
-  return Object.freeze({
-    authorize: clientCapability<OaathAuthorizationCapability["authorize"]>(
-      record.authorize,
-      "authorization authorize",
-    ),
-  });
 }
