@@ -372,6 +372,9 @@ describe("experimental wallet prepared calls", () => {
     const backend = privateKeyToAccount(generatePrivateKey());
     const backendSignedHashes: `0x${string}`[] = [];
     const backendProvider = Object.freeze({
+      async createCredential() {
+        return this.credential();
+      },
       async credential() {
         return Object.freeze({
           version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
@@ -445,12 +448,9 @@ describe("experimental wallet prepared calls", () => {
         };
       },
     });
-    const changedConnection = await changed.oaath.connect();
-
-    await expect(changedConnection.resume()).rejects.toMatchObject({
+    await expect(changed.oaath.connect()).rejects.toMatchObject({
       name: "OaathClientError",
-      code: "oaath_client_state_conflict",
-      source: "session_signer_binding_mismatch",
+      code: "oaath_client_capability_invalid",
     });
     expect(changed.fetched).not.toContain("POST /authorization/resume");
     await expect(second.stores.preparedCallContexts.get(contextKey)).resolves.toEqual(
@@ -460,7 +460,7 @@ describe("experimental wallet prepared calls", () => {
     expect(backendSignedHashes).toEqual([]);
     expect(chain.signatures.length).toBe(0);
     expect(chain.sends).toHaveLength(0);
-    await changedConnection.close();
+    await changed.oaath.close();
     second.database.close();
 
     const third = await indexedDbPreparedRealmStores(factory);
@@ -680,6 +680,9 @@ describe("experimental wallet prepared calls", () => {
     const hosted = privateKeyToAccount(generatePrivateKey());
     let hostedSignCalls = 0;
     const hostedProvider = Object.freeze({
+      async createCredential() {
+        return this.credential();
+      },
       async credential() {
         return Object.freeze({
           version: OAATH_OPERATOR_CREDENTIAL_PROFILE_VERSION,
