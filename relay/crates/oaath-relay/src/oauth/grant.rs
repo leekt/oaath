@@ -24,7 +24,8 @@
 
 use axum::http::HeaderMap;
 use oaath_protocol::capture::parse_json;
-use oaath_protocol::identity::parse_owner_credential_profile;
+use oaath_protocol::identity::{OwnerCredentialProfile, parse_owner_credential_profile};
+use oaath_protocol::permission::PermissionRequest;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use url::Url;
@@ -65,7 +66,7 @@ pub(crate) fn relying_party(issuer: &str) -> RelayResult<(String, String)> {
 
 /// The stored scope of a grant: the composed request without its relay id,
 /// exactly as the SDK stores a permission scope.
-fn stored_scope(request: &Value) -> String {
+pub(crate) fn stored_scope(request: &Value) -> String {
     let mut scope = request.clone();
     if let Some(record) = scope.as_object_mut() {
         record.shift_remove("requestId");
@@ -113,12 +114,7 @@ pub async fn decide_grant(
     let code = random_identifier();
     let code_ref = seal_artifact(kms, &code).await?;
     let artifact_ref = seal_artifact(kms, artifact).await?;
-    let dapp_signer = parse_owner_credential_profile(&{
-        let mut profile = request.operator_credential.to_json();
-        profile["version"] = json!("oaath.owner-credential-profile/v1");
-        profile
-    })
-    .map_err(|_| RelayErrorCode::Internal)?;
+    let dapp_signer = dapp_signer_profile(&request)?;
 
     let mut transaction = store.begin().await?;
     let result = async {
@@ -190,26 +186,14 @@ pub async fn decide_grant(
         if !inserted {
             return Err(RelayErrorCode::AlreadyDecided);
         }
-        // The dapp's signer joins the account as a permission signer.
-        let dapp_signer_id =
-            register(&mut *transaction, &signer_record(&dapp_signer, decided_at)).await?;
-        let joined = transaction
-            .insert_account_signer(&AccountSignerRecord {
-                version: ACCOUNT_SIGNER_RECORD_VERSION,
-                account_id: account_id.to_owned(),
-                signer_id: dapp_signer_id,
-                role: MembershipRole::Permission,
-                request_id: Some(par.par_id.clone()),
-                link_id: None,
-                created_at: decided_at,
-                status: MembershipStatus::Active,
-                suspended_at: None,
-                restored_at: None,
-            })
-            .await?;
-        if !joined {
-            return Err(RelayErrorCode::Internal);
-        }
+        join_dapp_signer(
+            &mut *transaction,
+            &dapp_signer,
+            account_id,
+            &par.par_id,
+            decided_at,
+        )
+        .await?;
         Ok(par)
     }
     .await;
@@ -217,6 +201,44 @@ pub async fn decide_grant(
     Ok(LoginRedirect {
         redirect: redirect_url(&oauth.issuer, &par, Ok(&code))?,
     })
+}
+
+/// The dapp's signer as an owner-credential profile, for its registry signer.
+pub(crate) fn dapp_signer_profile(
+    request: &PermissionRequest,
+) -> RelayResult<OwnerCredentialProfile> {
+    let mut profile = request.operator_credential.to_json();
+    profile["version"] = json!("oaath.owner-credential-profile/v1");
+    parse_owner_credential_profile(&profile).map_err(|_| RelayErrorCode::Internal)
+}
+
+/// The approved grant's dapp signer joins the account as a permission signer.
+pub(crate) async fn join_dapp_signer(
+    transaction: &mut dyn RelayTransaction,
+    dapp_signer: &OwnerCredentialProfile,
+    account_id: &str,
+    grant_id: &str,
+    decided_at: u64,
+) -> RelayResult<()> {
+    let dapp_signer_id = register(transaction, &signer_record(dapp_signer, decided_at)).await?;
+    let joined = transaction
+        .insert_account_signer(&AccountSignerRecord {
+            version: ACCOUNT_SIGNER_RECORD_VERSION,
+            account_id: account_id.to_owned(),
+            signer_id: dapp_signer_id,
+            role: MembershipRole::Permission,
+            request_id: Some(grant_id.to_owned()),
+            link_id: None,
+            created_at: decided_at,
+            status: MembershipStatus::Active,
+            suspended_at: None,
+            restored_at: None,
+        })
+        .await?;
+    if !joined {
+        return Err(RelayErrorCode::Internal);
+    }
+    Ok(())
 }
 
 /// The decision without its install approval, and the install approval.

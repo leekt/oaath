@@ -155,6 +155,15 @@ export type DecisionRequest =
       /** For a grant: the root-signed decision, `JSON.stringify(KernelPermissionDecision)`. */
       readonly artifact?: string;
     }
+  /**
+   * A grant asked for by a non-root member: the dapp gets its code at once and
+   * its token after the account's root approves (`/requests/{id}`).
+   */
+  | {
+      readonly outcome: "request_approval";
+      readonly signer_id: string;
+      readonly account_id: string;
+    }
   /** The redirect then carries `error=access_denied`. */
   | { readonly outcome: "cancelled" };
 /** Also the shape of `GET /portal/transactions/{id}/redirect`. */
@@ -268,6 +277,27 @@ export interface MemberGrantView {
   readonly permission_request: PermissionRequest;
   readonly decision: unknown;
   readonly enable: unknown;
+}
+
+/** `/portal/requests/{id}`: a member's grant request awaiting the account's root. */
+export interface PendingRequest {
+  readonly request_id: string;
+  readonly status: "pending" | "approved" | "rejected" | "expired";
+  readonly account_id: string;
+  readonly address: `0x${string}`;
+  readonly client_name: string;
+  readonly redirect_origin: string;
+  readonly member: {
+    readonly signer_id: string;
+    readonly kind: OwnerCredentialProfile["kind"];
+    readonly profile: OwnerCredentialProfile;
+  };
+  /** The composed request the root approves: the dapp's signer and policy. */
+  readonly permission_request: PermissionRequest;
+  /** Display-only; the approval covers every chain. */
+  readonly chains: readonly number[];
+  readonly created_at: number;
+  readonly expires_at: number;
 }
 
 /** `POST /portal/accounts/import`: the root's signed import statement. */
@@ -420,6 +450,23 @@ export const portalApi = {
       `/portal/accounts/${segment(accountId)}/members/${segment(signerId)}/grants`,
       { method: "POST", body },
     ),
+  pendingRequests: (accountId: string) =>
+    call<{ readonly requests: readonly PendingRequest[] }>(
+      `/portal/accounts/${segment(accountId)}/requests`,
+    ),
+  pendingRequest: (id: string) => call<PendingRequest>(`/portal/requests/${segment(id)}`),
+  preparePending: (id: string) =>
+    call<PrepareGrantResponse>(`/portal/requests/${segment(id)}/prepare`, {
+      method: "POST",
+      body: {},
+    }),
+  approvePending: (id: string, artifact: string) =>
+    call<PendingRequest>(`/portal/requests/${segment(id)}/approve`, {
+      method: "POST",
+      body: { artifact },
+    }),
+  rejectPending: (id: string) =>
+    call<PendingRequest>(`/portal/requests/${segment(id)}/reject`, { method: "POST", body: {} }),
   memberGrant: (grantId: string) => call<MemberGrantView>(`/portal/grants/${segment(grantId)}`),
   rejectLink: (id: string) =>
     call<PortalLink>(`/portal/links/${segment(id)}/reject`, { method: "POST", body: {} }),

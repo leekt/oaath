@@ -32,6 +32,7 @@ use async_trait::async_trait;
 use crate::account_import::AccountImportRecord;
 use crate::error::RelayResult;
 use crate::link::{LinkOutcome, LinkRequestRecord};
+use crate::oauth::pending::{PendingGrantRecord, PendingOutcome};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
 use crate::policy::PolicyTemplateRecord;
 use crate::records::{
@@ -177,6 +178,26 @@ pub trait RelayTransaction: Send {
         &mut self,
         account_id: &str,
     ) -> RelayResult<Option<AccountImportRecord>>;
+
+    async fn lock_pending_grant(
+        &mut self,
+        request_id: &str,
+    ) -> RelayResult<Option<PendingGrantRecord>>;
+    /// `false` when the request already has one, or its account, member or
+    /// authorization request is unknown.
+    async fn insert_pending_grant(&mut self, record: &PendingGrantRecord) -> RelayResult<bool>;
+    /// `true` only when this call decided the undecided request.
+    async fn decide_pending_grant(
+        &mut self,
+        request_id: &str,
+        outcome: PendingOutcome,
+        decided_at: u64,
+    ) -> RelayResult<bool>;
+    /// The account's member requests, decided or not, oldest first.
+    async fn list_pending_grants(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Vec<PendingGrantRecord>>;
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>>;
     /// `false` when the identifier exists or the account or signer is unknown.

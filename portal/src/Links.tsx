@@ -7,12 +7,12 @@
  *   signs one OAAth membership approval (`membership.ts`). The new signer can
  *   then sign in as the account; it holds no on-chain authority.
  * - `/accounts` lists the owner's accounts and their members; the owner can
- *   suspend, restore, or remove a member. Nothing happens on-chain.
+ *   suspend, restore, or remove a member (nothing happens on-chain), and
+ *   decide members' pending app requests (`Requests.tsx`).
  *
  * @author taek <leekt216@gmail.com>
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { encode } from "uqr";
 import {
   type PolicyTemplate,
   type PortalAccount,
@@ -23,7 +23,8 @@ import {
 } from "./api.js";
 import { signMemberGrant, signMembershipApproval } from "./membership.js";
 import { Policies, templateSummary } from "./Policies.js";
-import { Frame, message, Notice, SignerStep } from "./shared.js";
+import { PendingRequests } from "./Requests.js";
+import { Frame, message, Notice, QrCode, SignerStep } from "./shared.js";
 import { type RememberedSigner, rememberSigner, shortAddress, signerDetail } from "./signers.js";
 
 const POLL_MS = 2_000;
@@ -61,29 +62,6 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
   p256: "Security key",
   ecdsa: "Wallet",
 };
-
-/** A QR code as plain SVG rectangles: no script, no network. */
-function QrCode({ text, label }: { text: string; label: string }) {
-  const { data, size } = encode(text, { ecc: "M", border: 2 });
-  const cells: string[] = [];
-  data.forEach((row, y) => {
-    row.forEach((dark, x) => {
-      if (dark) cells.push(`M${x} ${y}h1v1h-1z`);
-    });
-  });
-  return (
-    <svg
-      className="qr"
-      viewBox={`0 0 ${size} ${size}`}
-      role="img"
-      aria-label={label}
-      shapeRendering="crispEdges"
-    >
-      <rect width={size} height={size} fill="#fff" />
-      <path d={cells.join("")} fill="#000" />
-    </svg>
-  );
-}
 
 /** The signed-in signer asks an account's owner to add it. */
 export function LinkRequest({
@@ -566,6 +544,7 @@ function Members({ account, signer }: { account: PortalAccount; signer: Remember
 
   return (
     <>
+      <PendingRequests account={account} signer={signer} onDecided={load} />
       <section aria-labelledby="members-heading" className="members">
         <h2 id="members-heading">Members</h2>
         {members === null && !error && (

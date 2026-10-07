@@ -2,8 +2,9 @@
  * The "Login with OAAth" popup: sign in with a signer, then choose an account,
  * then return to the dapp. Signing in proves the signer (a passkey assertion
  * or a wallet's Sign-In with Ethereum message) and approves nothing. A grant
- * adds one review in which the account root signs the dapp's request. A
- * signer without an account may ask an existing account's owner to add it
+ * adds one review in which the account root signs the dapp's request; a
+ * member that is not the root sends the request to the root instead
+ * (`Requests.tsx`). A signer without an account may ask an existing account's owner to add it
  * (`/link/{id}`, `Links.tsx`).
  *
  * @author taek <leekt216@gmail.com>
@@ -22,6 +23,7 @@ import {
 import { GrantReview } from "./GrantReview.js";
 import { LinkApproval, LinkRequest, ManageAccounts } from "./Links.js";
 import { OperationReview } from "./OperationReview.js";
+import { AskOwner, RequestPage } from "./Requests.js";
 import { CancelButton, Frame, message, Notice, SignerStep } from "./shared.js";
 import { type RememberedSigner, rememberSigner, shortAddress } from "./signers.js";
 
@@ -35,12 +37,16 @@ type Step =
   | { readonly name: "account"; readonly signer: RememberedSigner }
   /** A grant transaction: the account root reviews and signs the dapp's request. */
   | { readonly name: "review"; readonly signer: RememberedSigner; readonly account: PortalAccount }
+  /** A grant chosen by a member that is not the root: the root decides later. */
+  | { readonly name: "ask"; readonly signer: RememberedSigner; readonly account: PortalAccount }
   | { readonly name: "returning" };
 
 export function App() {
   const params = new URLSearchParams(location.search);
   const link = /^\/link\/([A-Za-z0-9._~-]{1,256})$/u.exec(location.pathname)?.[1];
   if (link) return <LinkApproval linkId={link} />;
+  const request = /^\/requests\/([A-Za-z0-9._~-]{1,256})$/u.exec(location.pathname)?.[1];
+  if (request) return <RequestPage requestId={request} />;
   if (location.pathname === "/accounts") return <ManageAccounts />;
   if (location.pathname !== "/authorize") return <Landing />;
   const transactionId = transactionIdFromRequestUri(params.get("request_uri"));
@@ -160,12 +166,14 @@ function Authorize({ transactionId }: { transactionId: string }) {
             portalApi.signOut().catch(() => {});
             setStep({ name: "signer" });
           }}
-          rootOnly={grant !== undefined || operation !== undefined}
+          rootOnly={operation !== undefined}
           only={operation?.request.userOperation.sender}
           onChosen={(account) =>
-            grant || operation
-              ? setStep({ name: "review", signer: step.signer, account })
-              : finish(step.signer, account)
+            grant && account.role !== "root"
+              ? setStep({ name: "ask", signer: step.signer, account })
+              : grant || operation
+                ? setStep({ name: "review", signer: step.signer, account })
+                : finish(step.signer, account)
           }
           onCancel={cancel}
         />
@@ -177,6 +185,23 @@ function Authorize({ transactionId }: { transactionId: string }) {
           signer={step.signer}
           account={step.account}
           onApproved={(artifact) => finish(step.signer, step.account, artifact)}
+          onCancel={cancel}
+        />
+      )}
+      {step.name === "ask" && grant && (
+        <AskOwner
+          transaction={transaction}
+          detail={grant}
+          signer={step.signer}
+          account={step.account}
+          onAsk={() => {
+            rememberSigner({ ...step.signer, lastUsedAt: Date.now() });
+            decide({
+              outcome: "request_approval",
+              signer_id: step.signer.signer_id,
+              account_id: step.account.account_id,
+            });
+          }}
           onCancel={cancel}
         />
       )}
@@ -213,7 +238,7 @@ function AccountStep({
   onCancel,
 }: {
   signer: RememberedSigner;
-  /** A grant is approved by an account's root: other memberships are not offered. */
+  /** An owner operation is signed by an account's root: other memberships are not offered. */
   rootOnly: boolean;
   /** An owner operation names its one account: no other is offered. */
   only?: string | undefined;
@@ -301,7 +326,7 @@ function AccountStep({
       {accounts?.length === 0 && (
         <p className="quiet">
           {rootOnly
-            ? "This signer owns no account yet. Only an account's owner can approve app access."
+            ? "This signer owns no account yet. Only an account's owner can sign this."
             : "This signer has no account yet."}
         </p>
       )}

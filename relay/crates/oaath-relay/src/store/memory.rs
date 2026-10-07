@@ -19,6 +19,7 @@ use super::{RelayStore, RelayTransaction};
 use crate::account_import::AccountImportRecord;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::link::{LinkOutcome, LinkRequestRecord};
+use crate::oauth::pending::{PendingGrantRecord, PendingOutcome};
 use crate::oauth::records::{AccessTokenRecord, OAuthClientRecord, ParRecord};
 use crate::policy::PolicyTemplateRecord;
 use crate::records::{
@@ -48,6 +49,7 @@ struct Tables {
     link_requests: HashMap<String, Value>,
     policy_templates: HashMap<String, Value>,
     account_imports: HashMap<String, Value>,
+    pending_grants: HashMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -539,6 +541,66 @@ impl RelayTransaction for MemoryTransaction {
             account_id,
             AccountImportRecord::parse,
         )
+    }
+
+    async fn lock_pending_grant(
+        &mut self,
+        request_id: &str,
+    ) -> RelayResult<Option<PendingGrantRecord>> {
+        read(
+            &self.staged.pending_grants,
+            request_id,
+            PendingGrantRecord::parse,
+        )
+    }
+
+    async fn insert_pending_grant(&mut self, record: &PendingGrantRecord) -> RelayResult<bool> {
+        if !self.staged.accounts.contains_key(&record.account_id)
+            || !self.staged.signers.contains_key(&record.member_signer_id)
+            || !self.staged.requests.contains_key(&record.request_id)
+        {
+            return Ok(false);
+        }
+        Ok(insert(
+            &mut self.staged.pending_grants,
+            &record.request_id,
+            to_value(record),
+        ))
+    }
+
+    async fn decide_pending_grant(
+        &mut self,
+        request_id: &str,
+        outcome: PendingOutcome,
+        decided_at: u64,
+    ) -> RelayResult<bool> {
+        let Some(mut record) = self.lock_pending_grant(request_id).await? else {
+            return Ok(false);
+        };
+        if record.outcome.is_some() {
+            return Ok(false);
+        }
+        record.outcome = Some(outcome);
+        record.decided_at = Some(decided_at);
+        self.staged
+            .pending_grants
+            .insert(request_id.to_owned(), to_value(&record));
+        Ok(true)
+    }
+
+    async fn list_pending_grants(
+        &mut self,
+        account_id: &str,
+    ) -> RelayResult<Vec<PendingGrantRecord>> {
+        let mut records = Vec::new();
+        for value in self.staged.pending_grants.values() {
+            let record = PendingGrantRecord::parse(value)?;
+            if record.account_id == account_id {
+                records.push(record);
+            }
+        }
+        records.sort_by(|a, b| (a.created_at, &a.request_id).cmp(&(b.created_at, &b.request_id)));
+        Ok(records)
     }
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>> {

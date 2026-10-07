@@ -74,6 +74,7 @@ use crate::member_grant::{
 };
 use crate::oauth::PreparedGrant;
 use crate::oauth::grant::{granted_capability, relying_party};
+use crate::oauth::pending::retire_member_requests;
 use crate::policy::root_template;
 use crate::records::{bounded_text, canonical_identifier, canonical_str, exact_record, timestamp};
 use crate::registry::{
@@ -826,7 +827,16 @@ pub async fn remove_member(
                 return Err(UNREADABLE);
             }
         }
-        invalidate_grants(&mut *transaction, clock, kms, &memberships).await?;
+        retire_grants(
+            &mut *transaction,
+            clock,
+            kms,
+            account_id,
+            signer_id,
+            &memberships,
+            now,
+        )
+        .await?;
         if !transaction
             .delete_account_signers(account_id, signer_id)
             .await?
@@ -868,18 +878,28 @@ async fn member_rows(
     Ok(memberships)
 }
 
-/// Invalidates every live grant that admitted these memberships, through
+/// Invalidates every live grant that admitted these memberships or that the
+/// member asked the root for, and rejects its undecided requests, through
 /// the existing capability-invalidation owner, in the caller's transaction.
-async fn invalidate_grants(
+async fn retire_grants(
     transaction: &mut dyn RelayTransaction,
     clock: &dyn RelayClock,
     kms: &dyn RelayKms,
+    account_id: &str,
+    signer_id: &str,
     memberships: &[AccountSignerRecord],
+    now: u64,
 ) -> RelayResult<()> {
-    for membership in memberships {
-        if let Some(grant_id) = &membership.request_id
-            && let Some((client_id, capability_hash)) =
-                granted_capability(&mut *transaction, kms, grant_id).await?
+    let mut grant_ids: Vec<String> = memberships
+        .iter()
+        .filter_map(|membership| membership.request_id.clone())
+        .collect();
+    grant_ids.extend(retire_member_requests(&mut *transaction, account_id, signer_id, now).await?);
+    grant_ids.sort();
+    grant_ids.dedup();
+    for grant_id in &grant_ids {
+        if let Some((client_id, capability_hash)) =
+            granted_capability(&mut *transaction, kms, grant_id).await?
         {
             let caller = RelayCaller {
                 role: RelayCallerRole::Client,
@@ -924,7 +944,16 @@ pub async fn set_member_status(
     let result = async {
         let memberships = member_rows(&mut *transaction, account_id, signer_id, session).await?;
         if status == MembershipStatus::Suspended {
-            invalidate_grants(&mut *transaction, clock, kms, &memberships).await?;
+            retire_grants(
+                &mut *transaction,
+                clock,
+                kms,
+                account_id,
+                signer_id,
+                &memberships,
+                now,
+            )
+            .await?;
         }
         if !transaction
             .set_account_signer_status(account_id, signer_id, status, now)

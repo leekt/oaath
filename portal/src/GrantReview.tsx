@@ -5,7 +5,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { GrantPolicy, PermissionRequest } from "@oaath/protocol";
+import type { GrantPolicy, OperatorCredentialProfile, PermissionRequest } from "@oaath/protocol";
 import { useEffect, useRef, useState } from "react";
 import {
   type GrantDetail,
@@ -44,7 +44,7 @@ export function ether(wei: string): string {
   return `${whole}${fraction ? `.${fraction}` : ""} ETH`;
 }
 
-function when(seconds: number): string {
+export function when(seconds: number): string {
   return new Date(seconds * 1_000).toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
@@ -65,14 +65,13 @@ function limit(policy: GrantPolicy): string {
     : `Up to ${times} per chain every ${duration(intervalSeconds)}`;
 }
 
-function signerText(request: PermissionRequest): string {
-  const credential = request.operatorCredential;
+function signerText(credential: OperatorCredentialProfile): string {
   return credential.kind === "ecdsa"
     ? `Ethereum key ${credential.address}`
     : `Passkey ${shortAddress(credential.publicKey)}`;
 }
 
-function failure(error: unknown): string {
+export function grantFailure(error: unknown): string {
   if (error instanceof PortalApiError && error.status === 403)
     return "Only this account's owner can approve a grant.";
   switch (error instanceof RootSigningError ? error.code : (error as { code?: string })?.code) {
@@ -93,6 +92,52 @@ function failure(error: unknown): string {
     default:
       return "Something went wrong. Please try again.";
   }
+}
+
+/** What a dapp's signer may do: shown to a root before it signs, and to a member before it asks. */
+export function GrantTerms({
+  credential,
+  policy,
+  chains,
+  expiresAt,
+}: {
+  credential: OperatorCredentialProfile;
+  policy: GrantPolicy;
+  chains: readonly number[];
+  /** Unix seconds. */
+  expiresAt: number;
+}) {
+  return (
+    <dl className="review">
+      <dt>App signer</dt>
+      <dd className="mono">{signerText(credential)}</dd>
+      <dt>Allowed calls</dt>
+      <dd>
+        <ul className="calls">
+          {policy.calls.map((call) => (
+            <li key={`${call.target}:${call.selector}`}>
+              <span className="call-name">
+                {SELECTORS[call.selector] ?? <span className="mono">{call.selector}</span>}
+              </span>{" "}
+              on <span className="mono">{call.target}</span>
+              <span className="choice-detail">Sends up to {ether(call.valueLimit)}</span>
+            </li>
+          ))}
+        </ul>
+      </dd>
+      <dt>Valid</dt>
+      <dd>
+        From {when(policy.validAfter)}
+        {policy.validUntil !== null && ` until ${when(policy.validUntil)}`}
+      </dd>
+      <dt>Limit</dt>
+      <dd>{limit(policy)}</dd>
+      <dt>Chains</dt>
+      <dd>{chains.map((chain) => CHAINS[chain] ?? `Chain ${chain}`).join(", ")}</dd>
+      <dt>Request expires</dt>
+      <dd>{when(expiresAt)}</dd>
+    </dl>
+  );
 }
 
 export function GrantReview({
@@ -131,7 +176,7 @@ export function GrantReview({
           request: reviewedRequest({ prepared: response, detail, signer, account }),
         }),
       )
-      .catch((cause: unknown) => setError(failure(cause)));
+      .catch((cause: unknown) => setError(grantFailure(cause)));
   }, [transaction.transaction_id, detail, signer, account]);
 
   async function approve() {
@@ -149,7 +194,7 @@ export function GrantReview({
         }),
       );
     } catch (cause) {
-      setError(failure(cause));
+      setError(grantFailure(cause));
       setBusy(false);
     }
   }
@@ -170,35 +215,12 @@ export function GrantReview({
         </p>
       )}
       {request && (
-        <dl className="review">
-          <dt>App signer</dt>
-          <dd className="mono">{signerText(request)}</dd>
-          <dt>Allowed calls</dt>
-          <dd>
-            <ul className="calls">
-              {request.policy.calls.map((call) => (
-                <li key={`${call.target}:${call.selector}`}>
-                  <span className="call-name">
-                    {SELECTORS[call.selector] ?? <span className="mono">{call.selector}</span>}
-                  </span>{" "}
-                  on <span className="mono">{call.target}</span>
-                  <span className="choice-detail">Sends up to {ether(call.valueLimit)}</span>
-                </li>
-              ))}
-            </ul>
-          </dd>
-          <dt>Valid</dt>
-          <dd>
-            From {when(request.policy.validAfter)}
-            {request.policy.validUntil !== null && ` until ${when(request.policy.validUntil)}`}
-          </dd>
-          <dt>Limit</dt>
-          <dd>{limit(request.policy)}</dd>
-          <dt>Chains</dt>
-          <dd>{detail.chains.map((chain) => CHAINS[chain] ?? `Chain ${chain}`).join(", ")}</dd>
-          <dt>Request expires</dt>
-          <dd>{when(request.expiresAt)}</dd>
-        </dl>
+        <GrantTerms
+          credential={request.operatorCredential}
+          policy={request.policy}
+          chains={detail.chains}
+          expiresAt={request.expiresAt}
+        />
       )}
       {request && (
         <p className="notice">

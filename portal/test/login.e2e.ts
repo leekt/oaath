@@ -697,7 +697,7 @@ describe("dapp grants approved by the account root against the real relay", () =
     expect(wallet.accountId).toBeDefined();
     await click(popup, "::-p-text(Add signer)");
     await click(popup, "::-p-text(New passkey)");
-    await popup.waitForSelector("::-p-text(This signer owns no account yet.)");
+    await popup.waitForSelector("::-p-text(This signer has no account yet.)");
 
     // Signing the passkey in replaced the wallet's session: the wallet's accounts
     // are another signer's, and the passkey is not the wallet account's root.
@@ -1281,6 +1281,116 @@ describe("adding a passkey on a second device to an existing account", () => {
     expect(grant.permission_request.operatorCredential.kind).toBe("webauthn");
     expect(grant.permission_request.application.clientId).toBe("oaath-portal");
     expect(grant.enable.account).toBe(address);
+    await root.close();
+    await device.close();
+  });
+});
+
+/** The dapp's raw token request for one pushed grant's code. */
+async function redeem(dappPage: Page, pushed: PushedGrant, code: string) {
+  return dappPage.evaluate(
+    async (input) => {
+      const response = await fetch(`${input.portal}/oauth/token`, {
+        method: "POST",
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: input.clientId,
+          code: input.code,
+          code_verifier: input.verifier,
+          redirect_uri: `${location.origin}/callback`,
+        }),
+      });
+      return {
+        status: response.status,
+        body: (await response.json()) as {
+          error?: string;
+          authorization_details?: { grant_id: string; enable: { account: string } }[];
+        },
+      };
+    },
+    { portal, clientId: pushed.clientId, verifier: pushed.verifier, code },
+  );
+}
+
+describe("a member's grant request waits for the account root", () => {
+  it("the member asks, the token is pending, the root approves in /accounts, the dapp redeems", async () => {
+    const root = await browser.newPage();
+    await root.setViewport({ width: 390, height: 844 });
+    await installWallet(root);
+    await root.goto(`${portal}/accounts`);
+    await click(root, "::-p-text(E2E Wallet)");
+    const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
+    const address = /0x[0-9a-f]{40}/u.exec(
+      (await owned?.evaluate((node) => node.getAttribute("aria-label"))) ?? "",
+    )?.[0];
+    if (!address) throw new Error("no root account");
+
+    // A member device: a new passkey linked to the root's account, sign-in only.
+    const device = await browser.createBrowserContext();
+    const dappPage = await device.newPage();
+    await dappPage.goto(`${dapp}/`);
+    const pushed = await pushGrant(dappPage);
+    const popup = await device.newPage();
+    await popup.setViewport({ width: 390, height: 844 });
+    const query = new URLSearchParams({
+      client_id: pushed.clientId,
+      request_uri: pushed.requestUri,
+    });
+    await popup.goto(`${portal}/authorize?${query}`);
+    await addAuthenticator(popup);
+    await click(popup, "::-p-text(Add signer)");
+    await click(popup, "::-p-text(New passkey)");
+    await popup.waitForSelector("::-p-text(This signer has no account yet.)");
+    await click(popup, "::-p-text(Link to an existing account)");
+    await popup.type("#link-account", address);
+    await click(popup, "::-p-text(Request access)");
+    const shared = await popup.waitForSelector("#link-url");
+    await root.goto((await shared?.evaluate((node) => node.textContent)) ?? "");
+    await click(root, "::-p-text(E2E Wallet)");
+    await click(root, "::-p-text(Approve and sign)");
+    await root.waitForSelector("::-p-text(Signer added)");
+
+    // The member picks the account and sends the request; the dapp gets a code at once.
+    await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
+    await popup.waitForSelector("#ask-heading");
+    const ask = await popup.$eval("main", (node) => (node as HTMLElement).innerText);
+    expect(ask).toContain(`0x${"d1".repeat(20)}`);
+    const requestId = pushed.requestUri.split(":").pop() ?? "";
+    expect(ask).toContain(`${portal}/requests/${requestId}`);
+    await Promise.all([
+      popup.waitForNavigation(),
+      click(popup, "::-p-text(Send request to the owner)"),
+    ]);
+    const callback = new URL(popup.url());
+    expect(callback.searchParams.get("state")).toBe("grant-state");
+    const code = callback.searchParams.get("code");
+    if (!code) throw new Error(`no code in ${popup.url()}`);
+    expect(await redeem(dappPage, pushed, code)).toMatchObject({
+      status: 400,
+      body: { error: "authorization_pending" },
+    });
+
+    // The root approves from its members view with one signature.
+    await root.goto(`${portal}/accounts`);
+    await click(root, "::-p-text(E2E Wallet)");
+    await click(root, `button[aria-label='Smart account ${address}']`);
+    await root.waitForSelector("#requests-heading");
+    const queue = await root.$eval("main", (node) => (node as HTMLElement).innerText);
+    expect(queue).toContain("E2E Grant Dapp");
+    expect(queue).toContain(`0x${"d1".repeat(20)}`);
+    const signatures = walletSignatures;
+    await click(root, "button[aria-label='Approve E2E Grant Dapp']");
+    await root.waitForSelector("#requests-heading", { hidden: true });
+    expect(walletSignatures).toBe(signatures + 1);
+
+    const redeemed = await redeem(dappPage, pushed, code);
+    expect(redeemed.status).toBe(200);
+    expect(redeemed.body.authorization_details?.[0]?.grant_id).toBe(requestId);
+    expect(redeemed.body.authorization_details?.[0]?.enable.account).toBe(address);
+    expect(await redeem(dappPage, pushed, code)).toMatchObject({
+      status: 400,
+      body: { error: "invalid_grant" },
+    });
     await root.close();
     await device.close();
   });

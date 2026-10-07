@@ -30,6 +30,7 @@
 pub mod grant;
 pub mod id_token;
 pub mod operation;
+pub mod pending;
 pub mod records;
 
 use oaath_protocol::capture::parse_json;
@@ -113,6 +114,9 @@ impl OAuthFailure {
             | RelayErrorCode::CodeAlreadyConsumed
             | RelayErrorCode::Expired
             | RelayErrorCode::MembershipSuspended => Self::new(400, "invalid_grant", code),
+            // RFC 8628 §3.5 polling answers, as CIBA uses them.
+            RelayErrorCode::AuthorizationPending => Self::new(400, "authorization_pending", code),
+            RelayErrorCode::AccessDenied => Self::new(400, "access_denied", code),
             RelayErrorCode::StoreUnavailable | RelayErrorCode::KmsUnavailable => {
                 Self::new(503, "temporarily_unavailable", code)
             }
@@ -488,6 +492,11 @@ pub enum LoginDecision {
         signer_id: String,
         account_id: String,
     },
+    /// A member asks the account's root to approve a grant transaction.
+    RequestApproval {
+        signer_id: String,
+        account_id: String,
+    },
     /// A root-signed grant approval artifact for a grant transaction.
     Grant {
         signer_id: String,
@@ -497,7 +506,8 @@ pub enum LoginDecision {
     Cancelled,
 }
 
-/// `{outcome: "approved", signer_id, account_id, artifact?}` or
+/// `{outcome: "approved", signer_id, account_id, artifact?}`,
+/// `{outcome: "request_approval", signer_id, account_id}` or
 /// `{outcome: "cancelled"}`. The artifact is the root-signed grant approval.
 pub fn login_decision(body: &Map<String, Value>) -> RelayResult<LoginDecision> {
     let text = |key| body.get(key).and_then(Value::as_str);
@@ -516,6 +526,10 @@ pub fn login_decision(body: &Map<String, Value>) -> RelayResult<LoginDecision> {
                 INVALID,
             )?
             .to_owned(),
+        }),
+        Some("request_approval") if body.len() == 3 => Ok(LoginDecision::RequestApproval {
+            signer_id: id("signer_id")?,
+            account_id: id("account_id")?,
         }),
         Some("cancelled") if body.len() == 1 => Ok(LoginDecision::Cancelled),
         _ => Err(INVALID),
@@ -561,7 +575,9 @@ pub async fn decide_login(
     let decided_at = relay_now(clock)?;
     // Seal before the transaction: the store only ever receives the reference.
     let code = match decision {
-        LoginDecision::Grant { .. } => return Err(RelayErrorCode::Internal),
+        LoginDecision::Grant { .. } | LoginDecision::RequestApproval { .. } => {
+            return Err(RelayErrorCode::Internal);
+        }
         LoginDecision::Approved { .. } => {
             let code = random_identifier();
             let code_ref = seal_artifact(kms, &code).await?;
@@ -629,7 +645,9 @@ async fn decide(
             (account_id.as_str(), signer_id.as_str())
         }
         LoginDecision::Cancelled => (CANCELLED_SUBJECT, CANCELLED_SUBJECT),
-        LoginDecision::Grant { .. } => return Err(RelayErrorCode::Internal),
+        LoginDecision::Grant { .. } | LoginDecision::RequestApproval { .. } => {
+            return Err(RelayErrorCode::Internal);
+        }
     };
     let request = AuthorizationRequestRecord {
         version: AUTHORIZATION_REQUEST_RECORD_VERSION,
@@ -702,10 +720,20 @@ pub async fn recover_redirect(
             .await?
             .ok_or(RelayErrorCode::NotFound)?;
         let decision = transaction.lock_authorization_decision(&par.par_id).await?;
-        Ok((par, decision))
+        // A member's request redirects with its code before any decision.
+        let pending = match decision {
+            None => {
+                pending::recover_pending_redirect(&mut *transaction, kms, issuer, &par, now).await?
+            }
+            Some(_) => None,
+        };
+        Ok((par, decision, pending))
     }
     .await;
-    let (par, decision) = settle(transaction, result).await?;
+    let (par, decision, pending) = settle(transaction, result).await?;
+    if let Some(redirect) = pending {
+        return Ok(redirect);
+    }
     let Some(decision) = decision else {
         return Err(if now >= par.expires_at {
             RelayErrorCode::Expired
@@ -798,6 +826,13 @@ pub async fn exchange_code(
         redirect_uris: Vec::new(),
         organization_audience: None,
     };
+    // A member's request is redeemed only once its root decides.
+    match pending::gate_exchange(store, clock, client_id, code, code_verifier, redirect_uri).await?
+    {
+        pending::PendingGate::Pending => return Err(RelayErrorCode::AuthorizationPending.into()),
+        pending::PendingGate::Denied => return Err(RelayErrorCode::AccessDenied.into()),
+        pending::PendingGate::Exchange => {}
+    }
     let consumed = consume_authorization_code(
         store,
         clock,
@@ -997,7 +1032,9 @@ pub async fn grant_selection(
         .lock_par(transaction_id)
         .await?
         .ok_or(RelayErrorCode::NotFound)?;
-    let details = par.authorization_details.as_deref().ok_or(INVALID)?;
+    if par.authorization_details.is_none() {
+        return Err(INVALID);
+    }
     if transaction
         .lock_authorization_request(&par.par_id)
         .await?
@@ -1018,9 +1055,19 @@ pub async fn grant_selection(
         })
         .map(|(account, _)| account)
         .ok_or(RelayErrorCode::Forbidden)?;
+    let request = compose_par_grant(&par, &account)?;
+    Ok((par, request, account))
+}
+
+/// The one request a grant PAR composes for `account`.
+pub(crate) fn compose_par_grant(
+    par: &ParRecord,
+    account: &AccountRecord,
+) -> RelayResult<PermissionRequest> {
+    let details = par.authorization_details.as_deref().ok_or(INVALID)?;
     let detail = parse_grant_details(&parse_json(details).map_err(|_| INVALID)?)
         .map_err(|_| RelayErrorCode::RecordUnreadable)?;
-    let request = compose(
+    compose(
         &detail,
         &Composition {
             request_id: &par.par_id,
@@ -1030,8 +1077,7 @@ pub async fn grant_selection(
             account_address: &account.address,
             account: &account.account_profile()?,
         },
-    )?;
-    Ok((par, request, account))
+    )
 }
 
 /// What the account root must sign for this grant; nothing is persisted.
