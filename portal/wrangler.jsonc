@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.147.0/config-schema.json",
+  "name": "oaath-portal",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-05",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "oaath.taek.tech", "custom_domain": true }],
+  // The Worker decides every route first; only it reads the built SPA.
+  "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": true },
+  "vpc_services": [
+    {
+      "binding": "RELAY",
+      // TODO(deploy): replace with the Workers VPC service id for the relay on the
+      // OCI VM's loopback, created at deploy time. This placeholder binds nothing.
+      "service_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "observability": { "enabled": true }
+}

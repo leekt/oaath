@@ -1,0 +1,242 @@
+/* Ink on paper: one serif voice for decisions, mono for anything you verify. */
+:root {
+  --paper: #f6f1e7;
+  --card: #fffdf8;
+  --ink: #1d1a16;
+  --muted: #5d564b;
+  --rule: #d9cfbd;
+  --accent: #b4441e;
+  --accent-ink: #fffdf8;
+  --focus: #1f5fbf;
+  --error: #9b1c1c;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #16130f;
+    --card: #1f1b16;
+    --ink: #f1ebe0;
+    --muted: #b6ab99;
+    --rule: #3a332a;
+    --accent: #e0774f;
+    --accent-ink: #16130f;
+    --focus: #8ab4ff;
+    --error: #ff9a8a;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px / 1.5 var(--sans);
+}
+
+.frame {
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.mark {
+  font: 600 0.8rem / 1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.75rem;
+}
+
+h1 {
+  font: 500 2rem / 1.15 var(--serif);
+  margin: 0 0 1rem;
+}
+
+h1:focus {
+  outline: none;
+}
+
+.lede {
+  font: 1.15rem / 1.5 var(--serif);
+}
+
+.client {
+  margin-bottom: 1.75rem;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.client-name {
+  margin: 0.15rem 0;
+  font: 600 1.25rem / 1.3 var(--serif);
+}
+
+.quiet {
+  color: var(--muted);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+.choices {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.options {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--rule);
+}
+
+.choice {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.choice:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.choice-text {
+  display: grid;
+}
+
+.choice-title {
+  font-weight: 600;
+}
+
+.choice-detail {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.badge {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+}
+
+.badge-passkey {
+  background: radial-gradient(circle at 50% 38%, var(--ink) 0 18%, transparent 19%);
+}
+
+.badge-wallet {
+  border-radius: 0.4rem;
+  background: linear-gradient(var(--ink), var(--ink)) 50% 60% / 55% 2px no-repeat;
+}
+
+.badge-phone {
+  border-radius: 0.6rem;
+  width: 1.6rem;
+  margin: 0 0.32rem;
+}
+
+.badge-account {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.actions {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.primary,
+.secondary,
+.link {
+  font: 600 1rem / 1 var(--sans);
+  cursor: pointer;
+}
+
+.primary,
+.secondary {
+  min-height: 3rem;
+  padding: 0 1.25rem;
+  border-radius: 0.5rem;
+}
+
+.primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.secondary {
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--ink);
+}
+
+.primary:disabled,
+.secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.link {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.error {
+  margin-top: 1rem;
+  color: var(--error);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .choice {
+    transition: border-color 120ms ease;
+  }
+}

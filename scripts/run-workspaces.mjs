@@ -24,10 +24,10 @@ const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 function workspaces() {
   const packages = new Map();
-  for (const parent of ["packages", "examples"]) {
+  for (const parent of ["packages", "examples", "portal"]) {
     const base = join(ROOT, parent);
     const directories =
-      parent === "examples"
+      parent !== "packages"
         ? [base]
         : readdirSync(base, { withFileTypes: true })
             .filter((entry) => entry.isDirectory())
