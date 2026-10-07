@@ -155,6 +155,14 @@ and is a member of the account; login is identity, never authority. Failures are
 `oaath_client_identity_invalid`. The client is registered once with
 `POST {issuer}/oauth/clients`; see `examples/oauth-login`.
 
+Portal-approved Grants (`createOAAth({ chains, approvals: { kind: "oauth", issuer,
+clientId, redirectUri } })`) open the same popup from `requestPermission`. Where no
+popup can open, as in an extension service worker, `approvals.launch(url)`
+replaces it: it opens the portal (for example `chrome.identity.launchWebAuthFlow`)
+and resolves with the redirect URL, which must be `redirectUri` itself; `state`,
+`iss`, the code exchange and the id_token are checked exactly as for the popup.
+See `examples/extension`.
+
 ## Owner operations
 
 For an existing Kernel account, execute calls directly as its root owner. The

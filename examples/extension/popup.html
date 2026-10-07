@@ -143,7 +143,7 @@
           </label>
         </div>
         <button type="submit" id="pair" class="primary">Request permission</button>
-        <p class="note">The owner reviews and approves this request on their own device. Keep this popup open, or reopen it after approving.</p>
+        <p class="note">An OAAth window opens where the account owner reviews and signs this request. Keep this popup open, or reopen it after approving.</p>
       </form>
     </section>
 
@@ -162,20 +162,30 @@
     </section>
 
     <details id="service-details">
-      <summary>Service</summary>
+      <summary>Settings</summary>
       <form id="service-form" class="fields" novalidate>
         <label class="field">
-          <span>Service URL</span>
-          <input id="url" placeholder="http://127.0.0.1:8787" autocomplete="off" spellcheck="false" />
-          <small class="error" id="url-error" hidden></small>
+          <span>Issuer</span>
+          <input id="issuer" placeholder="https://oaath.taek.tech" autocomplete="off" spellcheck="false" />
+          <small class="error" id="issuer-error" hidden></small>
         </label>
         <label class="field">
           <span>Chain ID</span>
           <input id="chain" placeholder="421614" inputmode="numeric" autocomplete="off" />
           <small class="error" id="chain-error" hidden></small>
         </label>
-        <button type="submit" id="save">Save service</button>
-        <p class="note">Leave a field empty to use its default. Changing the service URL starts a fresh permission for every site.</p>
+        <label class="field">
+          <span>Chain RPC URL</span>
+          <input id="rpcUrl" placeholder="https://sepolia-rollup.arbitrum.io/rpc" autocomplete="off" spellcheck="false" />
+          <small class="error" id="rpcUrl-error" hidden></small>
+        </label>
+        <label class="field">
+          <span>Bundler URL</span>
+          <input id="bundlerUrl" placeholder="none" autocomplete="off" spellcheck="false" />
+          <small class="error" id="bundlerUrl-error" hidden></small>
+        </label>
+        <button type="submit" id="save">Save settings</button>
+        <p class="note">Leave a field empty to use its default. Changing the issuer starts a fresh permission for every site.</p>
       </form>
     </details>
     <script src="popup.js"></script>

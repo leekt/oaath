@@ -40,10 +40,23 @@ function worker() {
   let listener;
   const opened = [];
   const connected = [];
-  const configured = { url: "https://relay-a.test", chain: 1 };
+  const configured = { issuer: "https://issuer-a.test", chain: 1 };
   const context = {
+    URL,
     chrome: {
-      storage: { local: { get: async () => ({ ...configured }) } },
+      storage: {
+        local: {
+          // Settings read with defaults; a registered client is already stored.
+          get: async (keys) =>
+            typeof keys === "string" ? { [keys]: "client-1" } : { ...keys, ...configured },
+        },
+      },
+      identity: {
+        getRedirectURL: (path) => `https://test.chromiumapp.org/${path}`,
+        launchWebAuthFlow: async () => {
+          throw new Error("unexpected portal");
+        },
+      },
       tabs: { onRemoved: { addListener() {} } },
       runtime: {
         id: "test",
@@ -55,7 +68,8 @@ function worker() {
       },
     },
     // Each realm owns one named database, released by its close.
-    createOAAth: ({ origin, url, stores }) => {
+    createOAAth: ({ origin, approvals, stores }) => {
+      const url = approvals.issuer;
       const database = { name: stores.name, closed: 0 };
       opened.push(database);
       const own = [];
@@ -119,9 +133,14 @@ test("concurrent first pair messages share a connection and permission slot", as
   assert.equal((await second).error.code, -32002);
   realm.connected[0].permission.resolve(granted);
   assert.equal((await first).ok, true);
+  // Chains are fixed per realm: a chain change opens a new realm on the same database.
   realm.configured.chain = 10;
-  assert.equal((await realm.message("status")).result.chain, 10);
-  assert.equal(realm.connected.length, 1);
+  const changed = realm.message("status");
+  await tick();
+  assert.equal(realm.connected.length, 2);
+  assert.equal(realm.opened[1].name, realm.opened[0].name);
+  realm.connected[1].ready.resolve();
+  assert.equal((await changed).result.chain, 10);
 });
 
 test("failed initialization closes its database and permits a fresh retry", async () => {
@@ -138,11 +157,11 @@ test("failed initialization closes its database and permits a fresh retry", asyn
   assert.equal((await retry).ok, true);
 });
 
-test("a service change during initialization closes the old realm once", async () => {
+test("an issuer change during initialization closes the old realm once", async () => {
   const realm = worker();
   const old = realm.message("status");
   await tick();
-  realm.configured.url = "https://relay-b.test";
+  realm.configured.issuer = "https://issuer-b.test";
   const first = realm.message("status");
   const second = realm.message("status");
   await tick();
@@ -154,8 +173,8 @@ test("a service change during initialization closes the old realm once", async (
   assert.equal(realm.opened[0].closed, 1);
   assert.equal(realm.connected.length, 2);
   realm.connected[1].ready.resolve();
-  assert.equal((await first).result.url, "https://relay-b.test");
-  assert.equal((await second).result.url, "https://relay-b.test");
+  assert.equal((await first).result.issuer, "https://issuer-b.test");
+  assert.equal((await second).result.issuer, "https://issuer-b.test");
 });
 
 test("distinct page origins retain separate connections", async () => {

@@ -1,12 +1,18 @@
 /**
  * Pairing UI for the active tab's origin: request one scoped Grant, show its
- * state, revoke it. The owner still approves on their own device through the
- * service's authorization flow — this popup never sees owner authority.
+ * state, revoke it. The account root approves in the issuer's portal, which the
+ * worker opens — this popup never sees owner authority.
  *
  * @author taek <leekt216@gmail.com>
  */
 const $ = (id) => document.getElementById(id);
-const DEFAULTS = Object.freeze({ url: "http://127.0.0.1:8787", chain: 421_614 });
+const DEFAULTS = Object.freeze({
+  issuer: "https://oaath.taek.tech",
+  chain: 421_614,
+  rpcUrl: "https://sepolia-rollup.arbitrum.io/rpc",
+  bundlerUrl: "",
+});
+const SETTINGS = ["issuer", "chain", "rpcUrl", "bundlerUrl"];
 
 const STATES = Object.freeze({
   unpaired: {
@@ -19,7 +25,7 @@ const STATES = Object.freeze({
     title: "Waiting for the owner",
     badge: "Pending",
     tone: "warn",
-    detail: "Approve the request on the owner device. This popup updates when it is decided.",
+    detail: "Approve the request in the OAAth window. This popup updates when it is decided.",
   },
   active: {
     title: "Paired",
@@ -105,7 +111,7 @@ function renderFacts(status) {
   const rows = [];
   if (status.account) rows.push(["Account", status.account]);
   if (status.expiresAt) rows.push(["Expires", formatExpiry(status.expiresAt)]);
-  rows.push(["Service", status.url], ["Chain", String(status.chain)]);
+  rows.push(["Issuer", status.issuer], ["Chain", String(status.chain)]);
   facts.replaceChildren(
     ...rows.flatMap(([label, value]) => {
       const dt = document.createElement("dt");
@@ -162,7 +168,8 @@ async function refresh() {
     $("state-title").textContent = "Status unavailable";
     $("state-badge").textContent = "Error";
     $("state-badge").dataset.tone = "danger";
-    $("state-detail").textContent = "Check the service URL and that the service is running.";
+    $("state-detail").textContent =
+      "Check the issuer and chain settings, and that the issuer is reachable.";
     setMessage(error.message, "danger");
   }
 }
@@ -174,8 +181,10 @@ const RULES = {
   valueLimit: [/^(?:0|[1-9][0-9]*)$/u, "Whole wei, 0 or more."],
   expiresIn: [/^[1-9][0-9]*$/u, "Whole seconds, at least 1."],
   operationLimit: [/^[1-9][0-9]*$/u, "Whole number, at least 1."],
-  url: [/^https?:\/\/[^\s/]+/u, "Enter an http:// or https:// URL."],
+  issuer: [/^https?:\/\/[^\s/]+$/u, "Enter the issuer's http(s) origin, without a trailing slash."],
   chain: [/^[1-9][0-9]*$/u, "Enter a positive chain ID."],
+  rpcUrl: [/^https?:\/\/[^\s/]+/u, "Enter an http:// or https:// URL."],
+  bundlerUrl: [/^https?:\/\/[^\s/]+/u, "Enter an http:// or https:// URL."],
 };
 
 function validate(ids, { allowEmpty = false } = {}) {
@@ -275,21 +284,21 @@ $("revoke-confirm-button").addEventListener("click", () => {
 
 $("service-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (busy || !validate(["url", "chain"], { allowEmpty: true })) return;
-  const url = $("url").value.trim();
-  const chain = $("chain").value.trim();
+  if (busy || !validate(SETTINGS, { allowEmpty: true })) return;
   // An empty field restores its default instead of silently keeping the old value.
-  await chrome.storage.local.set({
-    url: url === "" ? DEFAULTS.url : url,
-    chain: chain === "" ? DEFAULTS.chain : Number(chain),
-  });
-  setMessage("Service saved.", "ok");
+  const values = Object.fromEntries(
+    SETTINGS.map((id) => {
+      const value = $(id).value.trim();
+      return [id, value === "" ? DEFAULTS[id] : id === "chain" ? Number(value) : value];
+    }),
+  );
+  await chrome.storage.local.set(values);
+  setMessage("Settings saved.", "ok");
   await refresh();
 });
 
-chrome.storage.local.get({ url: "", chain: "" }).then((stored) => {
-  if (stored.url) $("url").value = stored.url;
-  if (stored.chain) $("chain").value = String(stored.chain);
+chrome.storage.local.get(Object.fromEntries(SETTINGS.map((id) => [id, ""]))).then((stored) => {
+  for (const id of SETTINGS) if (stored[id]) $(id).value = String(stored[id]);
 });
 
 activeOrigin().then(

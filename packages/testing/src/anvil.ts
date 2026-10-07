@@ -29,6 +29,11 @@ import { openLocalClientStores } from "./anvil-stores.js";
 
 export { createLocalOwnerAnvilFixture, type LocalOwnerAnvilFixture } from "./anvil-owner.js";
 export { type LocalAnvilRecovery, openLocalAnvilRecoveryClient } from "./anvil-recovery.js";
+export {
+  createLocalOAuthIssuer,
+  type LocalOAuthIssuer,
+  type LocalOAuthIssuerInput,
+} from "./oauth-issuer.js";
 
 export interface LocalAnvilFixture {
   readonly chainIds: readonly number[];

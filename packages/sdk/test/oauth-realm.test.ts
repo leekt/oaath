@@ -91,6 +91,32 @@ describe("OAuth-approved Grants", () => {
     await realm.close();
   });
 
+  it("authorizes through a caller-owned launcher instead of a popup", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const { input, window, launch } = await browser();
+    const realm = createOAAth({ ...input, approvals: { ...input.approvals, launch } });
+    const grant = await (await realm.connect()).requestPermission(permissionInput());
+    expect(grant.state).toBe("active");
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(window.open).not.toHaveBeenCalled();
+    await realm.close();
+  });
+
+  it("refuses a launcher redirect that is not the redirectUri", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const { input, launch } = await browser();
+    const elsewhere = vi.fn(async (href: string) =>
+      (await launch(href)).replace("/callback", "/elsewhere"),
+    );
+    const realm = createOAAth({ ...input, approvals: { ...input.approvals, launch: elsewhere } });
+    const connection = await realm.connect();
+    await expect(connection.requestPermission(permissionInput())).rejects.toMatchObject({
+      code: "oaath_client_issuer_rejected",
+    });
+    expect(await connection.resume()).toBeNull();
+    await realm.close();
+  });
+
   it("reports a cancelled review as access_denied", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const { input, popups } = await browser("cancel");
