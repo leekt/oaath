@@ -29,6 +29,8 @@ import {
   kernelDeployment,
   kernelKey,
   ownerOperator,
+  prepareOwnerOperation,
+  verifyOwnerOperation,
 } from "@oaath/sdk/kernel";
 import { calculateJwkThumbprint, createRemoteJWKSet, type JWK, jwtVerify } from "jose";
 import puppeteer, { type Browser, type Page, type Protocol } from "puppeteer-core";
@@ -1302,5 +1304,151 @@ describe("importing an existing account through the portal's chain-read proxy", 
     );
     await popup.close();
     await dappPage.page.close();
+  });
+});
+
+/** The dapp PARs one exact owner operation the SDK prepared, as Keyline will. */
+async function pushOperation(page: Page, request: unknown): Promise<PushedGrant> {
+  const verifier = randomBytes(32).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  return page.evaluate(
+    async (input) => {
+      const redirectUri = `${location.origin}/callback`;
+      const registered = await fetch(`${input.portal}/oauth/clients`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ client_name: "E2E Keyline", redirect_uris: [redirectUri] }),
+      });
+      const { client_id: clientId } = (await registered.json()) as { client_id: string };
+      const pushed = await fetch(`${input.portal}/oauth/par`, {
+        method: "POST",
+        body: new URLSearchParams({
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          response_type: "code",
+          code_challenge: input.challenge,
+          code_challenge_method: "S256",
+          scope: "openid",
+          state: "operation-state",
+          authorization_details: JSON.stringify([
+            { type: "oaath_operation", request: input.request },
+          ]),
+        }),
+      });
+      if (pushed.status !== 201) throw new Error(`par ${pushed.status}`);
+      const { request_uri } = (await pushed.json()) as { request_uri: string };
+      return { clientId, requestUri: request_uri, verifier: input.verifier };
+    },
+    { portal, challenge, verifier, request },
+  );
+}
+
+describe("an owner operation approved by the account root and submitted by the dapp", () => {
+  it("signs one exact operation in the portal, releases it once, and the dapp submits it", async () => {
+    const local = await startLocalArbitrumSepolia();
+    const target = `0x${"be".repeat(20)}` as const;
+    // The wallet root's first registry account, from the login proof.
+    const prepared = prepareOwnerOperation({
+      account: {
+        version: "oaath.kernel-account-profile/v1",
+        kind: "kernel",
+        accountIndex: "0",
+        kernelVersion: "0.4.0",
+        factoryRoute: "kernel_factory",
+        entryPoint: { version: "0.9" },
+        ownerCredential: {
+          version: "oaath.owner-credential-profile/v1",
+          kind: "ecdsa",
+          address: WALLET_ADDRESS,
+        },
+      },
+      chainId: 421_614,
+      deployed: false,
+      calls: [{ target, value: "1000", data: "0x" }],
+      nonce: { lane: "0", sequence: "0" },
+      gas: {
+        callGasLimit: "900000",
+        verificationGasLimit: "3000000",
+        preVerificationGas: "150000",
+        maxFeePerGas: "2000000000",
+        maxPriorityFeePerGas: "1000000000",
+      },
+    });
+    const sender = prepared.request.userOperation.sender;
+    await local.chain.rpc("anvil_setBalance", [sender, toHex(10n ** 18n)]);
+
+    const dappPage = await browser.newPage();
+    await dappPage.goto(`${dapp}/`);
+    const pushed = await pushOperation(dappPage, prepared.request);
+    const popup = await openGrant(pushed);
+    await click(popup, "::-p-text(E2E Wallet)");
+    // Only the operation's account is offered.
+    await click(popup, `button[aria-label='Smart account ${sender}, Owner']`);
+    await popup.waitForSelector("#operation-heading");
+    const review = await popup.$eval("main", (node) => (node as HTMLElement).innerText);
+    expect(review).toContain(target);
+    expect(review).toContain("0.000000000000001 ETH");
+    expect(review).toContain("Arbitrum Sepolia");
+    expect(review).toContain("Deployed by this transaction");
+    expect(review).toContain("Your account");
+    expect(
+      await popup.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await Promise.all([popup.waitForNavigation(), click(popup, "::-p-text(Approve and sign)")]);
+    const code = new URL(popup.url()).searchParams.get("code");
+    if (!code) throw new Error(`no code in ${popup.url()}`);
+
+    const redeem = () =>
+      dappPage.evaluate(
+        async (input) => {
+          const response = await fetch(`${input.portal}/oauth/token`, {
+            method: "POST",
+            body: new URLSearchParams({
+              grant_type: "authorization_code",
+              client_id: input.clientId,
+              code: input.code,
+              code_verifier: input.verifier,
+              redirect_uri: `${location.origin}/callback`,
+            }),
+          });
+          return {
+            status: response.status,
+            body: (await response.json()) as Record<string, unknown>,
+          };
+        },
+        { portal, clientId: pushed.clientId, verifier: pushed.verifier, code },
+      );
+    const token = await redeem();
+    expect(token.status).toBe(200);
+    const [detail] = token.body.authorization_details as { type: string; signed: unknown }[];
+    expect(detail?.type).toBe("oaath_operation");
+    // The code releases the signed operation once.
+    expect((await redeem()).status).toBe(400);
+    const stored = JSON.stringify(detail?.signed);
+
+    // The dapp verifies the root's signature and submits through its own bundler.
+    const verified = await verifyOwnerOperation(JSON.parse(stored));
+    expect(verified.signed.request).toEqual(JSON.parse(JSON.stringify(prepared.request)));
+    const bundler = async (method: string, params: unknown[]) => {
+      const response = await fetch(local.bundlerUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      });
+      return ((await response.json()) as { result: unknown }).result;
+    };
+    expect(
+      await bundler("eth_sendUserOperation", [verified.userOperation, verified.entryPoint]),
+    ).toBe(prepared.request.userOperationHash);
+    expect(await local.chain.rpc("eth_getBalance", [target, "latest"])).toBe("0x3e8");
+
+    // Reload: only the stored artifact survives; observation sends nothing new.
+    const reloaded = await verifyOwnerOperation(JSON.parse(stored));
+    expect(
+      await bundler("eth_getUserOperationReceipt", [reloaded.signed.request.userOperationHash]),
+    ).toMatchObject({ success: true });
+    expect(local.sent).toHaveLength(1);
+    await popup.close();
+    await dappPage.close();
   });
 });

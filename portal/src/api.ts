@@ -15,6 +15,7 @@ import type {
   KernelAccountProfile,
   OperatorCredentialProfile,
   OwnerCredentialProfile,
+  OwnerOperationRequest,
   PermissionRequest,
 } from "@oaath/protocol";
 
@@ -38,6 +39,12 @@ export interface GrantDetail {
   readonly device_id: string;
 }
 
+/** One exact owner operation the dapp asks the account's root to sign. */
+export interface OperationDetail {
+  readonly type: "oaath_operation";
+  readonly request: OwnerOperationRequest;
+}
+
 /** `GET /portal/transactions/{par_id}`: one pending authorization. */
 export interface PortalTransaction {
   readonly transaction_id: string;
@@ -45,8 +52,8 @@ export interface PortalTransaction {
   readonly client_name: string;
   /** Origin of the registered redirect URI the dapp asked to return to. */
   readonly redirect_origin: string;
-  /** Empty for a login; one `oaath_grant` when the dapp asks for a grant. */
-  readonly authorization_details: readonly GrantDetail[];
+  /** Empty for a login; one `oaath_grant` or `oaath_operation` detail otherwise. */
+  readonly authorization_details: readonly (GrantDetail | OperationDetail)[];
   /** Unix seconds after which the request is no longer usable. */
   readonly expires_at: number;
 }
