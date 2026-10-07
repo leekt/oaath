@@ -160,7 +160,7 @@ export default {
         return failure(403, "Cross-site request refused");
       if (!reading && request.headers.get("origin") !== ORIGIN)
         return failure(403, "Request origin does not match");
-      if (!reading && request.method !== "POST" && request.method !== "DELETE")
+      if (!reading && !["POST", "PUT", "DELETE"].includes(request.method))
         return failure(405, "Unsupported method");
       return forward(request, url, env, false);
     }
