@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OAAth Grant demo</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; }
+      code, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+      button { font: inherit; padding: 0.5rem 1rem; margin: 0.25rem 0.5rem 0.25rem 0; }
+      section[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>OAAth Grant demo</h1>
+      <p id="status">Registering this demo with the issuer…</p>
+      <section>
+        <h2>1. Request permission</h2>
+        <p>
+          Sign in through the OAAth portal and approve one tiny Grant: this page's session key may
+          make <strong>zero-value</strong> calls with selector <code id="selector"></code> to
+          <code id="target"></code>, at most twice per chain, for one hour.
+        </p>
+        <button id="grant" type="button" disabled>Request permission</button>
+      </section>
+      <section id="funding" hidden>
+        <h2>2. Fund the account for gas</h2>
+        <p>
+          Account <code id="account"></code> does not need to exist yet: the first operation
+          deploys it. There is no paymaster, so send it testnet ETH for gas.
+        </p>
+        <p id="amount"></p>
+        <button id="balance" type="button">Check balance</button>
+        <span id="balance-value"></span>
+      </section>
+      <section id="sending" hidden>
+        <h2>3. Send the covered call</h2>
+        <p>
+          One UserOperation deploys the account, installs the permission in enable mode and
+          makes the call. It is sent once; if an answer is lost the page only observes.
+        </p>
+        <button id="send" type="button">Send covered call</button>
+        <pre id="operation" aria-live="polite"></pre>
+      </section>
+      <pre id="result" aria-live="polite"></pre>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
