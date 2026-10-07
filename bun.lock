@@ -87,7 +87,6 @@
         "@oaath/sdk": "workspace:*",
         "cetane": "0.0.4",
         "fake-indexeddb": "6.2.5",
-        "jose": "6.2.12",
       },
       "devDependencies": {
         "@types/node": "22.13.0",

@@ -58,7 +58,6 @@
     "@oaath/protocol": "workspace:*",
     "@oaath/sdk": "workspace:*",
     "fake-indexeddb": "6.2.5",
-    "jose": "6.2.12",
     "cetane": "0.0.4"
   },
   "devDependencies": {

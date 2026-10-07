@@ -16,12 +16,15 @@ concurrency:
 jobs:
   relay:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
           components: clippy, rustfmt
@@ -45,6 +48,13 @@ jobs:
       # portal Worker module, the built SPA, and headless Chrome. Loopback only.
       - run: bun run --filter @oaath/portal test:e2e
         timeout-minutes: 5
+      # The packed MV3 extension against the relay binary built above. Headful
+      # so Chrome runs its real MV3 worker and IndexedDB implementation;
+      # Puppeteer then force-closes that worker.
+      - run: xvfb-run --auto-servernum bun run smoke:extension
+        timeout-minutes: 5
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
 
   check:
     runs-on: ubuntu-latest
@@ -85,11 +95,6 @@ jobs:
       - run: bun run smoke:kernel-import
       - run: bun run smoke:weighted-root
       - run: bun run smoke:passkey
-        env:
-          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
-      # The extension smoke is headful so Chrome runs its real MV3 worker and
-      # IndexedDB implementation; Puppeteer then force-closes that worker.
-      - run: xvfb-run --auto-servernum bun run smoke:extension
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
       # Its own step, so a two-chain materialization failure names itself instead
