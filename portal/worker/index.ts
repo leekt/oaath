@@ -9,6 +9,8 @@
  * - `/portal/*`: the portal's private API; same-origin only. Its session
  *   cookie (`Path=/portal`) is forwarded both ways.
  * - `/rpc/421614`: same-origin, budgeted, read-only chain reads (`rpc.ts`).
+ * - Client registration, PAR, signer registration and sign-in challenges
+ *   spend a per-IP `WRITE_LIMIT` budget before they reach the relay.
  *
  * Only an allow-list of request headers reaches the relay, so client-supplied
  * forwarding headers (`x-forwarded-*`, `forwarded`, `cf-*`) never do, and
@@ -18,7 +20,7 @@
  * @author taek <leekt216@gmail.com>
  */
 
-import { proxyRpc, type RpcEnv } from "./rpc.js";
+import { proxyRpc, type RateLimit, type RpcEnv } from "./rpc.js";
 
 interface Fetcher {
   fetch(request: Request): Promise<Response>;
@@ -29,6 +31,29 @@ export interface Env extends RpcEnv {
   readonly ASSETS: Fetcher;
   /** Workers VPC service: the relay on the VM's loopback. */
   readonly RELAY: Fetcher;
+  /** Workers rate-limiting binding: the per-IP budget for unauthenticated writes. */
+  readonly WRITE_LIMIT?: RateLimit;
+}
+
+/**
+ * Unauthenticated writes that create relay state. Each POST spends one unit of
+ * the per-IP `WRITE_LIMIT` budget before it reaches the relay; an exhausted or
+ * missing budget refuses it.
+ */
+const BUDGETED_WRITES = new Set([
+  "/oauth/clients",
+  "/oauth/par",
+  "/portal/signers",
+  "/portal/sessions/challenge",
+]);
+
+async function overBudget(request: Request, url: URL, env: Env, cors: boolean) {
+  if (request.method !== "POST" || !BUDGETED_WRITES.has(url.pathname)) return null;
+  if (!env.WRITE_LIMIT) return failure(503, "OAAth is temporarily unavailable", cors);
+  const key = request.headers.get("cf-connecting-ip") ?? "unknown";
+  if (!(await env.WRITE_LIMIT.limit({ key })).success)
+    return failure(429, "Too many requests. Try again in a minute.", cors);
+  return null;
 }
 
 export const ORIGIN = "https://oaath.taek.tech";
@@ -151,7 +176,7 @@ export default {
       if (request.method === "OPTIONS")
         return new Response(null, { status: 204, headers: CORS_HEADERS });
       if (!reading && request.method !== "POST") return failure(405, "Unsupported method", true);
-      return forward(request, url, env, true);
+      return (await overBudget(request, url, env, true)) ?? forward(request, url, env, true);
     }
 
     if (url.pathname.startsWith("/portal/")) {
@@ -162,7 +187,7 @@ export default {
         return failure(403, "Request origin does not match");
       if (!reading && !["POST", "PUT", "DELETE"].includes(request.method))
         return failure(405, "Unsupported method");
-      return forward(request, url, env, false);
+      return (await overBudget(request, url, env, false)) ?? forward(request, url, env, false);
     }
 
     if (url.pathname === "/rpc/421614") {
