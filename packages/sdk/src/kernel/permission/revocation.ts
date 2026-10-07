@@ -1,24 +1,13 @@
 /**
  * Owner revocation of one Grant approval as separate awaited stages: prepare
  * (reads only), sign (one owner signature), and the caller's own submission
- * route. Finality is `verifyKernelPermissionRevocation`. The approval's version
- * selects the Kernel semantics; nothing here chooses a transport or submits.
- * Where the owner key lives is expressed only by who signs: `sign(owner)` with
- * a key profile, or `complete(artifact)` with an owner device's signing artifact.
+ * route. Finality is `verifyKernelPermissionRevocation`. Kernel `0.3.3` only;
+ * a Kernel `0.4.0` Grant revokes through its grant handle. Nothing here
+ * chooses a transport or submits.
  *
  * @author taek <leekt216@gmail.com>
  */
-import {
-  type KernelRevocationEffect,
-  type KernelRevocationSigningRequest,
-  OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,
-  type PermissionRequest,
-} from "@oaath/protocol";
-import type {
-  KernelCall,
-  KernelUserOperationGas,
-  KernelV4AccountReadCapability,
-} from "../../kernel-v4.js";
+import type { KernelCall, KernelUserOperationGas } from "../../kernel-v4.js";
 import {
   type PreparedPaymaster,
   type PreparedUserOperation,
@@ -41,11 +30,6 @@ import type { KeyProfile } from "../types.js";
 import { type KernelGrantApproval, parseVersionedKernelGrantApproval } from "./approval.js";
 import { OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION } from "./materialize.js";
 import {
-  type KernelSigningRequestRevocation,
-  prepareKernelV4Revocation,
-  restoreKernelV4Revocation,
-} from "./v4-revocation.js";
-import {
   type KernelV33PermissionApproval,
   kernelV33CapabilityHash,
   OAATH_KERNEL_V33_APPROVAL_VERSION,
@@ -56,17 +40,15 @@ import {
   parseKernelV33PermissionState,
 } from "./v33-revocation.js";
 
-export type { KernelSigningRequestRevocation } from "./v4-revocation.js";
-
 export const OAATH_KERNEL_PERMISSION_REVOCATION_VERSION =
   "oaath.kernel-permission-revocation/v2" as const;
 
 export interface PrepareKernelPermissionRevocationInput {
-  /** The exact issued Grant approval; its `version` selects the Kernel semantics. */
+  /** The exact issued Kernel `0.3.3` Grant approval. */
   readonly approval: Readonly<KernelGrantApproval>;
   readonly chainId: number;
   /** Caller-owned account and permission-state reads; no bundler method is used. */
-  readonly reads: KernelV33Reads | Readonly<KernelV4AccountReadCapability>;
+  readonly reads: KernelV33Reads;
   /** Root EntryPoint lane: a caller-reserved uint16 key and its uint64 sequence. */
   readonly nonceKey: string;
   readonly sequence: string;
@@ -76,20 +58,9 @@ export interface PrepareKernelPermissionRevocationInput {
    * (self-funded). Its fields are part of the hashed operation identity.
    */
   readonly paymaster?: Readonly<PreparedPaymaster> | null;
-  /**
-   * The Grant's permission request, which names the owner credential and the
-   * session permission. Required for a Kernel `0.4.0` approval, refused otherwise.
-   */
-  readonly request?: Readonly<PermissionRequest>;
-  /**
-   * Kernel `0.4.0` only, chosen from chain evidence: invalidate an unused
-   * install, or remove an installed permission. A Kernel `0.3.3` teardown is
-   * derived from the permission state read here instead.
-   */
-  readonly effect?: KernelRevocationEffect;
   /** Optional expectations, each defaulting from the approval or its deployment. */
   readonly account?: `0x${string}`;
-  readonly kernelVersion?: "0.3.3" | "0.4.0";
+  readonly kernelVersion?: "0.3.3";
   readonly entryPoint?: `0x${string}`;
 }
 
@@ -111,7 +82,7 @@ export interface KernelPermissionRevocationPreparation {
   readonly prepared: Readonly<PreparedUserOperation>;
 }
 
-/** A revocation restored from its own JSON record (Kernel `0.3.3`). */
+/** One prepared owner revocation, also restored from its own JSON record. */
 export interface KernelRecordedRevocation extends KernelPermissionRevocationPreparation {
   /**
    * One owner signature over exactly `prepared`, encoded for the account.
@@ -120,25 +91,10 @@ export interface KernelRecordedRevocation extends KernelPermissionRevocationPrep
   sign(owner: Readonly<KeyProfile>): Promise<`0x${string}`>;
 }
 
-/**
- * One prepared owner revocation. Both kinds carry `prepared` and `sign(owner)`.
- * A Kernel `0.4.0` revocation also carries the owner `signingRequest` it is
- * recorded and restored by, and `complete(artifact)` for an owner device.
- */
-export type PreparedKernelPermissionRevocation =
-  | KernelRecordedRevocation
-  | KernelSigningRequestRevocation;
-
 export interface RestoreKernelPermissionRevocationInput {
-  /**
-   * A recorded preparation, for example `JSON.parse(JSON.stringify(prepared))`,
-   * or a Kernel `0.4.0` revocation's `signingRequest`. Its `version` selects the kind.
-   */
-  readonly preparation:
-    | Readonly<KernelPermissionRevocationPreparation>
-    | Readonly<KernelRevocationSigningRequest>;
-  /** Required for a recorded preparation; a signing request restores without chain reads. */
-  readonly reads?: KernelV33Reads;
+  /** A recorded preparation, for example `JSON.parse(JSON.stringify(prepared))`. */
+  readonly preparation: Readonly<KernelPermissionRevocationPreparation>;
+  readonly reads: KernelV33Reads;
 }
 
 const GAS_KEYS = [
@@ -250,40 +206,20 @@ async function compose(
 }
 
 /**
- * Side-effect-free preparation of one owner revocation on one chain, for any
- * supported Kernel version. For Kernel `0.3.3` it reads the account's root
- * owner and the permission's current state, then derives the canonical
- * teardown (enable-then-uninstall for an unused approval). For Kernel `0.4.0`
- * it binds the approval to its permission `request` and prepares the chosen
- * `effect`. It never prompts, signs, submits or allocates a nonce: the caller
- * reserves the lane.
+ * Side-effect-free preparation of one Kernel `0.3.3` owner revocation on one
+ * chain. It reads the account's root owner and the permission's current state,
+ * then derives the canonical teardown (enable-then-uninstall for an unused
+ * approval). It never prompts, signs, submits or allocates a nonce: the caller
+ * reserves the lane. A Kernel `0.4.0` approval fails with
+ * `kernel_runtime_unsupported`.
  */
 export async function prepareKernelPermissionRevocation(
-  value: Readonly<PrepareKernelPermissionRevocationInput> & {
-    readonly request: Readonly<PermissionRequest>;
-  },
-): Promise<Readonly<KernelSigningRequestRevocation>>;
-export async function prepareKernelPermissionRevocation(
-  value: Readonly<PrepareKernelPermissionRevocationInput> & {
-    readonly request?: undefined;
-    readonly effect?: undefined;
-  },
-): Promise<Readonly<KernelRecordedRevocation>>;
-export async function prepareKernelPermissionRevocation(
   value: Readonly<PrepareKernelPermissionRevocationInput>,
-): Promise<Readonly<PreparedKernelPermissionRevocation>>;
-export async function prepareKernelPermissionRevocation(
-  value: Readonly<PrepareKernelPermissionRevocationInput>,
-): Promise<Readonly<PreparedKernelPermissionRevocation>> {
+): Promise<Readonly<KernelRecordedRevocation>> {
   const input = captureInput(value, "Kernel revocation preparation", new WeakSet());
-  const optional = [
-    "account",
-    "kernelVersion",
-    "entryPoint",
-    "request",
-    "effect",
-    "paymaster",
-  ].filter((key) => Object.hasOwn(input, key));
+  const optional = ["account", "kernelVersion", "entryPoint", "paymaster"].filter((key) =>
+    Object.hasOwn(input, key),
+  );
   const paymaster = (input.paymaster ?? null) as Readonly<PreparedPaymaster> | null;
   exactCaptured(
     input,
@@ -291,10 +227,12 @@ export async function prepareKernelPermissionRevocation(
     "Kernel revocation preparation",
   );
   const parsed = parseVersionedKernelGrantApproval(input.approval);
-  const deployment = kernelDeployment({
-    chainId: input.chainId as number,
-    kernelVersion: parsed.version === OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION ? "0.4.0" : "0.3.3",
-  });
+  if (parsed.version === OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION)
+    return runtimeFail(
+      "kernel_runtime_unsupported",
+      "a Kernel 0.4.0 Grant revokes through its grant handle",
+    );
+  const deployment = kernelDeployment({ chainId: input.chainId as number, kernelVersion: "0.3.3" });
   if (
     (input.kernelVersion !== undefined && input.kernelVersion !== deployment.kernelVersion) ||
     (input.entryPoint !== undefined &&
@@ -309,23 +247,6 @@ export async function prepareKernelPermissionRevocation(
     return mismatch("revocation account contradicts its approval");
   if (typeof input.nonceKey !== "string" || typeof input.sequence !== "string")
     return inputInvalid("Kernel revocation lane is invalid");
-  if (parsed.version === OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION) {
-    if (input.request === undefined || input.effect === undefined)
-      return inputInvalid("Kernel 0.4.0 revocation requires its permission request and effect");
-    return prepareKernelV4Revocation({
-      request: input.request as Readonly<PermissionRequest>,
-      approval: parsed,
-      chainId: deployment.chainId,
-      reads: input.reads as Readonly<KernelV4AccountReadCapability>,
-      effect: input.effect as KernelRevocationEffect,
-      nonceKey: input.nonceKey,
-      sequence: input.sequence,
-      gas: input.gas as Readonly<KernelUserOperationGas>,
-      paymaster,
-    });
-  }
-  if (input.request !== undefined || input.effect !== undefined)
-    return inputInvalid("Kernel revocation request and effect apply to Kernel 0.4.0 only");
   const approval = parsed;
   const reads = input.reads as KernelV33Reads;
   const chainId = deployment.chainId;
@@ -368,40 +289,16 @@ export async function prepareKernelPermissionRevocation(
  * Recreates a recorded preparation. The recorded calls and operation must be
  * exactly what its approval, state, lane and gas produce on the same account;
  * permission state is not re-read, so the operation is the one first recorded.
- * A Kernel `0.4.0` signing request is restored without chain reads, gas quotes
- * or nonce allocation.
  */
 export async function restoreKernelPermissionRevocation(
-  value: Readonly<RestoreKernelPermissionRevocationInput> & {
-    readonly preparation: Readonly<KernelRevocationSigningRequest>;
-  },
-): Promise<Readonly<KernelSigningRequestRevocation>>;
-export async function restoreKernelPermissionRevocation(
-  value: Readonly<RestoreKernelPermissionRevocationInput> & {
-    readonly preparation: Readonly<KernelPermissionRevocationPreparation>;
-  },
-): Promise<Readonly<KernelRecordedRevocation>>;
-export async function restoreKernelPermissionRevocation(
   value: Readonly<RestoreKernelPermissionRevocationInput>,
-): Promise<Readonly<PreparedKernelPermissionRevocation>>;
-export async function restoreKernelPermissionRevocation(
-  value: Readonly<RestoreKernelPermissionRevocationInput>,
-): Promise<Readonly<PreparedKernelPermissionRevocation>> {
-  const captured = captureInput(value, "Kernel revocation restore", new WeakSet());
-  const input = exactCaptured(
-    captured,
-    ["preparation", ...(Object.hasOwn(captured, "reads") ? ["reads"] : [])],
+): Promise<Readonly<KernelRecordedRevocation>> {
+  const input = exactInput(
+    value,
+    ["preparation", "reads"],
     "Kernel revocation restore",
-  );
-  const version = captureInput(
-    input.preparation,
-    "Kernel revocation record",
     new WeakSet(),
-  ).version;
-  if (version === OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION)
-    return restoreKernelV4Revocation(input.preparation);
-  if (input.reads === undefined)
-    return inputInvalid("Kernel revocation preparation restore requires reads");
+  );
   const record = exactInput(
     input.preparation,
     [

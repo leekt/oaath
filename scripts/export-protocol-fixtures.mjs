@@ -143,8 +143,6 @@ const EVALUATE = {
   hashOwnerSigningRequest: P.hashOwnerSigningRequest,
   parseKernelReplayableInstallOwnerSigningRequest:
     P.parseKernelReplayableInstallOwnerSigningRequest,
-  parseOwnerSigningArtifact: P.parseOwnerSigningArtifact,
-  serializeOwnerSigningArtifact: P.serializeOwnerSigningArtifact,
   classifyStoredAuthorizationScope: (value) =>
     classifyStoredAuthorizationScope(value.requestedScope, value.requestId),
   parseVerifyGrantRevisionInput: P.parseVerifyGrantRevisionInput,
@@ -211,7 +209,6 @@ function checksum(address) {
   return `0x${[...lower].map((char, index) => (Number.parseInt(digest[index], 16) >= 8 ? char.toUpperCase() : char)).join("")}`;
 }
 
-const N = p256.CURVE.n;
 const word = (value) => value.toString(16).padStart(64, "0");
 
 function privateKey(label) {
@@ -220,10 +217,6 @@ function privateKey(label) {
 
 function publicKeyOf(secret) {
   return `0x${Buffer.from(p256.getPublicKey(secret, false)).toString("hex")}`;
-}
-
-function sign(secret, digest) {
-  return `0x${p256.sign(Buffer.from(digest.slice(2), "hex"), secret, { lowS: true, prehash: false }).toCompactHex()}`;
 }
 
 /** A valid P-256 point whose x coordinate re-encoded as x + p still fits 32 bytes. */
@@ -1903,45 +1896,6 @@ function typed(base, change) {
       }),
     ),
   );
-}
-
-// ------------------------------------------------- owner signing artifact
-
-const KERNEL_REQUEST_HASH = P.hashOwnerSigningRequest(KERNEL_REQUEST);
-const SIGNATURE = sign(OWNER_SECRET, KERNEL_REQUEST.expectedDigest);
-const ARTIFACT = {
-  version: "oaath.owner-signing-artifact/v1",
-  kind: "p256",
-  requestHash: KERNEL_REQUEST_HASH,
-  signature: SIGNATURE,
-};
-
-function compact(r, s) {
-  return `0x${word(r)}${word(s)}`;
-}
-
-const SIGNATURE_R = BigInt(`0x${SIGNATURE.slice(2, 66)}`);
-const SIGNATURE_S = BigInt(`0x${SIGNATURE.slice(66)}`);
-
-for (const fn of ["parseOwnerSigningArtifact", "serializeOwnerSigningArtifact"]) {
-  record(fn, "valid", ARTIFACT);
-  record(fn, "high s", { ...ARTIFACT, signature: compact(SIGNATURE_R, N - SIGNATURE_S) });
-  record(fn, "s half order", { ...ARTIFACT, signature: compact(SIGNATURE_R, N / 2n) });
-  record(fn, "s half order + 1", { ...ARTIFACT, signature: compact(SIGNATURE_R, N / 2n + 1n) });
-  record(fn, "r zero", { ...ARTIFACT, signature: compact(0n, SIGNATURE_S) });
-  record(fn, "s zero", { ...ARTIFACT, signature: compact(SIGNATURE_R, 0n) });
-  record(fn, "r order", { ...ARTIFACT, signature: compact(N, SIGNATURE_S) });
-  record(fn, "r order - 1", { ...ARTIFACT, signature: compact(N - 1n, SIGNATURE_S) });
-  record(fn, "r max word", { ...ARTIFACT, signature: compact((1n << 256n) - 1n, SIGNATURE_S) });
-  record(fn, "uppercase signature", {
-    ...ARTIFACT,
-    signature: `0x${SIGNATURE.slice(2).toUpperCase()}`,
-  });
-  record(fn, "65-byte signature", { ...ARTIFACT, signature: `${SIGNATURE}1b` });
-  record(fn, "uppercase requestHash", { ...ARTIFACT, requestHash: hex("AB", 32) });
-  record(fn, "kind ecdsa", { ...ARTIFACT, kind: "ecdsa" });
-  record(fn, "version v2", { ...ARTIFACT, version: "oaath.owner-signing-artifact/v2" });
-  shapeCases(fn, "artifact", ARTIFACT);
 }
 
 // --------------------------------------------- stored scope classification
