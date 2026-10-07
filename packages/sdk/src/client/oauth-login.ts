@@ -169,61 +169,91 @@ function authorizationResponse(
   });
 }
 
+/** What one popup authorization returned: the token response and the verified login. */
+export interface OaathPopupAuthorization {
+  readonly token: Readonly<Record<string, unknown>>;
+  readonly login: Readonly<OaathLogin>;
+}
+
+/**
+ * One authorization through the issuer's popup: PKCE, state, and nonce; PAR
+ * with `extra` parameters (for example `authorization_details`); the popup;
+ * the redirect page's response (state, RFC 9207 `iss`); the code exchange; and
+ * the id_token verification. The caller opened `popup` inside the user's
+ * gesture and closes it.
+ */
+export async function authorizeThroughPopup(
+  popup: Window,
+  value: OaathLoginOptions,
+  extra: Readonly<Record<string, string>>,
+): Promise<Readonly<OaathPopupAuthorization>> {
+  const options = captureOptions(value);
+  const verifier = randomToken();
+  const challenge = base64Url(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
+  );
+  const state = randomToken();
+  const nonce = randomToken();
+  const pushed = (await postForm(`${options.issuer}/oauth/par`, {
+    ...extra,
+    client_id: options.clientId,
+    redirect_uri: options.redirectUri,
+    response_type: "code",
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    scope: "openid",
+    state,
+    nonce,
+  })) as { request_uri?: unknown } | null;
+  if (typeof pushed?.request_uri !== "string")
+    return clientFail("oaath_client_issuer_rejected", "issuer returned no request_uri");
+  popup.location.href = `${options.issuer}/authorize?${new URLSearchParams({
+    client_id: options.clientId,
+    request_uri: pushed.request_uri,
+  })}`;
+
+  const response = await authorizationResponse(popup, options.redirectOrigin, options.timeoutMs);
+  if (response.get("state") !== state)
+    return clientFail("oaath_client_state_mismatch", "authorization response state differs");
+  // RFC 9207: the response must come from the issuer this authorization asked.
+  if (response.get("iss") !== options.issuer)
+    return clientFail("oaath_client_issuer_mismatch", "authorization response issuer differs");
+  const error = response.get("error");
+  if (error === "access_denied")
+    return clientFail("oaath_client_access_denied", "the user cancelled", error);
+  const code = response.get("code");
+  if (error !== null || code === null)
+    return clientFail("oaath_client_issuer_rejected", "authorization failed", error);
+
+  const token = (await postForm(`${options.issuer}/oauth/token`, {
+    grant_type: "authorization_code",
+    client_id: options.clientId,
+    code,
+    code_verifier: verifier,
+    redirect_uri: options.redirectUri,
+  })) as Record<string, unknown> | null;
+  if (typeof token?.id_token !== "string")
+    return clientFail("oaath_client_issuer_rejected", "issuer returned no id_token");
+  const login = await verifyIdToken(token.id_token, options.issuer, options.clientId, nonce);
+  return Object.freeze({ token, login });
+}
+
+/** Opens the authorization popup; call it synchronously inside the user's gesture. */
+export function openAuthorizationPopup(): Window {
+  const popup = window.open("about:blank", "oaath-login", POPUP_FEATURES);
+  if (!popup) return clientFail("oaath_client_popup_blocked", "the sign-in popup was blocked");
+  return popup;
+}
+
 /**
  * Signs the user in with OAAth. Call it directly from a user gesture: the popup
  * opens before anything is awaited, so browsers do not block it.
  */
 export async function loginWithOAAth(value: OaathLoginOptions): Promise<Readonly<OaathLogin>> {
-  const options = captureOptions(value);
-  const popup = window.open("about:blank", "oaath-login", POPUP_FEATURES);
-  if (!popup) return clientFail("oaath_client_popup_blocked", "the sign-in popup was blocked");
+  captureOptions(value);
+  const popup = openAuthorizationPopup();
   try {
-    const verifier = randomToken();
-    const challenge = base64Url(
-      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
-    );
-    const state = randomToken();
-    const nonce = randomToken();
-    const pushed = (await postForm(`${options.issuer}/oauth/par`, {
-      client_id: options.clientId,
-      redirect_uri: options.redirectUri,
-      response_type: "code",
-      code_challenge: challenge,
-      code_challenge_method: "S256",
-      scope: "openid",
-      state,
-      nonce,
-    })) as { request_uri?: unknown } | null;
-    if (typeof pushed?.request_uri !== "string")
-      return clientFail("oaath_client_issuer_rejected", "issuer returned no request_uri");
-    popup.location.href = `${options.issuer}/authorize?${new URLSearchParams({
-      client_id: options.clientId,
-      request_uri: pushed.request_uri,
-    })}`;
-
-    const response = await authorizationResponse(popup, options.redirectOrigin, options.timeoutMs);
-    if (response.get("state") !== state)
-      return clientFail("oaath_client_state_mismatch", "authorization response state differs");
-    // RFC 9207: the response must come from the issuer this login asked.
-    if (response.get("iss") !== options.issuer)
-      return clientFail("oaath_client_issuer_mismatch", "authorization response issuer differs");
-    const error = response.get("error");
-    if (error === "access_denied")
-      return clientFail("oaath_client_access_denied", "the user cancelled sign-in", error);
-    const code = response.get("code");
-    if (error !== null || code === null)
-      return clientFail("oaath_client_issuer_rejected", "authorization failed", error);
-
-    const token = (await postForm(`${options.issuer}/oauth/token`, {
-      grant_type: "authorization_code",
-      client_id: options.clientId,
-      code,
-      code_verifier: verifier,
-      redirect_uri: options.redirectUri,
-    })) as { id_token?: unknown } | null;
-    if (typeof token?.id_token !== "string")
-      return clientFail("oaath_client_issuer_rejected", "issuer returned no id_token");
-    return await verifyIdToken(token.id_token, options.issuer, options.clientId, nonce);
+    return (await authorizeThroughPopup(popup, value, {})).login;
   } finally {
     popup.close();
   }

@@ -47,6 +47,7 @@ import {
   captureAuthorizationCapability,
   captureIssuerCapability,
   createConnection,
+  forwardApprovedPermission,
   type LocalPermissionAuthorization,
   type OaathAuthorizationCapability,
   type OaathConnection,
@@ -73,6 +74,7 @@ import {
   type OaathWalletApprovalClient,
   type OaathWalletOptions,
 } from "./client/local-realm.js";
+import { createOAuthRealm, type OaathOAuthOptions } from "./client/oauth-realm.js";
 import {
   createOwnerRealm,
   type OaathOwnerClient,
@@ -242,6 +244,7 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * createOAAth({ chains, account });                                        // owner-only execution
  * createOAAth({ chains, account, approvals: { kind: "wallet", owner } });  // wallet-approved Grants
  * createOAAth({ approvals: { kind: "service", url } });                    // service-approved Grants
+ * createOAAth({ chains, approvals: { kind: "oauth", issuer, clientId, redirectUri } }); // portal-approved
  * ```
  *
  * Omitting `approvals` gives owner-only execution from an existing Kernel
@@ -257,6 +260,7 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  */
 export function createOAAth(options: OaathWalletOptions): Readonly<OaathWalletApprovalClient>;
 export function createOAAth(options: OaathServiceOptions): Readonly<Oaath>;
+export function createOAAth(options: OaathOAuthOptions): Readonly<Oaath>;
 export function createOAAth(options: OaathOwnerOptions): Readonly<OaathOwnerClient>;
 export function createOAAth(configuration: OaathConfiguration): Readonly<Oaath>;
 export function createOAAth(value: unknown): Readonly<Oaath | OaathOwnerClient> {
@@ -279,6 +283,11 @@ export function createOAAth(value: unknown): Readonly<Oaath | OaathOwnerClient> 
   );
   if (approvals.kind === "wallet") {
     return createLocalRealm(configuration, (inner, localAuthorization) =>
+      composeInjectedRealm(inner, { localAuthorization, remoteCustody: null }),
+    );
+  }
+  if (approvals.kind === "oauth") {
+    return createOAuthRealm(configuration, (inner, localAuthorization) =>
       composeInjectedRealm(inner, { localAuthorization, remoteCustody: null }),
     );
   }
@@ -456,6 +465,7 @@ function composeInjectedRealm(
         if (index >= 0) connections.splice(index, 1);
       },
     });
+    forwardApprovedPermission(connection, inner);
     connections.push(connection);
     return connection;
   }
