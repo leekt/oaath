@@ -20,7 +20,8 @@
 //! forbidden            another signer's session; a signature by another key
 //!                      or over another account, owner, fingerprint, time or
 //!                      nonce; a statement older than five minutes or from the
-//!                      future
+//!                      future; an account that is not this signer's reviewed
+//!                      Kernel v4 account on chain; unreadable chain evidence
 //! ```
 //!
 //! The root signs one EIP-712 statement under the OAAth domain (as the
@@ -32,12 +33,13 @@
 //!               bytes32 inventoryFingerprint, uint64 issuedAt, string nonce)
 //! ```
 //!
-//! The relay reads no chain. The portal checks, through its budgeted chain
-//! proxy, that the account runs the reviewed Kernel v4 implementation with
-//! this signer as its root validator, and lists every module; the root
-//! acknowledges that reading by its fingerprint. The registry records what
-//! the root vouched for. On-chain authority stays with Kernel: a grant for an
-//! account whose root is not this signer cannot bind or install.
+//! A signature proves control of a key, not that the key is the account's
+//! root, so the relay also proves the root itself on chain before recording
+//! anything (`chain.rs`): reviewed Kernel v4 code, the root validator for the
+//! signer's kind, and this signer's key stored in it, at one block. Without a
+//! configured chain, or with unreadable evidence, the import is refused. The
+//! portal shows the same checks and every module first; the root
+//! acknowledges that reading by its fingerprint.
 
 use alloy_primitives::{Address, B256};
 use alloy_sol_types::{SolStruct, sol};
@@ -48,6 +50,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::authorization::challenge::random_identifier;
+use crate::chain::{ChainReader, prove_kernel_root};
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::signature::{RelyingParty, verify_root_signature};
@@ -167,6 +170,7 @@ pub async fn import_account(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
     issuer: &str,
+    chain: Option<&ChainReader>,
     body: &Map<String, Value>,
     session: &str,
 ) -> RelayResult<ImportedAccount> {
@@ -210,6 +214,8 @@ pub async fn import_account(
     }
     let (rp_id, origin) = relying_party(issuer)?;
     let account_address = format!("{address:#x}");
+    // The statement and the free address are checked first; the chain is read
+    // outside any transaction; the write re-checks the address under its guard.
     let mut transaction = store.begin().await?;
     let result = async {
         let signer = transaction
@@ -243,6 +249,16 @@ pub async fn import_account(
         {
             return Err(RelayErrorCode::AlreadyDecided);
         }
+        Ok(owner)
+    }
+    .await;
+    let owner = settle(transaction, result).await?;
+    // Without a configured chain nothing is trusted.
+    let reader = chain.ok_or(RelayErrorCode::ChainUnavailable)?;
+    prove_kernel_root(reader, address, &owner).await?;
+
+    let mut transaction = store.begin().await?;
+    let result = async {
         let profile = KernelAccountProfile::Existing(KernelExistingAccountProfile {
             kernel_version: KernelExistingAccountVersion::V0_4_0,
             address: account_address.clone(),

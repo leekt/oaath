@@ -74,6 +74,7 @@ use crate::authorization::request::{
 };
 use crate::authorization::verify::verify_grant_reference;
 use crate::bootstrap::{BootstrapConfiguration, capture_chains, serve_bootstrap};
+use crate::chain::ChainReader;
 use crate::clock::RelayClock;
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::kms::RelayKms;
@@ -128,6 +129,8 @@ pub struct RelayOptions {
     pub bootstrap: Option<BootstrapConfiguration>,
     /// Optional OAuth 2.0 / OpenID Connect login surface.
     pub oauth: Option<OAuthConfiguration>,
+    /// Optional chain reader; account import is refused without it.
+    pub chain: Option<Arc<ChainReader>>,
 }
 
 pub struct Relay {
@@ -142,6 +145,7 @@ pub struct Relay {
     max_body_bytes: usize,
     bootstrap: Option<BootstrapConfiguration>,
     oauth: Option<OAuthConfiguration>,
+    chain: Option<Arc<ChainReader>>,
 }
 
 fn duration(value: Option<u64>, fallback: u64, maximum: u64) -> RelayResult<u64> {
@@ -313,6 +317,7 @@ impl Relay {
                 .map_err(|_| RelayErrorCode::Internal)?,
             bootstrap: options.bootstrap,
             oauth: options.oauth,
+            chain: options.chain,
         })
     }
 
@@ -512,7 +517,8 @@ impl Relay {
                 let session = session_signer(store, clock, headers).await?;
                 let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
                 let body = body_record(headers, body, self.max_body_bytes).await?;
-                let imported = import_account(store, clock, issuer, &body, &session).await?;
+                let chain = self.chain.as_deref();
+                let imported = import_account(store, clock, issuer, chain, &body, &session).await?;
                 return reply(201, &imported);
             }
             if count == 2 && group == Some("accounts") {

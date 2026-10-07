@@ -3,6 +3,7 @@
 //! helpers.
 #![allow(dead_code)]
 
+pub mod chain;
 pub mod grant;
 
 use std::collections::HashMap;
@@ -447,6 +448,7 @@ pub fn options(
             issuer: ISSUER.to_owned(),
             key: IdTokenKey::from_pkcs8_pem(Some(ID_TOKEN_KID), &id_token_pem()).unwrap(),
         }),
+        chain: None,
     }
 }
 

@@ -1233,7 +1233,25 @@ async fn keeps_an_imported_account_and_refuses_its_second_import_across_restarts
     let address = "0x00000000000000000000000000000000000000ab";
     let fingerprint = format!("0x{}", "22".repeat(32));
 
-    let h = fixture.process(clock.clone()).await;
+    let chain = support::chain::stub_chain(
+        421_614,
+        &[(
+            address,
+            support::chain::StubAccount::kernel(
+                &oaath_protocol::identity::parse_owner_credential_profile(&root.profile()).unwrap(),
+            ),
+        )],
+    )
+    .await;
+    let process = |clock: Arc<TestClock>| {
+        let reader = chain.reader();
+        async {
+            let store: Arc<dyn RelayStore> =
+                Arc::new(PostgresRelayStore::owning(fixture.pool().await));
+            harness_on(store, clock, move |options| options.chain = Some(reader))
+        }
+    };
+    let h = process(clock.clone()).await;
     let (signer_id, cookie) = sign_in(&h, &root).await;
     let digest = import_digest(&AccountImport {
         account: address.parse::<Address>().unwrap(),
@@ -1263,7 +1281,7 @@ async fn keeps_an_imported_account_and_refuses_its_second_import_across_restarts
     let imported = h.send(import()).await.ok(201).clone();
     shutdown(h).await;
 
-    let h = fixture.process(clock).await;
+    let h = process(clock).await;
     h.send(import()).await.failure(E::AlreadyDecided);
     let accounts = h
         .send(portal_call(

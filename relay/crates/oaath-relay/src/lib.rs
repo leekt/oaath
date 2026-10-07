@@ -9,6 +9,7 @@ pub mod authentication;
 pub mod authority;
 pub mod authorization;
 pub mod bootstrap;
+pub mod chain;
 pub mod clock;
 pub mod config;
 pub mod display;
