@@ -383,6 +383,21 @@ async fn recognises_a_passkey_by_credential_id_across_a_restart() {
         found,
         json!({ "signer_id": signer, "kind": "webauthn", "profile": profile })
     );
+    // Another public key for the same credential is refused after the restart.
+    let mut copied = profile.clone();
+    let other = p256::ecdsa::SigningKey::from_slice(&[0x22; 32]).unwrap();
+    copied["publicKey"] = json!(format!(
+        "0x{}",
+        hex::encode(other.verifying_key().to_encoded_point(false).as_bytes())
+    ));
+    second
+        .send(portal_request(
+            "POST",
+            "/portal/signers",
+            Some(json!({ "profile": copied })),
+        ))
+        .await
+        .failure(E::CredentialRegistered);
     shutdown(second).await;
 }
 

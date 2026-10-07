@@ -421,17 +421,29 @@ async fn recognises_a_passkey_by_its_credential_id() {
 }
 
 #[tokio::test]
-async fn reads_an_ambiguous_credential_as_absent() {
+async fn refuses_a_second_profile_for_a_registered_credential() {
     let h = harness();
     let (profile, credential_id) = passkey(b"credential-1", "webauthn index 0");
-    register(&h, &profile).await;
+    let signer = register(&h, &profile).await;
     // Another public key claiming the same authenticator.
     let (mut copied, _) = passkey(b"credential-1", "webauthn index 0");
     copied["publicKey"] = address_case("p256 index 0").0["publicKey"].clone();
-    register(&h, &copied).await;
-    by_credential(&h, &credential_id, Some("same-origin"))
-        .await
-        .failure(E::NotFound);
+    h.send(portal(
+        "POST",
+        "/portal/signers",
+        Some("same-origin"),
+        Some(json!({ "profile": copied })),
+    ))
+    .await
+    .failure(E::CredentialRegistered);
+    // The same profile stays idempotent, and the lookup stays unambiguous.
+    assert_eq!(register(&h, &profile).await, signer);
+    assert_eq!(
+        by_credential(&h, &credential_id, Some("same-origin"))
+            .await
+            .ok(200)["signer_id"],
+        json!(signer)
+    );
 }
 
 #[tokio::test]
