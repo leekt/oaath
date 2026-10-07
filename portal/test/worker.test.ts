@@ -23,6 +23,7 @@ function environment(): Recorded {
           return Response.json({ ok: true });
         },
       },
+      WRITE_LIMIT: { limit: async () => ({ success: true }) },
     },
   };
 }
@@ -240,6 +241,72 @@ describe("portal worker", () => {
     };
     const response = await worker.fetch(new Request(`${ORIGIN}/oauth/jwks`), env);
     expect(response.status).toBe(502);
+  });
+});
+
+describe("portal worker write budget", () => {
+  const post = (path: string, env: Env, ip = "198.51.100.1") =>
+    worker.fetch(
+      new Request(`${ORIGIN}${path}`, {
+        method: "POST",
+        headers: {
+          origin: ORIGIN,
+          "sec-fetch-site": "same-origin",
+          "content-type": "application/json",
+          "cf-connecting-ip": ip,
+        },
+        body: "{}",
+      }),
+      env,
+    );
+
+  it("spends one per-IP unit per unauthenticated write and refuses an exhausted or missing budget", async () => {
+    const recorded = environment();
+    const keys: string[] = [];
+    const remaining = new Map([["198.51.100.1", 4]]);
+    const env: Env = {
+      ...recorded.env,
+      WRITE_LIMIT: {
+        limit: async ({ key }) => {
+          keys.push(key);
+          const left = remaining.get(key) ?? 1;
+          remaining.set(key, left - 1);
+          return { success: left > 0 };
+        },
+      },
+    };
+    for (const path of [
+      "/oauth/clients",
+      "/oauth/par",
+      "/portal/signers",
+      "/portal/sessions/challenge",
+    ])
+      expect((await post(path, env)).status).toBe(200);
+    const limited = await post("/oauth/par", env);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("access-control-allow-origin")).toBe("*");
+    expect((await post("/portal/signers", env)).status).toBe(429);
+    // Another address has its own budget.
+    expect((await post("/portal/signers", env, "203.0.113.9")).status).toBe(200);
+    // Session sign-in, token exchange and reads spend nothing.
+    expect((await post("/portal/sessions", env)).status).toBe(200);
+    expect((await post("/oauth/token", env)).status).toBe(200);
+    expect((await worker.fetch(new Request(`${ORIGIN}/oauth/jwks`), env)).status).toBe(200);
+    expect(keys).toEqual([
+      "198.51.100.1",
+      "198.51.100.1",
+      "198.51.100.1",
+      "198.51.100.1",
+      "198.51.100.1",
+      "198.51.100.1",
+      "203.0.113.9",
+    ]);
+    // Refused writes never reach the relay.
+    expect(recorded.requests).toHaveLength(8);
+
+    const { WRITE_LIMIT: _limit, ...unbudgeted } = recorded.env;
+    expect((await post("/oauth/clients", unbudgeted)).status).toBe(503);
+    expect((await post("/portal/sessions/challenge", unbudgeted)).status).toBe(503);
   });
 });
 
