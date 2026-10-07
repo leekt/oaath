@@ -64,7 +64,6 @@ first milestone.
 | `packages/server/src/automation/runtime/` | Trigger occurrences, run coordination, claims, and scheduling |
 | `packages/server/src/session-signer/` | Durable per-deployment session-key binding, sealing, and signing |
 | `packages/server/src/store/` | PostgreSQL implementations of deployment, run, intent, signer, and required SDK store contracts |
-| `native/ios/` | Owner review and signatures, including the automation summary and commitment |
 | `examples/automation/` | Runnable API/worker composition used by the final proof |
 | `scripts/` | Packed-consumer and process-recovery proofs |
 
