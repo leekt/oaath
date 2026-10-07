@@ -63,7 +63,11 @@ import {
   type OaathWalletApprovalClient,
   type OaathWalletOptions,
 } from "./client/local-realm.js";
-import { createOAuthRealm, type OaathOAuthOptions } from "./client/oauth-realm.js";
+import {
+  createOAuthRealm,
+  type OaathOAuthClient,
+  type OaathOAuthOptions,
+} from "./client/oauth-realm.js";
 import {
   createOwnerRealm,
   type OaathOwnerClient,
@@ -248,10 +252,10 @@ function localKeyIds(value: unknown, context: CaptureContext): readonly string[]
  * `approve` supplies the owner's decision.
  */
 export function createOAAth(options: OaathWalletOptions): Readonly<OaathWalletApprovalClient>;
-export function createOAAth(options: OaathOAuthOptions): Readonly<Oaath>;
+export function createOAAth(options: OaathOAuthOptions): Readonly<OaathOAuthClient>;
 export function createOAAth(options: OaathOwnerOptions): Readonly<OaathOwnerClient>;
 export function createOAAth(configuration: OaathConfiguration): Readonly<Oaath>;
-export function createOAAth(value: unknown): Readonly<Oaath | OaathOwnerClient> {
+export function createOAAth(value: unknown): Readonly<Oaath | OaathOAuthClient | OaathOwnerClient> {
   const record = captureRecord(
     value,
     "OAAth configuration",

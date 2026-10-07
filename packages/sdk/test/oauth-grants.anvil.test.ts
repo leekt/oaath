@@ -182,6 +182,7 @@ afterEach(() => vi.unstubAllGlobals());
         expiresIn: 1_800,
         perChainOperationLimit: 3,
       });
+      if (grant.state === "pending") throw new Error("the root approves at once");
       expect(grant.state).toBe("active");
       expect(await grant.account(CHAIN_ID)).toBe(account);
       expect(await harness.client.getCode({ address: account })).toBeFalsy();

@@ -130,6 +130,19 @@ and resolves with the redirect URL, which must be `redirectUri` itself; `state`,
 `iss`, the code exchange and the id_token are checked exactly as for the popup.
 See `examples/extension`.
 
+A member's request waits for the account root to approve it in the portal: the
+issuer answers the code exchange with `authorization_pending`, and
+`requestPermission` resolves to `{ state: "pending", requestId, expiresAt }`
+instead of a Grant. The SDK journals the issued code, its PKCE verifier and
+nonce in the realm's stores (one pending request per issuer, client and origin;
+another `requestPermission` meanwhile fails with `oaath_client_state_conflict`,
+source `oauth_permission_pending`). `connection.redeemPending()` makes exactly
+one token request per call and never starts a new authorization: it returns the
+Grant once the root approved, the same pending result while it has not, or
+`null` when nothing is pending. Polling is the application's choice. A root
+rejection fails with `oaath_client_permission_rejected`; it, an expired or spent
+code (`invalid_grant`), and the request's expiry clear the journal.
+
 ## Owner operations
 
 For an existing Kernel account, execute calls directly as its root owner. The

@@ -21,6 +21,14 @@
  *                      Grant and operations come from the existing stores
  * ```
  *
+ * A member's request waits for the account root: the popup returns a code
+ * whose token answers `authorization_pending`. `requestPermission` then
+ * journals the code, its PKCE verifier and nonce and the expected request, and
+ * returns `{ state: "pending" }`. `redeemPending()` makes one token request
+ * per call, never a new authorization, and adopts the Grant once the root
+ * approves. One pending request at a time; a rejection, an expired or spent
+ * code, or the request's expiry clears the journal.
+ *
  * The issuer is trusted for nothing: the decision carries the root's own
  * replayable install signature, which Kernel verifies on chain.
  *
@@ -55,6 +63,7 @@ import {
   clientFailure,
   exactClientRecord,
   mapClientFailure,
+  OaathClientError,
 } from "./errors.js";
 import {
   captureChainCapability,
@@ -67,8 +76,10 @@ import {
   authorizeThroughPopup,
   authorizeWithLauncher,
   type OaathAuthorizationLauncher,
+  type OaathCodeExchange,
   type OaathLogin,
   openAuthorizationPopup,
+  redeemAuthorizationCode,
 } from "./oauth-login.js";
 import { loadServiceSession, saveServiceSession, serviceSessionKeyId } from "./service-session.js";
 import { STORE_NAMES } from "./store-configuration.js";
@@ -76,6 +87,44 @@ import { captureStores, type OaathStores, type OwnedStores, openStores } from ".
 
 const POINTER_VERSION = "oaath.oauth-realm-binding/v1" as const;
 const POINTER_DOMAIN = "@oaath/sdk:oauth-realm-binding" as const;
+const PENDING_VERSION = "oaath.oauth-pending-grant/v1" as const;
+const PENDING_DOMAIN = "@oaath/sdk:oauth-pending-grant" as const;
+
+/** A requested Grant the account root has not decided yet. */
+export interface OaathPendingPermission {
+  readonly state: "pending";
+  /** The issuer's id for the pushed request. */
+  readonly requestId: string;
+  /** The request's expiry (unix seconds); the journal is dropped after it. */
+  readonly expiresAt: number;
+}
+
+/** The OAuth realm's connection: a request may wait for the account root. */
+export interface OaathOAuthConnection extends Omit<OaathConnection, "requestPermission"> {
+  readonly requestPermission: (
+    input: unknown,
+  ) => Promise<Readonly<OaathGrantHandle> | Readonly<OaathPendingPermission>>;
+  /**
+   * One token request for the journaled pending Grant: the Grant once the root
+   * approved, the same pending result while it has not, or null when nothing is
+   * pending. A rejection fails with `oaath_client_permission_rejected`.
+   */
+  readonly redeemPending: () => Promise<
+    Readonly<OaathGrantHandle> | Readonly<OaathPendingPermission> | null
+  >;
+}
+
+/** `createOAAth` with OAuth approvals. */
+export interface OaathOAuthClient extends Omit<Oaath, "connect"> {
+  readonly connect: () => Promise<Readonly<OaathOAuthConnection>>;
+}
+
+interface ExpectedGrant {
+  readonly policy: unknown;
+  readonly expiresAt: number;
+  readonly operatorCredential: unknown;
+  readonly deviceId: string;
+}
 
 /** The issuer's portal approves Grants for the dapp's own session key. */
 export interface OaathOAuthApprovals {
@@ -114,7 +163,7 @@ function same(left: unknown, right: unknown): boolean {
 export function createOAuthRealm(
   value: unknown,
   compose: (configuration: unknown, authorization: LocalPermissionAuthorization) => Readonly<Oaath>,
-): Readonly<Oaath> {
+): Readonly<OaathOAuthClient> {
   const fail = clientFailure("oaath_client_input_invalid");
   const context: CaptureContext = new WeakSet();
   const initial = captureRecord(value, "OAuth configuration", context, fail);
@@ -186,6 +235,12 @@ export function createOAuthRealm(
     encodeAbiParameters(
       [{ type: "string" }, { type: "string" }, { type: "string" }, { type: "string" }],
       [POINTER_DOMAIN, popupOptions.issuer, origin, popupOptions.clientId],
+    ),
+  );
+  const pendingId = keccak256(
+    encodeAbiParameters(
+      [{ type: "string" }, { type: "string" }, { type: "string" }, { type: "string" }],
+      [PENDING_DOMAIN, popupOptions.issuer, origin, popupOptions.clientId],
     ),
   );
 
@@ -347,16 +402,96 @@ export function createOAuthRealm(
     );
   }
 
+  async function readPending(): Promise<Readonly<{
+    exchange: OaathCodeExchange;
+    expected: ExpectedGrant;
+  }> | null> {
+    const raw = await (await storage()).context.read(pendingId);
+    if (raw === undefined || raw === null) return null;
+    try {
+      const record = exactClientRecord(
+        raw,
+        ["version", "bindingId", "exchange", "expected"],
+        "OAuth pending grant",
+        new WeakSet(),
+      );
+      const exchange = exactClientRecord(
+        record.exchange,
+        ["requestId", "code", "verifier", "nonce"],
+        "OAuth pending exchange",
+        new WeakSet(),
+      );
+      const expected = exactClientRecord(
+        record.expected,
+        ["policy", "expiresAt", "operatorCredential", "deviceId"],
+        "OAuth pending expectation",
+        new WeakSet(),
+      );
+      if (
+        record.version !== PENDING_VERSION ||
+        record.bindingId !== pendingId ||
+        [exchange.requestId, exchange.code, exchange.verifier, exchange.nonce].some(
+          (field) => typeof field !== "string",
+        ) ||
+        !Number.isSafeInteger(expected.expiresAt) ||
+        typeof expected.deviceId !== "string"
+      )
+        throw new Error();
+      return {
+        exchange: exchange as unknown as OaathCodeExchange,
+        expected: expected as unknown as ExpectedGrant,
+      };
+    } catch {
+      // Unreadable is not absent.
+      return clientFail(
+        "oaath_client_state_conflict",
+        "the stored pending OAuth grant is unreadable",
+        "oauth_pending_unreadable",
+      );
+    }
+  }
+
+  async function writePending(exchange: OaathCodeExchange, expected: ExpectedGrant) {
+    await (await storage()).context.write(
+      Object.freeze({
+        version: PENDING_VERSION,
+        bindingId: pendingId,
+        exchange,
+        expected,
+      }) as never,
+    );
+  }
+
+  async function clearPending() {
+    await (await storage()).context.clear(pendingId);
+  }
+
+  function pending(exchange: OaathCodeExchange, expected: ExpectedGrant) {
+    return Object.freeze({
+      state: "pending" as const,
+      requestId: exchange.requestId,
+      expiresAt: expected.expiresAt,
+    });
+  }
+
+  /** Verifies a released Grant and adopts it through the account's connection. */
+  async function adopt(
+    token: Readonly<Record<string, unknown>>,
+    login: Readonly<OaathLogin>,
+    expected: ExpectedGrant,
+  ) {
+    const { request, artifact } = verifyGrant(token, login, expected);
+    assertOpen();
+    const connection = await connectionFor(request);
+    await writePointer(request);
+    return adoptApprovedPermission(connection, request, artifact);
+  }
+
   /** The approved request must be exactly the one this browser asked for. */
   function verifyGrant(
     token: Readonly<Record<string, unknown>>,
     login: Readonly<OaathLogin>,
-    expected: Readonly<{
-      policy: unknown;
-      expiresAt: number;
-      operatorCredential: unknown;
-      deviceId: string;
-    }>,
+    expected: ExpectedGrant,
   ) {
     const mismatch = (): never =>
       clientFail(
@@ -410,12 +545,20 @@ export function createOAuthRealm(
     return { request, artifact: { ...decision, installApproval: enable } };
   }
 
-  async function requestPermission(input: unknown): Promise<Readonly<OaathGrantHandle>> {
+  async function requestPermission(
+    input: unknown,
+  ): Promise<Readonly<OaathGrantHandle> | Readonly<OaathPendingPermission>> {
     assertOpen();
     // Open inside the user's gesture, before anything is awaited.
     const popup = launch ? null : openAuthorizationPopup();
     try {
       const captured = capturePermissionInput(input, now());
+      if ((await readPending()) !== null)
+        return clientFail(
+          "oaath_client_state_conflict",
+          "a requested Grant still awaits the account root; redeem it first",
+          "oauth_permission_pending",
+        );
       const { deviceId, operatorCredential } = await session();
       const detail = {
         type: "oaath_grant",
@@ -425,22 +568,56 @@ export function createOAuthRealm(
         expires_at: captured.expiresAt,
         device_id: deviceId,
       };
-      const extra = { authorization_details: JSON.stringify([detail]) };
-      const { token, login } = popup
-        ? await authorizeThroughPopup(popup, popupOptions, extra)
-        : await authorizeWithLauncher(launch as OaathAuthorizationLauncher, popupOptions, extra);
-      const { request, artifact } = verifyGrant(token, login, {
+      const expected: ExpectedGrant = {
         policy: captured.policy,
         expiresAt: captured.expiresAt,
         operatorCredential,
         deviceId,
-      });
-      assertOpen();
-      const connection = await connectionFor(request);
-      await writePointer(request);
-      return await adoptApprovedPermission(connection, request, artifact);
+      };
+      const extra = { authorization_details: JSON.stringify([detail]) };
+      const { exchange, released } = popup
+        ? await authorizeThroughPopup(popup, popupOptions, extra)
+        : await authorizeWithLauncher(launch as OaathAuthorizationLauncher, popupOptions, extra);
+      if (released === null) {
+        await writePending(exchange, expected);
+        return pending(exchange, expected);
+      }
+      return await adopt(released.token, released.login, expected);
     } finally {
       popup?.close();
+    }
+  }
+
+  async function redeemPending(): Promise<
+    Readonly<OaathGrantHandle> | Readonly<OaathPendingPermission> | null
+  > {
+    assertOpen();
+    const journal = await readPending();
+    if (journal === null) return null;
+    const { exchange, expected } = journal;
+    if (expected.expiresAt <= now()) {
+      await clearPending();
+      return null;
+    }
+    let released: Awaited<ReturnType<typeof redeemAuthorizationCode>>;
+    try {
+      released = await redeemAuthorizationCode(popupOptions, exchange);
+    } catch (error) {
+      // A rejected, expired or spent code never redeems; anything else may retry.
+      if (
+        error instanceof OaathClientError &&
+        (error.code === "oaath_client_permission_rejected" ||
+          (error.code === "oaath_client_issuer_rejected" && error.source === "invalid_grant"))
+      )
+        await clearPending();
+      throw error;
+    }
+    if (released === null) return pending(exchange, expected);
+    try {
+      return await adopt(released.token, released.login, expected);
+    } finally {
+      // The code is spent once released, whatever adoption concluded.
+      await clearPending();
     }
   }
 
@@ -451,7 +628,7 @@ export function createOAuthRealm(
     return (await connectionFor(request)).resume();
   }
 
-  const facade: Readonly<OaathConnection> = Object.freeze({
+  const facade: Readonly<OaathOAuthConnection> = Object.freeze({
     get binding() {
       if (!bound)
         return clientFail("oaath_client_input_invalid", "request or resume a permission first");
@@ -459,9 +636,7 @@ export function createOAuthRealm(
     },
     requestPermission,
     resume,
-    // Portal approvals settle in the popup; nothing stays pending.
-    resumePendingPermission: async () => null,
-    withdrawPendingPermission: async () => null,
+    redeemPending,
     async signOut() {
       for (const connection of connections.values()) await connection.signOut();
     },
@@ -510,5 +685,5 @@ export function createOAuthRealm(
       return result;
     },
     close,
-  } satisfies Oaath);
+  } satisfies OaathOAuthClient);
 }
