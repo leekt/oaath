@@ -335,6 +335,27 @@ async function stubRelay(path: string, method: string, body: unknown) {
   return null;
 }
 
+/** A contract with code but no Kernel implementation slot, on the stub chain. */
+const PLAIN_CONTRACT = `0x${"c0".repeat(20)}`;
+
+/** The stub chain for the import screen: one plain contract, nothing else deployed. */
+function stubChain(body: unknown): unknown {
+  const answer = (call: { id: unknown; method: string; params: unknown[] }) => {
+    const result =
+      call.method === "eth_chainId"
+        ? "0x66eee"
+        : call.method === "eth_getCode"
+          ? String(call.params[0]).toLowerCase() === PLAIN_CONTRACT
+            ? "0x6000"
+            : "0x"
+          : call.method === "eth_getStorageAt"
+            ? `0x${"00".repeat(32)}`
+            : null;
+    return { jsonrpc: "2.0", id: call.id, result };
+  };
+  return Array.isArray(body) ? body.map(answer) : answer(body as Parameters<typeof answer>[0]);
+}
+
 beforeAll(async () => {
   await access(join(DIST, "index.html"));
   accounts.set(GRANT_SIGNER.signer_id, [
@@ -358,6 +379,7 @@ beforeAll(async () => {
         ? json(response, 404, { error: { code: "relay_not_found" } })
         : json(response, 200, result);
     }
+    if (url.pathname === "/rpc/421614") return json(response, 200, stubChain(body));
     if (url.pathname.startsWith("/dapp/")) {
       response.writeHead(200, { "content-type": "text/html" });
       return response.end("<!doctype html><title>dapp</title>");
@@ -782,6 +804,37 @@ describe("portal in Chrome", () => {
     await page.waitForSelector("::-p-text(doesn't match what you were shown)");
     expect(await walletMethods(page)).not.toContain("eth_signTypedData_v4");
     expect(calls.slice(before).some((call) => call.path.endsWith("/approve"))).toBe(false);
+    await page.close();
+  });
+});
+
+describe("importing an existing account", () => {
+  it("explains each refusal at phone width without overflowing", async () => {
+    const page = await openPortal([WALLET_SIGNER]);
+    await clickText(page, "Test Wallet");
+    await page.waitForSelector("#account-heading");
+    await clickText(page, "Import an existing account");
+    async function check(address: string) {
+      await page.waitForSelector("#import-address");
+      await page.$eval("#import-address", (node) => {
+        (node as HTMLInputElement).value = "";
+      });
+      await page.type("#import-address", address);
+      await clickText(page, "Check account");
+      await page.waitForSelector(".check-fail, .check-unknown");
+      return page.$eval("#import-account", (node) => (node as HTMLElement).innerText);
+    }
+    expect(await check("0x1234")).toContain("Enter the account's 0x address");
+    expect(await check(`0x${"12".repeat(20)}`)).toContain(
+      "No contract is deployed at this address on Arbitrum Sepolia.",
+    );
+    expect(await check(PLAIN_CONTRACT)).toContain(
+      "This contract is not a Kernel smart account: it has no upgradeable implementation.",
+    );
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await capture(page, "5-import-refused");
     await page.close();
   });
 });

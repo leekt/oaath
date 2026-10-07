@@ -19,7 +19,7 @@ import { RootSigningError, reviewedRequest, signGrantApproval } from "./root-sig
 import { type RememberedSigner, shortAddress } from "./signers.js";
 
 /** Well-known ERC-20 selectors; anything else is shown as its hex selector. */
-const SELECTORS: Readonly<Record<string, string>> = {
+export const SELECTORS: Readonly<Record<string, string>> = {
   "0xa9059cbb": "transfer",
   "0x095ea7b3": "approve",
   "0x23b872dd": "transferFrom",
@@ -27,7 +27,7 @@ const SELECTORS: Readonly<Record<string, string>> = {
   "0xa457c2d7": "decreaseAllowance",
 };
 
-const CHAINS: Readonly<Record<number, string>> = {
+export const CHAINS: Readonly<Record<number, string>> = {
   1: "Ethereum",
   10: "OP Mainnet",
   8453: "Base",
@@ -37,7 +37,7 @@ const CHAINS: Readonly<Record<number, string>> = {
   421614: "Arbitrum Sepolia",
 };
 
-function ether(wei: string): string {
+export function ether(wei: string): string {
   const value = BigInt(wei);
   const whole = value / 10n ** 18n;
   const fraction = (value % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/u, "");

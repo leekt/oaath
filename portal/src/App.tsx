@@ -8,9 +8,11 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   type DecisionRequest,
+  type GrantDetail,
+  type OperationDetail,
   type PortalAccount,
   PortalApiError,
   type PortalTransaction,
@@ -19,8 +21,14 @@ import {
 } from "./api.js";
 import { GrantReview } from "./GrantReview.js";
 import { LinkApproval, LinkRequest, ManageAccounts } from "./Links.js";
+import { OperationReview } from "./OperationReview.js";
 import { CancelButton, Frame, message, Notice, SignerStep } from "./shared.js";
 import { type RememberedSigner, rememberSigner, shortAddress } from "./signers.js";
+
+/** Module discovery loads only when an account is imported. */
+const ImportAccount = lazy(() =>
+  import("./ImportAccount.js").then((module) => ({ default: module.ImportAccount })),
+);
 
 type Step =
   | { readonly name: "signer" }
@@ -118,7 +126,12 @@ function Authorize({ transactionId }: { transactionId: string }) {
         </p>
       </Frame>
     );
-  const grant = transaction.authorization_details.find((detail) => detail.type === "oaath_grant");
+  const grant = transaction.authorization_details.find(
+    (detail): detail is GrantDetail => detail.type === "oaath_grant",
+  );
+  const operation = transaction.authorization_details.find(
+    (detail): detail is OperationDetail => detail.type === "oaath_operation",
+  );
   if (transaction.expires_at * 1000 <= Date.now())
     return (
       <Frame>
@@ -147,9 +160,10 @@ function Authorize({ transactionId }: { transactionId: string }) {
             portalApi.signOut().catch(() => {});
             setStep({ name: "signer" });
           }}
-          rootOnly={grant !== undefined}
+          rootOnly={grant !== undefined || operation !== undefined}
+          only={operation?.request.userOperation.sender}
           onChosen={(account) =>
-            grant
+            grant || operation
               ? setStep({ name: "review", signer: step.signer, account })
               : finish(step.signer, account)
           }
@@ -160,6 +174,16 @@ function Authorize({ transactionId }: { transactionId: string }) {
         <GrantReview
           transaction={transaction}
           detail={grant}
+          signer={step.signer}
+          account={step.account}
+          onApproved={(artifact) => finish(step.signer, step.account, artifact)}
+          onCancel={cancel}
+        />
+      )}
+      {step.name === "review" && operation && (
+        <OperationReview
+          clientName={transaction.client_name}
+          request={operation.request}
           signer={step.signer}
           account={step.account}
           onApproved={(artifact) => finish(step.signer, step.account, artifact)}
@@ -183,6 +207,7 @@ const ROLE_LABEL: Readonly<Record<PortalAccount["role"], string>> = {
 function AccountStep({
   signer,
   rootOnly,
+  only,
   onBack,
   onChosen,
   onCancel,
@@ -190,12 +215,15 @@ function AccountStep({
   signer: RememberedSigner;
   /** A grant is approved by an account's root: other memberships are not offered. */
   rootOnly: boolean;
+  /** An owner operation names its one account: no other is offered. */
+  only?: string | undefined;
   onBack: () => void;
   onChosen: (account: PortalAccount) => void;
   onCancel: () => void;
 }) {
   const [accounts, setAccounts] = useState<readonly PortalAccount[] | null>(null);
   const [linking, setLinking] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -207,13 +235,15 @@ function AccountStep({
       portalApi.signerAccounts(signer.signer_id).then(
         (response) =>
           setAccounts(
-            rootOnly
-              ? response.accounts.filter((account) => account.role === "root")
-              : response.accounts,
+            response.accounts.filter(
+              (account) =>
+                (!rootOnly || account.role === "root") &&
+                (only === undefined || account.address === only),
+            ),
           ),
         (failure: unknown) => setError(message(failure)),
       ),
-    [signer.signer_id, rootOnly],
+    [signer.signer_id, rootOnly, only],
   );
   useEffect(() => {
     load();
@@ -304,8 +334,23 @@ function AccountStep({
             Link to an existing account
           </button>
         )}
+        <button
+          type="button"
+          className="secondary"
+          aria-expanded={importing}
+          aria-controls="import-account"
+          disabled={busy}
+          onClick={() => setImporting(!importing)}
+        >
+          Import an existing account
+        </button>
       </div>
       {linking && <LinkRequest signer={signer} onApproved={linked} />}
+      {importing && (
+        <Suspense fallback={<p className="quiet">Loading…</p>}>
+          <ImportAccount signer={signer} />
+        </Suspense>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
