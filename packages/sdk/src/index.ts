@@ -57,7 +57,13 @@ export type {
   OaathLoginSigner,
 } from "./client/oauth-login.js";
 export { completeOAAthLogin, loginWithOAAth } from "./client/oauth-login.js";
-export type { OaathOAuthApprovals, OaathOAuthOptions } from "./client/oauth-realm.js";
+export type {
+  OaathOAuthApprovals,
+  OaathOAuthClient,
+  OaathOAuthConnection,
+  OaathOAuthOptions,
+  OaathPendingPermission,
+} from "./client/oauth-realm.js";
 export type {
   OaathOperationExecution,
   OaathOperationHandle,

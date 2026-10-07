@@ -21,6 +21,8 @@ const RESPONSE = "oaath.authorization-response/v1";
 export type PortalBehaviour =
   | "approve"
   | "cancel"
+  /** A member's request: the token waits for `decide` on the root's behalf. */
+  | "pending"
   | Readonly<{ tamper: (request: Record<string, unknown>) => void }>;
 
 export interface OAuthPortalOptions {
@@ -71,6 +73,10 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
   const pars = new Map<string, URLSearchParams>();
   let token: Record<string, unknown> | null = null;
   const popups: { closed: boolean }[] = [];
+  // The root's decision on a pending request; the code redeems once.
+  let rootDecision: "approve" | "reject" | null = null;
+  let redeemed = false;
+  const tokenCalls = { count: 0 };
 
   /** The portal's decision for one authorization URL, as its redirect query. */
   async function authorize(href: string): Promise<Record<string, string>> {
@@ -184,7 +190,15 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
       pars.set(id, form);
       return json({ request_uri: `urn:ietf:params:oauth:request_uri:${id}`, expires_in: 300 }, 201);
     }
-    if (url.pathname === "/oauth/token") return json(token);
+    if (url.pathname === "/oauth/token") {
+      tokenCalls.count += 1;
+      if (behaviour !== "pending") return json(token);
+      if (redeemed) return json({ error: "invalid_grant" }, 400);
+      if (rootDecision === null) return json({ error: "authorization_pending" }, 400);
+      if (rootDecision === "reject") return json({ error: "access_denied" }, 400);
+      redeemed = true;
+      return json(token);
+    }
     return json({ error: "not_found" }, 404);
   });
 
@@ -222,5 +236,8 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
     clientId: CLIENT,
     redirectUri: REDIRECT,
   };
-  return { approvals, window, popups, pars, root, launch };
+  const decide = (decision: "approve" | "reject") => {
+    rootDecision = decision;
+  };
+  return { approvals, window, popups, pars, root, launch, decide, tokenCalls };
 }

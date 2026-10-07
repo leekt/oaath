@@ -196,6 +196,25 @@ export interface OaathPopupAuthorization {
   readonly login: Readonly<OaathLogin>;
 }
 
+/** What redeeming an issued code needs again: the code, its PKCE verifier and nonce. */
+export interface OaathCodeExchange {
+  /** The pushed request's id (the `request_uri` suffix). */
+  readonly requestId: string;
+  readonly code: string;
+  readonly verifier: string;
+  readonly nonce: string;
+}
+
+/**
+ * One authorization's outcome. `released` is null while the issuer answers
+ * `authorization_pending`: the code is issued but awaits the account root, and
+ * `exchange` redeems it later through `redeemAuthorizationCode`.
+ */
+export interface OaathAuthorizationOutcome {
+  readonly exchange: Readonly<OaathCodeExchange>;
+  readonly released: Readonly<OaathPopupAuthorization> | null;
+}
+
 /**
  * One authorization through the issuer's popup: PKCE, state, and nonce; PAR
  * with `extra` parameters (for example `authorization_details`); the popup;
@@ -207,7 +226,7 @@ export async function authorizeThroughPopup(
   popup: Window,
   value: OaathLoginOptions,
   extra: Readonly<Record<string, string>>,
-): Promise<Readonly<OaathPopupAuthorization>> {
+): Promise<Readonly<OaathAuthorizationOutcome>> {
   const options = captureOptions(value);
   return authorize(options, extra, (url) => {
     popup.location.href = url;
@@ -224,7 +243,7 @@ export async function authorizeWithLauncher(
   launch: OaathAuthorizationLauncher,
   value: OaathLoginOptions,
   extra: Readonly<Record<string, string>>,
-): Promise<Readonly<OaathPopupAuthorization>> {
+): Promise<Readonly<OaathAuthorizationOutcome>> {
   const options = captureOptions(value, true);
   return authorize(options, extra, async (url) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -262,7 +281,7 @@ async function authorize(
   options: ReturnType<typeof captureOptions>,
   extra: Readonly<Record<string, string>>,
   open: (authorizationUrl: string) => Promise<URLSearchParams>,
-): Promise<Readonly<OaathPopupAuthorization>> {
+): Promise<Readonly<OaathAuthorizationOutcome>> {
   const verifier = randomToken();
   const challenge = base64Url(
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
@@ -300,17 +319,66 @@ async function authorize(
   if (error !== null || code === null)
     return clientFail("oaath_client_issuer_rejected", "authorization failed", error);
 
-  const token = (await postForm(`${options.issuer}/oauth/token`, {
-    grant_type: "authorization_code",
-    client_id: options.clientId,
+  const exchange = Object.freeze({
+    requestId: pushed.request_uri.split(":").pop() ?? pushed.request_uri,
     code,
-    code_verifier: verifier,
-    redirect_uri: options.redirectUri,
-  })) as Record<string, unknown> | null;
+    verifier,
+    nonce,
+  });
+  return Object.freeze({ exchange, released: await redeem(options, exchange) });
+}
+
+/** Issuer token errors that mean "not yet": the code stays redeemable. */
+const PENDING_ERRORS = new Set(["authorization_pending", "slow_down"]);
+
+/** One token request for an issued code; null while the issuer answers pending. */
+async function redeem(
+  options: Pick<ReturnType<typeof captureOptions>, "issuer" | "clientId" | "redirectUri">,
+  exchange: Readonly<OaathCodeExchange>,
+): Promise<Readonly<OaathPopupAuthorization> | null> {
+  let token: Record<string, unknown> | null;
+  try {
+    token = (await postForm(`${options.issuer}/oauth/token`, {
+      grant_type: "authorization_code",
+      client_id: options.clientId,
+      code: exchange.code,
+      code_verifier: exchange.verifier,
+      redirect_uri: options.redirectUri,
+    })) as Record<string, unknown> | null;
+  } catch (error) {
+    if (!(error instanceof OaathClientError) || error.code !== "oaath_client_issuer_rejected")
+      throw error;
+    if (error.source !== null && PENDING_ERRORS.has(error.source)) return null;
+    if (error.source === "access_denied")
+      return clientFail(
+        "oaath_client_permission_rejected",
+        "the account root rejected the request",
+        "access_denied",
+      );
+    throw error;
+  }
   if (typeof token?.id_token !== "string")
     return clientFail("oaath_client_issuer_rejected", "issuer returned no id_token");
-  const login = await verifyIdToken(token.id_token, options.issuer, options.clientId, nonce);
+  const login = await verifyIdToken(
+    token.id_token,
+    options.issuer,
+    options.clientId,
+    exchange.nonce,
+  );
   return Object.freeze({ token, login });
+}
+
+/**
+ * Redeems a code the issuer earlier answered `authorization_pending` for: one
+ * token request, never a new authorization. Null while still pending. A root
+ * rejection fails with `oaath_client_permission_rejected`; an expired or
+ * spent code with `oaath_client_issuer_rejected` (`invalid_grant`).
+ */
+export async function redeemAuthorizationCode(
+  value: OaathLoginOptions,
+  exchange: Readonly<OaathCodeExchange>,
+): Promise<Readonly<OaathPopupAuthorization> | null> {
+  return redeem(captureOptions(value, true), exchange);
 }
 
 /** Opens the authorization popup; call it synchronously inside the user's gesture. */
@@ -328,7 +396,11 @@ export async function loginWithOAAth(value: OaathLoginOptions): Promise<Readonly
   captureOptions(value);
   const popup = openAuthorizationPopup();
   try {
-    return (await authorizeThroughPopup(popup, value, {})).login;
+    const { released } = await authorizeThroughPopup(popup, value, {});
+    // Sign-in names no grant, so nothing awaits the root.
+    if (released === null)
+      return clientFail("oaath_client_issuer_rejected", "the issuer left the sign-in pending");
+    return released.login;
   } finally {
     popup.close();
   }
