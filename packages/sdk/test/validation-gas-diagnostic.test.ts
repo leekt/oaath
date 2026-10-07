@@ -1,8 +1,8 @@
 import { decodeFunctionData, encodeErrorResult, toHex } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
-import { OaathClientError } from "../src/index.js";
 import { createCetaneChainPorts, oaathProvider } from "../src/cetane.js";
+import { OaathClientError } from "../src/index.js";
 import {
   CALL_DATA,
   CHAIN_ID,

@@ -17,8 +17,8 @@
  */
 
 import { encodeKernelNonceKey, encodeKernelNonceRead } from "@oaath/sdk/advanced";
-import { kernelDeployment } from "@oaath/sdk/kernel";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
+import { kernelDeployment } from "@oaath/sdk/kernel";
 import { parseEther } from "viem";
 import {
   createLocalAnvilObservation,

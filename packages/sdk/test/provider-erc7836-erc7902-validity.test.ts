@@ -7,13 +7,13 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import type { OaathChainCapability } from "../src/advanced.js";
+import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
 import {
   grantProviderPort,
   type OaathProviderValidityAdmission,
 } from "../src/client/grant-handle.js";
 import { OAATH_KERNEL_V4_VALIDITY_POLICY } from "../src/kernel/modules.js";
 import { encodeKernelV4Execution } from "../src/kernel-v4.js";
-
 import { createIndexedDbCleanupStore } from "../src/persistence/indexeddb/cleanup-store.js";
 import { createIndexedDbContextStore } from "../src/persistence/indexeddb/context-store.js";
 import { openOaathDatabase } from "../src/persistence/indexeddb/database.js";
@@ -27,7 +27,6 @@ import {
   type OaathProviderErrorCode,
 } from "../src/provider/errors.js";
 import { OAATH_PREPARED_CALL_CONTEXT_VERSION } from "../src/provider/prepared-call-store.js";
-import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
 import {
   CALL_DATA,
   CHAIN_ID,

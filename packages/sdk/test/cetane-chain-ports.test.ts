@@ -1,9 +1,9 @@
 import { encodeAbiParameters, encodeEventTopics, zeroAddress } from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
+import { createCetaneChainPorts } from "../src/cetane.js";
 import { prepareUserOperation } from "../src/kernel.js";
 import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
-import { createCetaneChainPorts } from "../src/cetane.js";
 
 const config = {
   143: {

@@ -2,8 +2,8 @@ import { createWalletClient, custom, encodeFunctionData, toHex } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import type { OaathSubmissionRequest } from "../src/advanced.js";
-import { asCetaneUserOperation } from "../src/kernel.js";
 import { OaathRpcError } from "../src/cetane.js";
+import { asCetaneUserOperation } from "../src/kernel.js";
 import {
   CHAIN_ID,
   createChainFixture,

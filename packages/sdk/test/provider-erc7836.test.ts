@@ -13,6 +13,7 @@ import { bytesToHex, concat, hexToBytes, keccak256, sha256, stringToBytes, toHex
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { OperationStore } from "../src/advanced.js";
+import { oaathProvider } from "../src/cetane.js";
 import { grantProviderPort } from "../src/client/grant-handle.js";
 import { kernelKey, type WebAuthnAssertionRequest } from "../src/kernel.js";
 import { createIndexedDbCleanupStore } from "../src/persistence/indexeddb/cleanup-store.js";
@@ -24,7 +25,6 @@ import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexed
 import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
 import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
 import { INTERNAL_ERROR } from "../src/provider/errors.js";
-import { oaathProvider } from "../src/cetane.js";
 import {
   bindingInput,
   CALL_DATA,

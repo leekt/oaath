@@ -12,6 +12,7 @@ import type {
   OaathChainSponsorship,
 } from "../src/advanced.js";
 import { hashErc7902StaticPaymasterConfiguration } from "../src/advanced.js";
+import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
 import {
   grantProviderPort,
   type OaathProviderOperationPointer,
@@ -19,13 +20,11 @@ import {
 } from "../src/client/grant-handle.js";
 import { OAATH_KERNEL_V4_VALIDITY_POLICY } from "../src/kernel/modules.js";
 import { encodeKernelV4Execution } from "../src/kernel-v4.js";
-
 import { createEip5792Orchestrator } from "../src/provider/eip5792.js";
 import {
   OAATH_PROVIDER_ERROR_MESSAGES,
   type OaathProviderErrorCode,
 } from "../src/provider/errors.js";
-import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
 import {
   CALL_DATA,
   CHAIN_ID,
