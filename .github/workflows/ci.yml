@@ -37,6 +37,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
           components: clippy, rustfmt
+      # Kernel address fixtures read the factory on a local loopback Anvil.
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1
+        with:
+          version: v1.7.1
+          cache: false
       - run: bun install --frozen-lockfile
       # The TypeScript protocol owns the wire; committed fixtures must match it.
       - run: bun run fixtures:protocol

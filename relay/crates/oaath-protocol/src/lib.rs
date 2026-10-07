@@ -15,6 +15,7 @@ pub mod grant_policy;
 pub mod grant_reference;
 pub mod identity;
 pub mod ids;
+pub mod kernel_account;
 pub mod kernel_install;
 pub mod owner_signing;
 pub mod permission;

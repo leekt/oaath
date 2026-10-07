@@ -15,9 +15,10 @@ use oaath_protocol::grant_reference::{
     parse_grant_verification_result, parse_oaath_grant_ref, parse_verify_grant_revision_input,
 };
 use oaath_protocol::identity::{
-    hash_owner_credential_profile, parse_kernel_account_profile, parse_operator_credential_profile,
-    parse_owner_credential_profile,
+    KernelAccountProfile, hash_owner_credential_profile, parse_kernel_account_profile,
+    parse_operator_credential_profile, parse_owner_credential_profile,
 };
+use oaath_protocol::kernel_account::derive_kernel_v4_account_address;
 use oaath_protocol::kernel_install::parse_kernel_replayable_install_owner_signing_request;
 use oaath_protocol::owner_signing::{
     parse_owner_signing_artifact, serialize_owner_signing_artifact,
@@ -48,6 +49,21 @@ fn evaluate(function: &str, input: &Value) -> ProtocolResult<Value> {
             parse_operator_credential_profile(input).map(|p| p.to_json())
         }
         "parseKernelAccountProfile" => parse_kernel_account_profile(input).map(|p| p.to_json()),
+        "deriveKernelV4AccountAddress" => {
+            // An existing account already has its address; only a derived
+            // profile reaches the derivation.
+            let KernelAccountProfile::Derived(profile) =
+                parse_kernel_account_profile(&input["account"])?
+            else {
+                return Err(ProtocolError::new(
+                    ErrorCode::KernelAccountDerivationInvalid,
+                ));
+            };
+            string(derive_kernel_v4_account_address(
+                &profile,
+                input["ownerValidator"].as_str(),
+            ))
+        }
         "parseGrantPolicy" => parse_grant_policy(input).map(|p| p.to_json()),
         "hashGrantPolicy" => string(hash_grant_policy(input)),
         "hashGrantPolicyCalls" => string(hash_grant_policy_calls(input)),
