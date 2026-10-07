@@ -9,8 +9,8 @@ use serde_json::{Map, Value};
 
 use crate::error::{RelayErrorCode, RelayResult};
 
-pub const AUTHORIZATION_REQUEST_RECORD_VERSION: &str = "oaath.authorization-request-record/v2";
-pub const AUTHORIZATION_DECISION_RECORD_VERSION: &str = "oaath.authorization-decision-record/v2";
+pub const AUTHORIZATION_REQUEST_RECORD_VERSION: &str = "oaath.authorization-request-record/v1";
+pub const AUTHORIZATION_DECISION_RECORD_VERSION: &str = "oaath.authorization-decision-record/v1";
 pub const AUTHORIZATION_CODE_RECORD_VERSION: &str = "oaath.authorization-code-record/v1";
 pub const ENCRYPTED_ARTIFACT_RECORD_VERSION: &str = "oaath.encrypted-artifact-record/v1";
 pub const CAPABILITY_INVALIDATION_RECORD_VERSION: &str = "oaath.capability-invalidation-record/v1";
@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn rejects_an_old_extra_bearing_missing_or_malformed_record() {
         let mut old = request();
-        old["version"] = json!("oaath.authorization-request-record/v1");
+        old["version"] = json!("oaath.authorization-request-record/v0");
         let mut extra = request();
         extra["extra"] = json!(1);
         let mut missing = request();

@@ -40,7 +40,7 @@ use crate::store::RelayTransaction;
 
 pub const SIGNER_RECORD_VERSION: &str = "oaath.signer-record/v1";
 pub const ACCOUNT_RECORD_VERSION: &str = "oaath.account-record/v1";
-pub const ACCOUNT_SIGNER_RECORD_VERSION: &str = "oaath.account-signer-record/v3";
+pub const ACCOUNT_SIGNER_RECORD_VERSION: &str = "oaath.account-signer-record/v1";
 
 const UNREADABLE: RelayErrorCode = RelayErrorCode::RecordUnreadable;
 

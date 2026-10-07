@@ -6,8 +6,7 @@
 //! as `relay_state_ambiguous`: the caller neither assumes the transition
 //! applied nor retries it.
 //!
-//! The schema is the TypeScript relay's `oaath.relay-postgres-schema/v5`,
-//! table for table, so either relay reads the other's rows. There is no
+//! One current schema, `oaath.relay-postgres-schema/v1`. There is no
 //! migration runner: an obsolete database is dropped and recreated.
 
 use async_trait::async_trait;
@@ -29,7 +28,7 @@ use crate::records::{
 use crate::registry::{AccountRecord, AccountSignerRecord, MembershipStatus, SignerRecord};
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v14";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v1";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -38,17 +37,17 @@ const MAX_SAFE_INTEGER: &str = "9007199254740991";
 pub fn schema_statements() -> Vec<String> {
     let max = MAX_SAFE_INTEGER;
     vec![
-        "CREATE TABLE oaath_relay_schema_v14 (
+        "CREATE TABLE oaath_relay_schema_v1 (
     schema_id text PRIMARY KEY CHECK (schema_id = 'oaath'),
     version text NOT NULL
   )"
         .to_owned(),
         format!(
-            "INSERT INTO oaath_relay_schema_v14 (schema_id, version)
+            "INSERT INTO oaath_relay_schema_v1 (schema_id, version)
    VALUES ('oaath', '{RELAY_POSTGRES_SCHEMA_VERSION}')"
         ),
         format!(
-            "CREATE TABLE oaath_relay_authorization_request_v2 (
+            "CREATE TABLE oaath_relay_authorization_request_v1 (
     request_id text PRIMARY KEY,
     record_version text NOT NULL,
     client_id text NOT NULL,
@@ -64,9 +63,9 @@ pub fn schema_statements() -> Vec<String> {
   )"
         ),
         format!(
-            "CREATE TABLE oaath_relay_authorization_decision_v2 (
+            "CREATE TABLE oaath_relay_authorization_decision_v1 (
     request_id text PRIMARY KEY
-      REFERENCES oaath_relay_authorization_request_v2 (request_id),
+      REFERENCES oaath_relay_authorization_request_v1 (request_id),
     record_version text NOT NULL,
     outcome text NOT NULL CHECK (outcome IN ('approved', 'rejected', 'withdrawn')),
     decided_at bigint NOT NULL CHECK (decided_at >= 0 AND decided_at <= {max}),
@@ -90,7 +89,7 @@ pub fn schema_statements() -> Vec<String> {
     code_hash text PRIMARY KEY,
     record_version text NOT NULL,
     request_id text NOT NULL UNIQUE
-      REFERENCES oaath_relay_authorization_request_v2 (request_id),
+      REFERENCES oaath_relay_authorization_request_v1 (request_id),
     client_id text NOT NULL,
     redirect_uri text NOT NULL,
     code_challenge text NOT NULL,
@@ -105,28 +104,13 @@ pub fn schema_statements() -> Vec<String> {
     artifact_id text PRIMARY KEY,
     record_version text NOT NULL,
     request_id text NOT NULL UNIQUE
-      REFERENCES oaath_relay_authorization_request_v2 (request_id),
+      REFERENCES oaath_relay_authorization_request_v1 (request_id),
     client_id text NOT NULL,
     ciphertext_ref text NOT NULL,
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     claimed_at bigint CHECK (claimed_at >= created_at AND claimed_at <= {max})
   )"
         ),
-        "CREATE TABLE oaath_relay_revocation_request_v1 (
-    operation_id text PRIMARY KEY,
-    record jsonb NOT NULL CHECK (record->>'operationId' = operation_id)
-  )"
-        .to_owned(),
-        "CREATE TABLE oaath_relay_revocation_decision_v1 (
-    operation_id text PRIMARY KEY REFERENCES oaath_relay_revocation_request_v1 (operation_id),
-    record jsonb NOT NULL CHECK (record->>'operationId' = operation_id)
-  )"
-        .to_owned(),
-        "CREATE INDEX oaath_relay_revocation_scope_created_v1 ON oaath_relay_revocation_request_v1 (
-    (record #>> '{signingRequest,permissionRequest,requestId}'),
-    (record #>> '{signingRequest,chainId}'), ((record->>'createdAt')::bigint) DESC
-  )"
-        .to_owned(),
         format!(
             "CREATE TABLE oaath_signer_v1 (
     signer_id text PRIMARY KEY,
@@ -153,7 +137,7 @@ pub fn schema_statements() -> Vec<String> {
   )"
         ),
         format!(
-            "CREATE TABLE oaath_link_request_v2 (
+            "CREATE TABLE oaath_link_request_v1 (
     link_id text PRIMARY KEY,
     record_version text NOT NULL,
     account_id text NOT NULL REFERENCES oaath_account_v1 (account_id),
@@ -175,13 +159,13 @@ pub fn schema_statements() -> Vec<String> {
   )"
         ),
         format!(
-            "CREATE TABLE oaath_account_signer_v3 (
+            "CREATE TABLE oaath_account_signer_v1 (
     account_id text NOT NULL REFERENCES oaath_account_v1 (account_id),
     signer_id text NOT NULL REFERENCES oaath_signer_v1 (signer_id),
     record_version text NOT NULL,
     role text NOT NULL CHECK (role IN ('root', 'permission')),
-    request_id text REFERENCES oaath_relay_authorization_request_v2 (request_id),
-    link_id text REFERENCES oaath_link_request_v2 (link_id),
+    request_id text REFERENCES oaath_relay_authorization_request_v1 (request_id),
+    link_id text REFERENCES oaath_link_request_v1 (link_id),
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     CHECK ((role = 'root') = (request_id IS NULL AND link_id IS NULL)),
     CHECK (request_id IS NULL OR link_id IS NULL),
@@ -193,14 +177,14 @@ pub fn schema_statements() -> Vec<String> {
     CHECK (restored_at IS NULL OR suspended_at IS NOT NULL)
   )"
         ),
-        "CREATE UNIQUE INDEX oaath_account_signer_root_v3 ON oaath_account_signer_v3 (account_id)
+        "CREATE UNIQUE INDEX oaath_account_signer_root_v1 ON oaath_account_signer_v1 (account_id)
     WHERE role = 'root'"
             .to_owned(),
-        "CREATE UNIQUE INDEX oaath_account_signer_grant_v3
-    ON oaath_account_signer_v3 (account_id, signer_id, request_id) WHERE request_id IS NOT NULL"
+        "CREATE UNIQUE INDEX oaath_account_signer_grant_v1
+    ON oaath_account_signer_v1 (account_id, signer_id, request_id) WHERE request_id IS NOT NULL"
             .to_owned(),
-        "CREATE UNIQUE INDEX oaath_account_signer_link_v3
-    ON oaath_account_signer_v3 (account_id, signer_id, link_id) WHERE link_id IS NOT NULL"
+        "CREATE UNIQUE INDEX oaath_account_signer_link_v1
+    ON oaath_account_signer_v1 (account_id, signer_id, link_id) WHERE link_id IS NOT NULL"
             .to_owned(),
         format!(
             "CREATE TABLE oauth_client_v1 (
@@ -231,7 +215,7 @@ pub fn schema_statements() -> Vec<String> {
     token_hash text PRIMARY KEY,
     record_version text NOT NULL,
     client_id text NOT NULL REFERENCES oauth_client_v1 (client_id),
-    request_id text NOT NULL REFERENCES oaath_relay_authorization_request_v2 (request_id),
+    request_id text NOT NULL REFERENCES oaath_relay_authorization_request_v1 (request_id),
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max}),
     revoked_at bigint CHECK (revoked_at >= created_at AND revoked_at <= {max})
@@ -668,7 +652,7 @@ impl RelayTransaction for PostgresTransaction {
         request_id: &str,
     ) -> RelayResult<Option<AuthorizationRequestRecord>> {
         let sql = format!(
-            "SELECT {REQUEST_COLUMNS} FROM oaath_relay_authorization_request_v2 \
+            "SELECT {REQUEST_COLUMNS} FROM oaath_relay_authorization_request_v1 \
              WHERE request_id = $1 FOR UPDATE"
         );
         self.first(sqlx::query(&sql).bind(request_id), request_record)
@@ -680,7 +664,7 @@ impl RelayTransaction for PostgresTransaction {
         record: &AuthorizationRequestRecord,
     ) -> RelayResult<bool> {
         let sql = format!(
-            "INSERT INTO oaath_relay_authorization_request_v2 ({REQUEST_COLUMNS}) \
+            "INSERT INTO oaath_relay_authorization_request_v1 ({REQUEST_COLUMNS}) \
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
              ON CONFLICT (request_id) DO NOTHING"
         );
@@ -709,7 +693,7 @@ impl RelayTransaction for PostgresTransaction {
         self.first(
             sqlx::query(
                 "SELECT request_id, record_version, outcome, decided_at, code_ref, code_expires_at \
-                 FROM oaath_relay_authorization_decision_v2 WHERE request_id = $1 FOR UPDATE",
+                 FROM oaath_relay_authorization_decision_v1 WHERE request_id = $1 FOR UPDATE",
             )
             .bind(request_id),
             decision_record,
@@ -723,7 +707,7 @@ impl RelayTransaction for PostgresTransaction {
     ) -> RelayResult<bool> {
         self.applied(
             sqlx::query(
-                "INSERT INTO oaath_relay_authorization_decision_v2 (\
+                "INSERT INTO oaath_relay_authorization_decision_v1 (\
                  request_id, record_version, outcome, decided_at, code_ref, code_expires_at\
                  ) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (request_id) DO NOTHING",
             )
@@ -969,7 +953,7 @@ impl RelayTransaction for PostgresTransaction {
              membership.role, membership.request_id, membership.link_id, \
              membership.created_at AS membership_created_at, membership.status, \
              membership.suspended_at, membership.restored_at \
-             FROM oaath_account_signer_v3 AS membership \
+             FROM oaath_account_signer_v1 AS membership \
              JOIN oaath_account_v1 AS account ON account.account_id = membership.account_id \
              WHERE membership.signer_id = $1 \
              ORDER BY account.created_at, account.account_id COLLATE \"C\"",
@@ -1008,7 +992,7 @@ impl RelayTransaction for PostgresTransaction {
         // the partial unique index refuses a second root.
         self.applied(
             sqlx::query(
-                "INSERT INTO oaath_account_signer_v3 (\
+                "INSERT INTO oaath_account_signer_v1 (\
                  account_id, signer_id, record_version, role, request_id, link_id, created_at, \
                  status, suspended_at, restored_at\
                  ) SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 \
@@ -1063,7 +1047,7 @@ impl RelayTransaction for PostgresTransaction {
              membership.role, membership.request_id, membership.link_id, \
              membership.created_at AS membership_created_at, membership.status, \
              membership.suspended_at, membership.restored_at \
-             FROM oaath_account_signer_v3 AS membership \
+             FROM oaath_account_signer_v1 AS membership \
              JOIN oaath_signer_v1 AS signer ON signer.signer_id = membership.signer_id \
              WHERE membership.account_id = $1 \
              ORDER BY membership.role <> 'root', membership.created_at, signer.signer_id COLLATE \"C\" FOR UPDATE",
@@ -1089,7 +1073,7 @@ impl RelayTransaction for PostgresTransaction {
     ) -> RelayResult<bool> {
         // One signer may hold several permission memberships (a link and grants).
         let result = sqlx::query(
-            "DELETE FROM oaath_account_signer_v3 \
+            "DELETE FROM oaath_account_signer_v1 \
              WHERE account_id = $1 AND signer_id = $2 AND role = 'permission'",
         )
         .bind(account_id)
@@ -1110,12 +1094,12 @@ impl RelayTransaction for PostgresTransaction {
         // Guarded on the current status, so a repeated move changes nothing.
         let sql = match status {
             MembershipStatus::Suspended => {
-                "UPDATE oaath_account_signer_v3 SET status = 'suspended', suspended_at = $3 \
+                "UPDATE oaath_account_signer_v1 SET status = 'suspended', suspended_at = $3 \
                  WHERE account_id = $1 AND signer_id = $2 AND role = 'permission' \
                  AND status = 'active'"
             }
             MembershipStatus::Active => {
-                "UPDATE oaath_account_signer_v3 SET status = 'active', restored_at = $3 \
+                "UPDATE oaath_account_signer_v1 SET status = 'active', restored_at = $3 \
                  WHERE account_id = $1 AND signer_id = $2 AND role = 'permission' \
                  AND status = 'suspended'"
             }
@@ -1182,7 +1166,7 @@ impl RelayTransaction for PostgresTransaction {
 
     async fn lock_link_request(&mut self, link_id: &str) -> RelayResult<Option<LinkRequestRecord>> {
         let sql = format!(
-            "SELECT {LINK_COLUMNS} FROM oaath_link_request_v2 WHERE link_id = $1 FOR UPDATE"
+            "SELECT {LINK_COLUMNS} FROM oaath_link_request_v1 WHERE link_id = $1 FOR UPDATE"
         );
         self.first(sqlx::query(&sql).bind(link_id), link_record)
             .await
@@ -1191,7 +1175,7 @@ impl RelayTransaction for PostgresTransaction {
     async fn insert_link_request(&mut self, record: &LinkRequestRecord) -> RelayResult<bool> {
         // An unknown account or signer inserts nothing instead of aborting.
         let sql = format!(
-            "INSERT INTO oaath_link_request_v2 ({LINK_COLUMNS}) \
+            "INSERT INTO oaath_link_request_v1 ({LINK_COLUMNS}) \
              SELECT $1, $2, $3, $4, $5, $6, $7, NULL, NULL, NULL, NULL, NULL \
              WHERE EXISTS (SELECT 1 FROM oaath_account_v1 WHERE account_id = $3) \
              AND EXISTS (SELECT 1 FROM oaath_signer_v1 WHERE signer_id = $4) \
@@ -1225,7 +1209,7 @@ impl RelayTransaction for PostgresTransaction {
         // One-shot: the guard makes a second decision affect zero rows.
         self.applied(
             sqlx::query(
-                "UPDATE oaath_link_request_v2 \
+                "UPDATE oaath_link_request_v1 \
                  SET outcome = $2, approval_signature = $3, grant_id = $4, decided_at = $5 \
                  WHERE link_id = $1 AND outcome IS NULL",
             )
@@ -1316,7 +1300,7 @@ impl RelayTransaction for PostgresTransaction {
     async fn remove_link_request(&mut self, link_id: &str, removed_at: u64) -> RelayResult<bool> {
         self.applied(
             sqlx::query(
-                "UPDATE oaath_link_request_v2 SET removed_at = $2 \
+                "UPDATE oaath_link_request_v1 SET removed_at = $2 \
                  WHERE link_id = $1 AND outcome = 'approved' AND removed_at IS NULL",
             )
             .bind(link_id)
@@ -1421,7 +1405,7 @@ impl RelayTransaction for PostgresTransaction {
                  token_hash, record_version, client_id, request_id, created_at, expires_at, \
                  revoked_at) SELECT $1, $2, $3, $4, $5, $6, NULL \
                  WHERE EXISTS (SELECT 1 FROM oauth_client_v1 WHERE client_id = $3) \
-                 AND EXISTS (SELECT 1 FROM oaath_relay_authorization_request_v2 \
+                 AND EXISTS (SELECT 1 FROM oaath_relay_authorization_request_v1 \
                  WHERE request_id = $4) ON CONFLICT DO NOTHING",
             )
             .bind(&record.token_hash)

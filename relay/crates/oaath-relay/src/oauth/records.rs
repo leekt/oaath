@@ -16,7 +16,7 @@ use crate::records::{
 };
 
 pub const OAUTH_CLIENT_RECORD_VERSION: &str = "oaath.oauth-client-record/v1";
-pub const OAUTH_PAR_RECORD_VERSION: &str = "oaath.oauth-par-record/v2";
+pub const OAUTH_PAR_RECORD_VERSION: &str = "oaath.oauth-par-record/v1";
 pub const OAUTH_ACCESS_TOKEN_RECORD_VERSION: &str = "oaath.oauth-access-token-record/v1";
 
 pub const MAX_CLIENT_NAME: usize = 128;
