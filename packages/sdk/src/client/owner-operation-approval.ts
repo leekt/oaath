@@ -26,6 +26,8 @@ import {
 import { clientFail, exactClientRecord, mapClientFailure } from "./errors.js";
 import {
   authorizeThroughPopup,
+  authorizeWithLauncher,
+  type OaathAuthorizationLauncher,
   type OaathLoginOptions,
   openAuthorizationPopup,
 } from "./oauth-login.js";
@@ -33,31 +35,42 @@ import {
 export interface OaathOwnerOperationApprovalOptions extends OaathLoginOptions {
   /** The exact unsigned owner operation, for example from `prepareOwnerOperation`. */
   readonly request: Readonly<OwnerOperationRequest>;
+  /**
+   * Opens the portal somewhere other than a popup and resolves with the
+   * redirect URL, e.g. `chrome.identity.launchWebAuthFlow` in an extension.
+   */
+  readonly launch?: OaathAuthorizationLauncher;
 }
 
 /**
  * Asks the account root to approve one owner operation in the issuer's portal
  * and returns it verified, ready to submit. Call it directly from a user
- * gesture: the popup opens before anything is awaited. A signed operation for
+ * gesture: the popup opens before anything is awaited; `launch` replaces it. A signed operation for
  * any other request fails with `oaath_client_state_conflict`.
  */
 export async function requestOwnerOperationApproval(
   value: OaathOwnerOperationApprovalOptions,
 ): Promise<Readonly<VerifiedOwnerOperation>> {
-  const popup = openAuthorizationPopup();
+  if (!value || typeof value !== "object")
+    return clientFail("oaath_client_input_invalid", "approval options are required");
+  const { request: requestValue, launch, ...options } = value;
+  if (launch !== undefined && typeof launch !== "function")
+    return clientFail("oaath_client_capability_invalid", "launch must be a function");
+  // Open inside the user's gesture, before anything is awaited.
+  const popup = launch ? null : openAuthorizationPopup();
   try {
-    if (!value || typeof value !== "object")
-      return clientFail("oaath_client_input_invalid", "approval options are required");
-    const { request: requestValue, ...options } = value;
     let request: Readonly<OwnerOperationRequest>;
     try {
       request = parseOwnerOperationRequest(requestValue);
     } catch (error) {
       return mapClientFailure(error, "the owner operation request is invalid");
     }
-    const { released } = await authorizeThroughPopup(popup, options, {
+    const extra = {
       authorization_details: JSON.stringify([{ type: "oaath_operation", request }]),
-    });
+    };
+    const { released } = popup
+      ? await authorizeThroughPopup(popup, options, extra)
+      : await authorizeWithLauncher(launch as OaathAuthorizationLauncher, options, extra);
     // An owner operation is decided by the root in the popup; it never waits.
     if (released === null)
       return clientFail("oaath_client_issuer_rejected", "the issuer left the operation pending");
@@ -87,6 +100,6 @@ export async function requestOwnerOperationApproval(
       return mapClientFailure(error, "the signed owner operation does not verify");
     }
   } finally {
-    popup.close();
+    popup?.close();
   }
 }

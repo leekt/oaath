@@ -56,6 +56,23 @@ describe("requestOwnerOperationApproval", () => {
     expect(detail).toEqual({ type: "oaath_operation", request: prepared.request });
   });
 
+  it("authorizes through a caller-owned launcher instead of a popup", async () => {
+    const prepared = prepare("3");
+    const { approvals, launch, window } = await installOAuthPortal({
+      root,
+      signOperation: () => prepared.sign(root.key),
+    });
+    const { kind: _, ...options } = approvals;
+    const verified = await requestOwnerOperationApproval({
+      ...options,
+      request: prepared.request,
+      launch,
+    });
+    expect(verified.signed.request).toEqual(prepared.request);
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
   it("refuses a signed operation for another request", async () => {
     const prepared = prepare("3");
     const { options } = await approve(() => prepare("4").sign(root.key));

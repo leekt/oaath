@@ -123,7 +123,8 @@ and is a member of the account; login is identity, never authority. Failures are
 `POST {issuer}/oauth/clients`; see `examples/oauth-login`.
 
 `requestOwnerOperationApproval({ issuer, clientId, redirectUri, request })` asks
-the account root to approve one owner operation in the same popup. `request` is
+the account root to approve one owner operation in the same popup (or through
+`launch`, as for Grants). `request` is
 the exact unsigned request from `prepareOwnerOperation` (`@oaath/sdk/kernel`).
 The returned signed operation must be for that same request, and
 `verifyOwnerOperation` checks the account binding and the root's signature (a
