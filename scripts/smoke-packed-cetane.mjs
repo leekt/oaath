@@ -3,7 +3,7 @@ import { createConsumer } from "./packed-consumer.mjs";
 
 const consumer = await createConsumer({
   label: "cetane-sdk",
-  packages: ["@oaath/protocol", "@oaath/sdk"],
+  packages: ["@oaath/protocol", "@oaath/sdk", "@oaath/cli"],
   files: {
     "consumer.ts": `import { createCetaneChainPorts, type CetaneChainPortOptions } from "@oaath/sdk/cetane";
 const options: CetaneChainPortOptions = { maxRequests: 3 };
@@ -48,6 +48,8 @@ try {
 try {
   consumer.typecheck();
   console.log(consumer.node("consumer.mjs").trim());
+  if (!consumer.node("node_modules/@oaath/cli/dist/cli.mjs").includes("deploy-runtime"))
+    throw new Error("Packed Cetane CLI did not load");
 } finally {
   await consumer.cleanup();
 }

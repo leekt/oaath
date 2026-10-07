@@ -1,5 +1,7 @@
 import { kernelDeployment } from "@oaath/sdk/kernel";
-import { createWalletClient, custom, type Hex, keccak256, type PrivateKeyAccount } from "viem";
+import { createPublicClient, custom, type Hex, type Signer } from "cetane";
+import { signEvmTransaction } from "cetane/execution/evm";
+import { keccak256 } from "cetane/utils";
 import { type DoctorReport, doctor } from "./doctor.js";
 import type { DeploymentJournal, DeploymentRecord } from "./journal.js";
 import { type Component, components } from "./manifest.js";
@@ -168,7 +170,7 @@ export async function deployRuntime(input: {
   chainId: number;
   rpc: RpcReader;
   journal: DeploymentJournal;
-  account: () => PrivateKeyAccount;
+  account: () => Signer & { readonly address: Hex };
   dryRun?: boolean;
   /** Test-only clock bound; the CLI always uses the default. */
   observationAttempts?: number;
@@ -195,17 +197,15 @@ export async function deployRuntime(input: {
   const pending = journal.pending(chainId);
   if (pending && !(await observe(pending, manifest, rpc, journal, input.observationAttempts ?? 30)))
     return result("pending", pending.transactionHash);
-  const wallet = () =>
-    createWalletClient({
-      account: input.account(),
-      transport: custom(
-        {
-          request: ({ method, params }) =>
-            rpc.request(method, params as readonly unknown[] | undefined),
-        },
-        { retryCount: 0 },
-      ),
-    });
+  const fees = createPublicClient({
+    chain: {
+      id: chainId,
+      name: `Chain ${chainId}`,
+      nativeAA: false,
+      fees: { baseFeeMultiplier: 12_000 },
+    },
+    transport: custom({ request: ({ method, params }) => rpc.request(method, params) }),
+  });
   for (const component of manifest.filter((row) => deploys(row) && row.deploymentInput)) {
     // Capture current code again after recovering another process's transaction.
     const code = await rpc.request("eth_getCode", [component.address, "latest"]);
@@ -225,63 +225,52 @@ export async function deployRuntime(input: {
         return result("pending", retained.transactionHash);
       continue;
     }
-    const client = wallet();
-    const request = await client.prepareTransactionRequest({
-      account: client.account,
-      chain: null,
-      to: deployer,
-      data: component.deploymentInput as Hex,
-      value: 0n,
-    });
-    if (
-      request.chainId !== chainId ||
-      !Number.isSafeInteger(request.nonce) ||
-      request.nonce < 0 ||
-      request.gas <= 0n ||
-      request.gas > 10_000_000n
-    )
+    const signer = input.account();
+    const [nonce, gas, blockValue] = await Promise.all([
+      rpc.request("eth_getTransactionCount", [signer.address, "pending"]).then(quantity),
+      rpc
+        .request("eth_estimateGas", [
+          { from: signer.address, to: deployer, data: component.deploymentInput, value: "0x0" },
+        ])
+        .then(quantity),
+      rpc.request("eth_getBlockByNumber", ["latest", false]),
+    ]);
+    if (nonce > BigInt(Number.MAX_SAFE_INTEGER) || gas <= 0n || gas > 10_000_000n)
       throw new DeploymentError("deployment_transaction_invalid");
     const transaction = {
       chainId,
-      nonce: request.nonce,
-      gas: request.gas,
+      nonce,
+      gas,
       to: deployer,
       data: component.deploymentInput as Hex,
       value: 0n,
     };
-    let signed: Hex;
-    if (
-      request.type === "eip1559" &&
-      typeof request.maxFeePerGas === "bigint" &&
-      typeof request.maxPriorityFeePerGas === "bigint"
-    )
-      signed = await client.account.signTransaction({
-        ...transaction,
-        type: "eip1559",
-        maxFeePerGas: request.maxFeePerGas,
-        maxPriorityFeePerGas: request.maxPriorityFeePerGas,
-      });
-    else if (request.type === "legacy" && typeof request.gasPrice === "bigint")
-      signed = await client.account.signTransaction({
-        ...transaction,
-        type: "legacy",
-        gasPrice: request.gasPrice,
-      });
-    else throw new DeploymentError("deployment_transaction_invalid");
+    const block = recordObject(blockValue);
+    const signed = await signEvmTransaction({
+      signer,
+      transaction:
+        block.baseFeePerGas === undefined
+          ? {
+              ...transaction,
+              type: "legacy",
+              gasPrice: quantity(await rpc.request("eth_gasPrice")),
+            }
+          : { ...transaction, type: "eip1559", ...(await fees.estimateFeesPerGas()) },
+    });
     const attempt: DeploymentRecord = {
       chainId,
       component: component.id,
       address: component.address,
-      wallet: client.account.address.toLowerCase() as Hex,
+      wallet: signer.address.toLowerCase() as Hex,
       inputHash: keccak256(component.deploymentInput as Hex),
-      transactionHash: keccak256(signed),
-      nonce: request.nonce,
+      transactionHash: signed.hash,
+      nonce: Number(nonce),
       state: "attempted",
     };
     const reservation = journal.reserve(attempt);
     if (reservation.inserted) {
       try {
-        await rpc.request("eth_sendRawTransaction", [signed]);
+        await rpc.request("eth_sendRawTransaction", [signed.serializedTransaction]);
       } catch {
         /* Retain the exact hash and only observe, even after a lost reply. */
       }
