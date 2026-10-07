@@ -53,6 +53,8 @@ export type KernelCapability =
   | "owner_ecdsa"
   | "owner_p256"
   | "owner_webauthn"
+  | "owner_weighted-ecdsa"
+  | "session_weighted-ecdsa"
   | "owner_custom"
   | "session_ecdsa"
   | "session_webauthn"
@@ -129,6 +131,18 @@ function capturedCapability(value: unknown): CapabilityAxis {
         capability: value,
         axis: "validator" as const,
         kind: "p256" as const,
+      });
+    case "owner_weighted-ecdsa":
+      return Object.freeze({
+        capability: value,
+        axis: "validator" as const,
+        kind: "weighted-ecdsa" as const,
+      });
+    case "session_weighted-ecdsa":
+      return Object.freeze({
+        capability: value,
+        axis: "signer" as const,
+        kind: "weighted-ecdsa" as const,
       });
     case "owner_webauthn":
       return Object.freeze({

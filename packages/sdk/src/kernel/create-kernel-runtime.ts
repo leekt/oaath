@@ -33,6 +33,7 @@ import {
   kernelV33OperationSigningHash,
   prepareKernelV33Operation,
 } from "./deployment/v33-operation.js";
+import { captureWeightedConfiguration } from "./deployment/weighted.js";
 import {
   applyKernelGasPolicy,
   captureKernelGasPolicy,
@@ -54,6 +55,7 @@ import {
   KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH,
   KERNEL_WEBAUTHN_VALIDATOR,
   KERNEL_WEBAUTHN_VALIDATOR_RUNTIME_CODE_HASH,
+  KERNEL_WEIGHTED_VALIDATOR,
   OAATH_KERNEL_RATE_LIMIT_POLICY,
   OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH,
   OAATH_KERNEL_V4_VALIDITY_POLICY,
@@ -76,6 +78,7 @@ import type {
   KernelV4Runtime,
   KernelV33Runtime,
   KernelV33RuntimePrepareInput,
+  KeyOperationContext,
   KeyProfile,
   OperatorProfile,
 } from "./types.js";
@@ -176,6 +179,8 @@ export function createKernelRuntime(
   // Existing-account root binding below proves the ECDSA validator's owner.
   // A session instead resolves its own signer module and public material; its
   // key kind is independent of the account's root validator.
+  if (isV33 && operator.key.kind === "weighted-ecdsa")
+    return runtimeFail("kernel_runtime_unsupported", "Weighted V09 modules require Kernel v4");
   if (isV33 && operator.authority === "owner" && operator.key.kind !== "ecdsa") {
     return inputInvalid("Kernel v3.3 root composition currently requires an ECDSA key");
   }
@@ -217,6 +222,113 @@ export function createKernelRuntime(
   const validityPolicyProvenDescriptors = new WeakSet<object>();
   // The only factory deployment each bound v3.3 sender's operations may carry.
   const boundV33Accounts = new Map<string, Readonly<PreparedFactory> | null>();
+  const weighted = operator.key.kind === "weighted-ecdsa";
+  const boundWeightedAccounts = new Map<
+    string,
+    Readonly<{
+      epoch: bigint;
+      installed: boolean;
+      factory: Readonly<PreparedFactory> | null;
+    }>
+  >();
+  async function weightedConfiguration(account: `0x${string}`) {
+    let evidence: unknown;
+    try {
+      evidence = await read({
+        type: "kernel_weighted_configuration",
+        chainId: deployment.chainId,
+        module: authorityModule,
+        account,
+        permissionId: validation.kind === "permission" ? validation.permissionId : null,
+      });
+    } catch {
+      return runtimeFail(
+        "kernel_runtime_read_unavailable",
+        "Weighted configuration could not be read",
+      );
+    }
+    return captureWeightedConfiguration(evidence);
+  }
+  async function bindWeighted(descriptor: Readonly<KernelAccountDescriptor>) {
+    const configuration = await weightedConfiguration(descriptor.account);
+    const installed = configuration.publicMaterial !== "0x";
+    if (
+      (installed &&
+        (configuration.publicMaterial !== operator.key.publicMaterial ||
+          configuration.epoch === 0n)) ||
+      (!installed && operator.authority === "owner" && descriptor.state !== "counterfactual")
+    )
+      return runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Weighted account does not install this guardian configuration",
+      );
+    const factory =
+      descriptor.state === "counterfactual" && "factoryDeployCalldata" in descriptor
+        ? Object.freeze({ address: descriptor.factory, data: descriptor.factoryDeployCalldata })
+        : null;
+    boundWeightedAccounts.set(
+      descriptor.account,
+      Object.freeze({ epoch: configuration.epoch, installed, factory }),
+    );
+  }
+  async function operationContext(
+    operation: PreparedUserOperation,
+  ): Promise<Readonly<KeyOperationContext> | undefined> {
+    if (!weighted) return undefined;
+    const binding = boundWeightedAccounts.get(operation.userOperation.sender);
+    const factory = operation.userOperation.factory;
+    if (
+      !binding ||
+      (binding.factory === null
+        ? factory !== null
+        : factory?.address !== binding.factory.address || factory.data !== binding.factory.data)
+    )
+      return runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Weighted operation has no matching account binding",
+      );
+    const configuration = await weightedConfiguration(operation.userOperation.sender);
+    if (
+      configuration.epoch !== binding.epoch ||
+      (binding.installed
+        ? configuration.publicMaterial !== operator.key.publicMaterial
+        : configuration.publicMaterial !== "0x")
+    )
+      return runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Weighted configuration changed; bind the account again",
+      );
+    const enabling =
+      !binding.installed &&
+      (binding.factory !== null ||
+        (operator.authority === "session" &&
+          Number(BigInt(operation.userOperation.nonce) >> 248n) === 0x0c));
+    if (!binding.installed && !enabling)
+      return runtimeFail(
+        "kernel_runtime_binding_mismatch",
+        "Weighted operation has no installed guardian configuration",
+      );
+    if (operator.authority === "owner" && binding.installed) {
+      let root: unknown;
+      try {
+        root = await read({
+          type: "kernel_v4_account_root",
+          chainId: deployment.chainId,
+          account: operation.userOperation.sender,
+        });
+      } catch {
+        return runtimeFail("kernel_runtime_read_unavailable", "Weighted root could not be read");
+      }
+      if (root !== `0x01${authorityModule.slice(2)}`)
+        return runtimeFail("kernel_runtime_binding_mismatch", "Weighted account root changed");
+    }
+    return Object.freeze({
+      operation,
+      module: authorityModule,
+      permissionId: validation.kind === "permission" ? validation.permissionId : null,
+      configurationEpoch: (configuration.epoch + (enabling ? 1n : 0n)).toString(),
+    });
+  }
 
   /**
    * Proves this authority's module carries code on the action chain. An owner's
@@ -341,6 +453,7 @@ export function createKernelRuntime(
         "Kernel account root packages do not install this owner authority",
       );
     }
+    if (weighted) await bindWeighted(descriptor);
     if (hasValidityPolicy) validityPolicyProvenDescriptors.add(descriptor);
     return descriptor;
   }
@@ -433,8 +546,9 @@ export function createKernelRuntime(
       // Root authority requires a reviewed validator with a readable public key.
       const p256 = !isV33 && authorityModule === pinnedValidatorModule("p256");
       const webauthn = !isV33 && authorityModule === KERNEL_WEBAUTHN_VALIDATOR;
+      const weightedValidator = weighted && !isV33 && authorityModule === KERNEL_WEIGHTED_VALIDATOR;
       if (
-        (authorityModule !== ECDSA_VALIDATOR && !p256 && !webauthn) ||
+        (authorityModule !== ECDSA_VALIDATOR && !p256 && !webauthn && !weightedValidator) ||
         rootValidator !== `0x01${authorityModule.slice(2)}`
       ) {
         return runtimeFail(
@@ -442,7 +556,11 @@ export function createKernelRuntime(
           "Kernel account does not use this root validator",
         );
       }
-      if (webauthn) await proveAuthorityModule();
+      if (webauthn || weightedValidator) await proveAuthorityModule();
+      if (weightedValidator) {
+        await bindWeighted(descriptor);
+        return descriptor;
+      }
       let owner: unknown;
       try {
         owner = await (read as KernelReads["read"])(
@@ -477,6 +595,7 @@ export function createKernelRuntime(
         );
       }
     }
+    if (weighted) await bindWeighted(descriptor);
     if (isV33) boundV33Accounts.set(descriptor.account, null);
     else if (hasValidityPolicy) validityPolicyProvenDescriptors.add(descriptor);
     return descriptor;
@@ -617,6 +736,7 @@ export function createKernelRuntime(
     return operator.encodeSignature(
       await operator.key.sign(
         isV33 ? kernelV33OperationSigningHash(operation) : operation.userOperationHash,
+        await operationContext(operation),
       ),
       deployment,
     );
@@ -642,6 +762,7 @@ export function createKernelRuntime(
       !(await operator.key.verify(
         isV33 ? kernelV33OperationSigningHash(operation) : operation.userOperationHash,
         signature,
+        await operationContext(operation),
       ))
     ) {
       return runtimeFail(
