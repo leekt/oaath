@@ -80,6 +80,28 @@ finality evidence. Kernel's contextless module events cannot prove exhaustive
 enumeration; never turn an incomplete inventory into a claim that authority is
 absent. This helper supports v4 only and sends no transactions.
 
+To import a v4 UUPS account on another reviewed build, supply the deployment
+owner's additional implementation addresses and exact runtime hashes:
+
+```ts
+const deployment = kernelDeployment({
+  chainId,
+  reviewedImplementations: [{ address: implementationAddress, runtimeCodeHash }],
+});
+const runtime = createKernelRuntime({ deployment, operator, reads });
+const account = await runtime.bindAccount({ address: accountAddress });
+```
+
+The list is captured and frozen. Binding verifies the account's actual
+implementation against the list and its code against the supplied hash;
+unreviewed addresses, wrong hashes, or unreadable evidence fail before signing.
+`kernelAccountDeployment(account)` retains that same reviewed profile. A hash
+must come from the deployment owner's review of Kernel v4/EntryPoint 0.9 code,
+including its chain-specific immutable values. Reading arbitrary code and
+adding its hash automatically would bypass that review. Existing accounts need
+no factory; deriving a new account still uses the canonical factory and build.
+This option does not add runtime versions or change supported root credentials.
+
 The reset policy is pinned by `OAATH_KERNEL_RATE_LIMIT_POLICY` and
 `OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH` from `@oaath/sdk/kernel`.
 The matching module must already be deployed on the action chain; binding

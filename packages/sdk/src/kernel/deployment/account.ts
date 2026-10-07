@@ -26,8 +26,10 @@ import {
   type KernelV4UserOperationInput,
   type KernelV4ValidationMode,
   type KernelValidation,
+  kernelV4AccountDeployment,
   kernelV4Deployment,
   prepareKernelV4UserOperation,
+  type ReviewedKernelImplementation,
 } from "../../kernel-v4.js";
 import {
   type PreparedUserOperation,
@@ -70,6 +72,8 @@ export interface KernelDeploymentInput {
   readonly kernelVersion?: KernelVersion;
   /** Defaults to `"0.9"` for Kernel v4 and `"0.7"` for Kernel 0.3.3. */
   readonly entryPoint?: KernelEntryPointVersion;
+  /** Additional Kernel v4 builds explicitly reviewed by the deployment owner. */
+  readonly reviewedImplementations?: readonly Readonly<ReviewedKernelImplementation>[];
 }
 
 function deploymentFor(chainId: unknown, version: unknown): Readonly<KernelDeployment> {
@@ -92,12 +96,22 @@ export function kernelDeployment(value: KernelDeploymentInput): Readonly<KernelD
   const captured = captureInput(value, "Kernel deployment selection", new WeakSet());
   const record = exactCaptured(
     captured,
-    ["chainId", ...["kernelVersion", "entryPoint"].filter((key) => Object.hasOwn(captured, key))],
+    [
+      "chainId",
+      ...["kernelVersion", "entryPoint", "reviewedImplementations"].filter((key) =>
+        Object.hasOwn(captured, key),
+      ),
+    ],
     "Kernel deployment selection",
   );
   const deployment = deploymentFor(record.chainId, record.kernelVersion ?? "0.4.0");
   if (record.entryPoint !== undefined && record.entryPoint !== deployment.entryPoint.version)
     return inputInvalid("Kernel EntryPoint version is unsupported");
+  if (record.reviewedImplementations !== undefined) {
+    if (deployment.kernelVersion !== "0.4.0")
+      return inputInvalid("implementation reviews require Kernel v4");
+    return kernelV4Deployment(record.chainId, record.reviewedImplementations);
+  }
   return deployment;
 }
 
@@ -392,6 +406,7 @@ async function detectKernelVersion(
   read: KernelReads["read"],
   chainId: number,
   account: `0x${string}`,
+  expected: Readonly<KernelDeployment> | null = null,
 ): Promise<KernelVersion> {
   let implementation: unknown;
   try {
@@ -405,7 +420,12 @@ async function detectKernelVersion(
     );
   }
   if (implementation === kernelV33Deployment(chainId).implementation) return "0.3.3";
-  if (implementation === KERNEL_V4_UUPS_IMPLEMENTATION_V09) return "0.4.0";
+  if (
+    implementation === KERNEL_V4_UUPS_IMPLEMENTATION_V09 ||
+    (expected?.kernelVersion === "0.4.0" &&
+      expected.reviewedImplementations.some((entry) => entry.address === implementation))
+  )
+    return "0.4.0";
   return runtimeFail(
     "kernel_runtime_binding_mismatch",
     "Kernel account implementation is not a supported Kernel deployment",
@@ -488,11 +508,16 @@ export async function bindKernelAccount(
     });
   }
   const address = record.address as `0x${string}`;
-  const version = await detectKernelVersion(capability.read, chainId, address);
+  const version = await detectKernelVersion(capability.read, chainId, address, expected);
   if (expected && expected.kernelVersion !== version) return deploymentMismatch();
   return version === "0.3.3"
     ? bindKernelV33Account({ chainId, address, reads: capability })
-    : bindKernelV4ExistingAccount({ chainId, address, reads: capability });
+    : bindKernelV4ExistingAccount({
+        chainId,
+        address,
+        reads: capability,
+        ...(expected?.kernelVersion === "0.4.0" ? { deployment: expected } : {}),
+      });
 }
 
 /** The deployment profile a bound account descriptor belongs to. */
@@ -501,7 +526,9 @@ export function kernelAccountDeployment(
 ): Readonly<KernelDeployment> {
   return account.profile === "kernel-v3.3-entrypoint-v0.7"
     ? kernelV33Deployment(account.chainId)
-    : kernelV4Deployment(account.chainId);
+    : kernelV4AccountDeployment(
+        account as Readonly<KernelV4AccountDescriptor | KernelV4ExistingAccountDescriptor>,
+      );
 }
 
 export interface PrepareKernelUserOperationInput

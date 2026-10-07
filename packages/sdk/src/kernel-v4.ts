@@ -90,10 +90,17 @@ export type KernelV4ValidationMode =
   | "enable-user-operation-replayable"
   | "enable-all-replayable";
 
+export interface ReviewedKernelImplementation {
+  readonly address: `0x${string}`;
+  /** Exact runtime hash on this profile's chain, including immutable values. */
+  readonly runtimeCodeHash: `0x${string}`;
+}
+
 export interface KernelV4Deployment {
   readonly profile: "kernel-v4-uups-entrypoint-v0.9";
   readonly kernelVersion: "0.4.0";
   readonly accountType: "uups";
+  readonly reviewedImplementations: readonly Readonly<ReviewedKernelImplementation>[];
   readonly chainId: number;
   readonly entryPoint: Readonly<{
     version: "0.9";
@@ -304,7 +311,7 @@ export interface KernelV4ExistingAccountDescriptor {
   readonly state: "deployed";
   readonly chainId: number;
   readonly entryPoint: typeof KERNEL_V4_ENTRY_POINT_V09;
-  readonly implementation: typeof KERNEL_V4_UUPS_IMPLEMENTATION_V09;
+  readonly implementation: `0x${string}`;
   readonly account: `0x${string}`;
   /** Current root ValidationId: `0x01 || validator` or `0x02 || permissionId || 0`. */
   readonly rootValidator: `0x${string}`;
@@ -580,6 +587,22 @@ export function captureKernelV4Installs(value: unknown): readonly Readonly<Kerne
  * chain identifiers this process resolves, which its own configuration owns.
  */
 const OPEN_DEPLOYMENTS = new Map<number, Readonly<KernelV4Deployment>>();
+const REVIEWED_DEPLOYMENTS = new Map<string, Readonly<KernelV4Deployment>>();
+const DEPLOYMENTS = new WeakSet<object>();
+const ACCOUNT_DEPLOYMENTS = new WeakMap<object, Readonly<KernelV4Deployment>>();
+
+/** Only deployment-owner minted profiles carry an implementation review. */
+export function captureKernelV4Deployment(value: unknown): Readonly<KernelV4Deployment> {
+  if (!value || typeof value !== "object" || !DEPLOYMENTS.has(value))
+    return fail("Kernel deployment profile is not owned by this SDK instance");
+  return value as Readonly<KernelV4Deployment>;
+}
+
+export function kernelV4AccountDeployment(
+  account: Readonly<KernelV4ExistingAccountDescriptor | KernelV4AccountDescriptor>,
+): Readonly<KernelV4Deployment> {
+  return ACCOUNT_DEPLOYMENTS.get(account) ?? kernelV4Deployment(account.chainId);
+}
 
 /**
  * Resolves the Kernel v4 deployment profile for one chain. Every EVM chain
@@ -588,7 +611,53 @@ const OPEN_DEPLOYMENTS = new Map<number, Readonly<KernelV4Deployment>>();
  * capability from read evidence before any account depends on it. Only a
  * malformed chain identifier is unsupported; no chain is blocked here.
  */
-export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deployment> {
+export function kernelV4Deployment(
+  chainId: unknown,
+  reviewedImplementations?: unknown,
+): Readonly<KernelV4Deployment> {
+  if (reviewedImplementations !== undefined) {
+    const base = kernelV4Deployment(chainId);
+    const context: CaptureContext = new WeakSet();
+    const values = captureDenseArray(
+      reviewedImplementations,
+      "reviewed implementations",
+      context,
+      fail,
+    );
+    if (values.length > 16) return fail("too many reviewed implementations");
+    const addresses = new Set<string>();
+    const reviewed = Object.freeze(
+      values.map((value) => {
+        const record = exact(
+          value,
+          ["address", "runtimeCodeHash"],
+          "reviewed implementation",
+          context,
+        );
+        const implementation = address(record.address, "reviewed implementation address");
+        if (
+          implementation === base.implementation ||
+          addresses.has(implementation) ||
+          typeof record.runtimeCodeHash !== "string" ||
+          !BYTES32.test(record.runtimeCodeHash)
+        )
+          return fail("reviewed implementation is duplicate or malformed");
+        addresses.add(implementation);
+        return Object.freeze({
+          address: implementation,
+          runtimeCodeHash: record.runtimeCodeHash as Hex,
+        });
+      }),
+    );
+    if (reviewed.length === 0) return base;
+    const id = JSON.stringify([chainId, reviewed]);
+    const previous = REVIEWED_DEPLOYMENTS.get(id);
+    if (previous) return previous;
+    const created = Object.freeze({ ...base, reviewedImplementations: reviewed });
+    REVIEWED_DEPLOYMENTS.set(id, created);
+    DEPLOYMENTS.add(created);
+    return created;
+  }
   if (typeof chainId !== "number" || !Number.isSafeInteger(chainId) || chainId < 1) {
     return kernelError("kernel_runtime_chain_unsupported", "Kernel v4 chain is unsupported");
   }
@@ -598,6 +667,7 @@ export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deploymen
     profile: "kernel-v4-uups-entrypoint-v0.9",
     kernelVersion: "0.4.0",
     accountType: "uups",
+    reviewedImplementations: Object.freeze([]),
     chainId,
     entryPoint: ENTRY_POINT,
     implementation: KERNEL_V4_UUPS_IMPLEMENTATION_V09,
@@ -606,6 +676,7 @@ export function kernelV4Deployment(chainId: unknown): Readonly<KernelV4Deploymen
     create2Deployer: KERNEL_V4_CREATE2_DEPLOYER,
   });
   OPEN_DEPLOYMENTS.set(chainId, created);
+  DEPLOYMENTS.add(created);
   return created;
 }
 
@@ -833,15 +904,43 @@ export async function bindKernelV4ExistingAccount(value: {
   readonly chainId: number;
   readonly address: `0x${string}`;
   readonly reads: KernelV4AccountReadCapability;
+  readonly deployment?: Readonly<KernelV4Deployment>;
 }): Promise<Readonly<KernelV4ExistingAccountDescriptor>> {
   const context: CaptureContext = new WeakSet();
-  const record = exact(value, ["chainId", "address", "reads"], "Kernel existing account", context);
-  const deployment = kernelV4Deployment(record.chainId);
+  const captured = captureRecord(value, "Kernel existing account", context, fail);
+  const record = exactCapturedRecord(
+    captured,
+    [
+      "chainId",
+      "address",
+      "reads",
+      ...(Object.hasOwn(captured, "deployment") ? ["deployment"] : []),
+    ],
+    "Kernel existing account",
+    fail,
+  );
+  const deployment =
+    record.deployment === undefined
+      ? kernelV4Deployment(record.chainId)
+      : captureKernelV4Deployment(record.deployment);
+  if (deployment.chainId !== record.chainId)
+    return evidenceInvalid("Kernel account chain does not match the profile");
   const account = address(record.address, "Kernel existing account address");
   const readsRecord = exact(record.reads, ["read"], "Kernel account reads", context);
   const read = callable(readsRecord.read, "Kernel account read capability");
-  await proveDeploymentCode(read, deployment);
-  await proveFactoryImplementation(read, deployment);
+  if (
+    (await readEvidence(read, { type: "chain_id", chainId: deployment.chainId })) !==
+    deployment.chainId
+  )
+    return evidenceInvalid("Kernel account chain does not match the profile");
+  evidenceCode(
+    await readEvidence(read, {
+      type: "code",
+      chainId: deployment.chainId,
+      address: deployment.entryPoint.address,
+    }),
+    "Kernel EntryPoint code",
+  );
   evidenceCode(
     await readEvidence(read, { type: "code", chainId: deployment.chainId, address: account }),
     "Kernel existing account code",
@@ -854,8 +953,29 @@ export async function bindKernelV4ExistingAccount(value: {
     }),
     "Kernel account implementation",
   );
-  if (implementation !== deployment.implementation) {
-    return evidenceInvalid("Kernel account implementation does not match the deployment profile");
+  if (implementation === deployment.implementation) {
+    evidenceCode(
+      await readEvidence(read, {
+        type: "code",
+        chainId: deployment.chainId,
+        address: implementation,
+      }),
+      "Kernel implementation code",
+    );
+  } else {
+    const reviewed = deployment.reviewedImplementations.find(
+      (entry) => entry.address === implementation,
+    );
+    if (!reviewed) return evidenceInvalid("Kernel account implementation is not reviewed");
+    evidenceCodeHash(
+      await readEvidence(read, {
+        type: "runtime_code_hash",
+        chainId: deployment.chainId,
+        address: implementation,
+      }),
+      reviewed.runtimeCodeHash,
+      "Kernel reviewed implementation code",
+    );
   }
   const root = await readEvidence(read, {
     type: "kernel_v4_account_root",
@@ -880,11 +1000,12 @@ export async function bindKernelV4ExistingAccount(value: {
     state: "deployed",
     chainId: deployment.chainId,
     entryPoint: deployment.entryPoint.address,
-    implementation: deployment.implementation,
+    implementation,
     account,
     rootValidator: root as `0x${string}`,
   });
   EXISTING_ACCOUNTS.add(descriptor);
+  ACCOUNT_DEPLOYMENTS.set(descriptor, deployment);
   return descriptor;
 }
 

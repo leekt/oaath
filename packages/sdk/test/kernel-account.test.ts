@@ -136,6 +136,68 @@ describe("version-agnostic Kernel nonce key", () => {
 });
 
 describe("version-agnostic Kernel account binding", () => {
+  it("accepts only the profile's reviewed address and runtime hash", async () => {
+    const implementation = `0x${"ab".repeat(20)}` as const;
+    const runtimeCodeHash = `0x${"cd".repeat(32)}` as const;
+    const reviewed = [{ address: implementation, runtimeCodeHash }];
+    const deployment = kernelDeployment({ chainId, reviewedImplementations: reviewed });
+    reviewed.length = 0;
+    expect(deployment.reviewedImplementations).toHaveLength(1);
+    expect(Object.isFrozen(deployment.reviewedImplementations[0])).toBe(true);
+    const evidence = reads(implementation);
+    const original = evidence.read.getMockImplementation()!;
+    evidence.read.mockImplementation(async (request) =>
+      request.type === "runtime_code_hash" && request.address === implementation
+        ? runtimeCodeHash
+        : original(request),
+    );
+    const bound = await bindKernelAccount({
+      chainId,
+      address: account,
+      reads: evidence.reads,
+      deployment,
+    });
+    expect(bound.implementation).toBe(implementation);
+    expect(kernelAccountDeployment(bound)).toBe(deployment);
+    expect(
+      evidence.read.mock.calls.some(
+        ([request]) => request.type === "kernel_factory_implementation",
+      ),
+    ).toBe(false);
+    await expect(
+      bindKernelAccount({ chainId, address: account, reads: evidence.reads }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_binding_mismatch" });
+    await expect(
+      bindKernelAccount({
+        chainId,
+        address: account,
+        reads: evidence.reads,
+        deployment: kernelDeployment({
+          chainId,
+          reviewedImplementations: [
+            { address: implementation, runtimeCodeHash: `0x${"ef".repeat(32)}` },
+          ],
+        }),
+      }),
+    ).rejects.toMatchObject({ code: "kernel_runtime_evidence_invalid" });
+    expect(() =>
+      kernelDeployment({
+        chainId,
+        kernelVersion: "0.3.3",
+        reviewedImplementations: [{ address: implementation, runtimeCodeHash }],
+      }),
+    ).toThrow();
+    expect(() =>
+      kernelDeployment({
+        chainId,
+        reviewedImplementations: [
+          { address: implementation, runtimeCodeHash },
+          { address: implementation, runtimeCodeHash },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it.each([
     [v33Implementation, "0.3.3", "kernel-v3.3-entrypoint-v0.7"],
     [KERNEL_V4_UUPS_IMPLEMENTATION_V09, "0.4.0", "kernel-v4-uups-entrypoint-v0.9"],

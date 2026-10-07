@@ -85,6 +85,7 @@ jobs:
       - run: bun run release:check
       - run: bun run smoke:protocol
       - run: bun run smoke:cetane
+      - run: bun run smoke:kernel-import
       - run: bun run smoke:passkey
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
