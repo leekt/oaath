@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-07T04:59:15.288Z",
+  "environment": "local Apple Silicon; release Rust API; PostgreSQL; loopback HTTP; concurrency 16; 20 warmups",
+  "requests": 1000,
+  "elapsedMs": 58.13,
+  "requestsPerSecond": 17204.3,
+  "p50Ms": 0.833,
+  "p95Ms": 1.287,
+  "p99Ms": 3.177,
+  "statusRpcMethods": 0,
+  "sdk": {
+    "rootMinifiedBytes": 1672,
+    "rootGzipBytes": 886,
+    "approvalGzipBytes": 536,
+    "rootRuntimeDependencies": 0
+  },
+  "tailnet": {
+    "health": true,
+    "authenticatedApi": true,
+    "authenticationRequired": true,
+    "exactOrigin": true,
+    "privateFilesExcluded": true
+  }
+}
