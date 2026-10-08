@@ -89,6 +89,17 @@ const POINTER_VERSION = "oaath.oauth-realm-binding/v1" as const;
 const POINTER_DOMAIN = "@oaath/sdk:oauth-realm-binding" as const;
 const PENDING_VERSION = "oaath.oauth-pending-grant/v1" as const;
 const PENDING_DOMAIN = "@oaath/sdk:oauth-pending-grant" as const;
+/** One bounded attempt at the issuer's off-chain invalidation. */
+const ISSUER_INVALIDATION_TIMEOUT_MS = 10_000;
+
+/** The exact text the Grant's session key signs; the relay rebuilds it. */
+export function issuerInvalidationMessage(
+  grantId: string,
+  capabilityHash: string,
+  issuedAt: number,
+): string {
+  return `OAAth grant invalidation v1\ngrant: ${grantId}\ncapability: ${capabilityHash}\nissued: ${issuedAt}`;
+}
 
 /** A requested Grant the account root has not decided yet. */
 export interface OaathPendingPermission {
@@ -99,18 +110,37 @@ export interface OaathPendingPermission {
   readonly expiresAt: number;
 }
 
+/**
+ * The issuer's answer to a revoke's off-chain invalidation: `invalidated`
+ * (recorded, or already), `refused` (the issuer answered but did not accept
+ * it), `unavailable` (no answer within the bound), or `not-attempted` (the
+ * Grant was not locally revoking, so nothing was sent).
+ */
+export type OaathIssuerInvalidation = "invalidated" | "refused" | "unavailable" | "not-attempted";
+
+/**
+ * An OAuth-approved Grant. `revoke()` revokes it locally exactly as any Grant,
+ * then asks the issuer once to invalidate it, signed by the Grant's own session
+ * key. The issuer's answer never blocks or undoes the local revocation.
+ */
+export interface OaathOAuthGrantHandle extends Omit<OaathGrantHandle, "revoke"> {
+  readonly revoke: () => Promise<Readonly<{ issuer: OaathIssuerInvalidation }>>;
+}
+
 /** The OAuth realm's connection: a request may wait for the account root. */
-export interface OaathOAuthConnection extends Omit<OaathConnection, "requestPermission"> {
+export interface OaathOAuthConnection
+  extends Omit<OaathConnection, "requestPermission" | "resume"> {
   readonly requestPermission: (
     input: unknown,
-  ) => Promise<Readonly<OaathGrantHandle> | Readonly<OaathPendingPermission>>;
+  ) => Promise<Readonly<OaathOAuthGrantHandle> | Readonly<OaathPendingPermission>>;
+  readonly resume: () => Promise<Readonly<OaathOAuthGrantHandle> | null>;
   /**
    * One token request for the journaled pending Grant: the Grant once the root
    * approved, the same pending result while it has not, or null when nothing is
    * pending. A rejection fails with `oaath_client_permission_rejected`.
    */
   readonly redeemPending: () => Promise<
-    Readonly<OaathGrantHandle> | Readonly<OaathPendingPermission> | null
+    Readonly<OaathOAuthGrantHandle> | Readonly<OaathPendingPermission> | null
   >;
 }
 
@@ -296,7 +326,13 @@ export function createOAuthRealm(
     const operatorCredential = deriveOperatorCredentialProfile(key);
     if (operatorCredential === null)
       return clientFail("oaath_client_internal", "the session key has no credential profile");
-    return { deviceId: persisted.deviceId, key, operatorCredential };
+    return {
+      deviceId: persisted.deviceId,
+      key,
+      operatorCredential,
+      signMessage: (message: string) =>
+        privateKeyToAccount(persisted.privateKey).signMessage({ message }),
+    };
   }
 
   /** The realm for the account one approved request names. */
@@ -474,6 +510,69 @@ export function createOAuthRealm(
     });
   }
 
+  /**
+   * One bounded request for the issuer's off-chain invalidation of a locally
+   * revoking Grant, proven by its own session key. Never throws.
+   */
+  async function invalidateAtIssuer(grantId: string): Promise<OaathIssuerInvalidation> {
+    try {
+      const owned = await storage();
+      const grants = new GrantStore({ ...owned.grants, close: async () => undefined });
+      const grant = (await grants.get(grantId))?.value;
+      const capabilityHash = grant?.approval?.capabilityHash;
+      if (!grant || (grant.state !== "revoking" && grant.state !== "revoked") || !capabilityHash)
+        return "not-attempted";
+      const issuedAt = now();
+      const signature = await (await session()).signMessage(
+        issuerInvalidationMessage(grantId, capabilityHash, issuedAt),
+      );
+      const response = await fetch(
+        `${popupOptions.issuer}/oauth/grants/${encodeURIComponent(grantId)}/invalidate`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            capability_hash: capabilityHash,
+            operator_proof: { issued_at: issuedAt, signature },
+          }),
+          credentials: "omit",
+          cache: "no-store",
+          signal: AbortSignal.timeout(ISSUER_INVALIDATION_TIMEOUT_MS),
+        },
+      );
+      if (response.ok) return "invalidated";
+      return response.status >= 500 ? "unavailable" : "refused";
+    } catch {
+      return "unavailable";
+    }
+  }
+
+  /** The Grant handle, whose revoke also asks the issuer to invalidate it. */
+  function withIssuerRevoke(
+    grantId: string,
+    handle: Readonly<OaathGrantHandle>,
+  ): Readonly<OaathOAuthGrantHandle> {
+    const descriptors = Object.getOwnPropertyDescriptors(handle);
+    return Object.freeze(
+      Object.defineProperties({} as OaathOAuthGrantHandle, {
+        ...descriptors,
+        revoke: {
+          enumerable: true,
+          value: async () => {
+            let failure: unknown = null;
+            await handle.revoke().catch((error: unknown) => {
+              failure = error;
+            });
+            // Local revocation is already durable; the issuer's answer only reports.
+            const issuer = await invalidateAtIssuer(grantId);
+            if (failure !== null) throw failure;
+            return Object.freeze({ issuer });
+          },
+        },
+      }),
+    );
+  }
+
   /** Verifies a released Grant and adopts it through the account's connection. */
   async function adopt(
     token: Readonly<Record<string, unknown>>,
@@ -484,7 +583,10 @@ export function createOAuthRealm(
     assertOpen();
     const connection = await connectionFor(request);
     await writePointer(request);
-    return adoptApprovedPermission(connection, request, artifact);
+    return withIssuerRevoke(
+      request.requestId,
+      await adoptApprovedPermission(connection, request, artifact),
+    );
   }
 
   /** The approved request must be exactly the one this browser asked for. */
@@ -547,7 +649,7 @@ export function createOAuthRealm(
 
   async function requestPermission(
     input: unknown,
-  ): Promise<Readonly<OaathGrantHandle> | Readonly<OaathPendingPermission>> {
+  ): Promise<Readonly<OaathOAuthGrantHandle> | Readonly<OaathPendingPermission>> {
     assertOpen();
     // Open inside the user's gesture, before anything is awaited.
     const popup = launch ? null : openAuthorizationPopup();
@@ -589,7 +691,7 @@ export function createOAuthRealm(
   }
 
   async function redeemPending(): Promise<
-    Readonly<OaathGrantHandle> | Readonly<OaathPendingPermission> | null
+    Readonly<OaathOAuthGrantHandle> | Readonly<OaathPendingPermission> | null
   > {
     assertOpen();
     const journal = await readPending();
@@ -621,11 +723,12 @@ export function createOAuthRealm(
     }
   }
 
-  async function resume(): Promise<Readonly<OaathGrantHandle> | null> {
+  async function resume(): Promise<Readonly<OaathOAuthGrantHandle> | null> {
     assertOpen();
     const request = await readPointer();
     if (request === null) return null;
-    return (await connectionFor(request)).resume();
+    const handle = await (await connectionFor(request)).resume();
+    return handle === null ? null : withIssuerRevoke(request.requestId, handle);
   }
 
   const facade: Readonly<OaathOAuthConnection> = Object.freeze({

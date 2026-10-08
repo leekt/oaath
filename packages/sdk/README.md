@@ -182,6 +182,14 @@ Grant once the root approved, the same pending result while it has not, or
 rejection fails with `oaath_client_permission_rejected`; it, an expired or spent
 code (`invalid_grant`), and the request's expiry clear the journal.
 
+An OAuth-approved Grant's `revoke()` revokes it locally exactly as any Grant,
+then makes one bounded request asking the issuer to invalidate it
+(`POST {issuer}/oauth/grants/{id}/invalidate`), signed by the Grant's own
+session key over `OAAth grant invalidation v1` with the grant, capability hash
+and issue time. It resolves to `{ issuer }`: `invalidated`, `refused`,
+`unavailable` or `not-attempted`. The issuer's answer never blocks or undoes the
+local revocation, and a later `revoke()` asks again.
+
 ## Owner operations
 
 For an existing Kernel account, execute calls directly as its root owner. The

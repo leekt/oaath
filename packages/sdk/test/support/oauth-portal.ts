@@ -33,6 +33,8 @@ export interface OAuthPortalOptions {
   readonly root?: Readonly<{ credential: object; key: Readonly<KeyProfile> }>;
   /** The root's signed owner operation for a PAR's `oaath_operation` request. */
   readonly signOperation?: (request: unknown) => Promise<unknown>;
+  /** The issuer's answer to an off-chain invalidation; `"down"` never answers. */
+  readonly invalidation?: number | "down";
   /** The id_token `oaath_accounts` claim; defaults to the account, as root. */
   readonly accounts?: unknown;
 }
@@ -79,6 +81,7 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
   let rootDecision: "approve" | "reject" | null = null;
   let redeemed = false;
   const tokenCalls = { count: 0 };
+  const invalidations: { grantId: string; body: Record<string, unknown> }[] = [];
 
   /** The portal's decision for one authorization URL, as its redirect query. */
   async function authorize(href: string): Promise<Record<string, string>> {
@@ -202,6 +205,18 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
       pars.set(id, form);
       return json({ request_uri: `urn:ietf:params:oauth:request_uri:${id}`, expires_in: 300 }, 201);
     }
+    const invalidating = /^\/oauth\/grants\/([^/]+)\/invalidate$/u.exec(url.pathname);
+    if (invalidating) {
+      invalidations.push({
+        grantId: decodeURIComponent(invalidating[1] ?? ""),
+        body: JSON.parse(String(init?.body)),
+      });
+      if (options.invalidation === "down") throw new TypeError("fetch failed");
+      return json(
+        { evidenceHash: `0x${"ee".repeat(32)}`, invalidatedAt: 0 },
+        options.invalidation ?? 200,
+      );
+    }
     if (url.pathname === "/oauth/token") {
       tokenCalls.count += 1;
       if (behaviour !== "pending") return json(token);
@@ -251,5 +266,5 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
   const decide = (decision: "approve" | "reject") => {
     rootDecision = decision;
   };
-  return { approvals, window, popups, pars, root, launch, decide, tokenCalls };
+  return { approvals, window, popups, pars, root, launch, decide, tokenCalls, invalidations };
 }
