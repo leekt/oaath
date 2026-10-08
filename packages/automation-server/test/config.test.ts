@@ -26,8 +26,27 @@ describe("configFromEnv", () => {
       rpcUrl: "http://127.0.0.1:8545",
       bundlerUrl: "http://127.0.0.1:4337",
       paymasterUrl: null,
+      paymasterApiKey: null,
     });
     expect(config.budgets).toEqual({ rpc: 3000, bundler: 300, paymaster: 100, windowSeconds: 600 });
+  });
+
+  it("captures an optional paymaster API key only alongside its paymaster", () => {
+    const config = configFromEnv(
+      {
+        ...env,
+        AUTOMATION_PAYMASTER_URL_31337: "http://127.0.0.1:4338",
+        AUTOMATION_PAYMASTER_API_KEY_31337: "pm-key",
+      },
+      [definition],
+    );
+    expect(config.chains.get(31337)).toMatchObject({
+      paymasterUrl: "http://127.0.0.1:4338",
+      paymasterApiKey: "pm-key",
+    });
+    expect(() =>
+      configFromEnv({ ...env, AUTOMATION_PAYMASTER_API_KEY_31337: "pm-key" }, [definition]),
+    ).toThrow(expect.objectContaining({ variable: "AUTOMATION_PAYMASTER_API_KEY_31337" }));
   });
 
   it.each([

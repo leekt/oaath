@@ -11,6 +11,7 @@ import {
   LEASE_SECONDS,
   type Observation,
   type OperationGateway,
+  paymasterPayer,
   processRun,
 } from "../src/executor.js";
 import { createOperationStore } from "../src/store.js";
@@ -124,6 +125,21 @@ async function drain(context: ServiceContext, open: () => Promise<OperationGatew
     await processRun(context, claimed, open);
   }
 }
+
+describe("paymasterPayer", () => {
+  const endpoints = { rpcUrl: "http://rpc", bundlerUrl: "http://bundler" };
+
+  it("sends the configured API key as the ERC-7677 context, else an empty one", () => {
+    expect(
+      paymasterPayer({ ...endpoints, paymasterUrl: "http://pm", paymasterApiKey: "pm-key" }),
+    ).toEqual({ kind: "paymaster-service", url: "http://pm", context: { apiKey: "pm-key" } });
+    expect(
+      paymasterPayer({ ...endpoints, paymasterUrl: "http://pm", paymasterApiKey: null }),
+    ).toEqual({ kind: "paymaster-service", url: "http://pm", context: {} });
+    expect(paymasterPayer({ ...endpoints, paymasterUrl: null, paymasterApiKey: null })).toBeNull();
+    expect(paymasterPayer(undefined)).toBeNull();
+  });
+});
 
 describe.skipIf(!postgresAvailable)("executor", () => {
   let cluster: TestCluster;

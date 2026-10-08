@@ -13,23 +13,30 @@ an owner operation, backend automation through
 | Route | Handling |
 | --- | --- |
 | `/`, `/callback`, `/assets/*` | The built page, GET/HEAD only, strict CSP (`connect-src` self and the issuer). |
-| `/config.json` | Issuer, `OAATH_CLIENT_ID` and chain settings from Worker vars; `sponsored` when a key is set. |
+| `/config.json` | Issuer, `OAATH_CLIENT_ID` and chain settings from Worker vars; `sponsored` when the `PAYMASTER` binding and `PAYMASTER_API_KEY` are set. |
 | `/rpc/chain`, `/rpc/bundler` | Same-origin, allow-listed, per-IP budgeted JSON-RPC to `CHAIN_RPC_URL` / `BUNDLER_URL`. |
-| `/paymaster/421614` | Same-origin ERC-7677 proxy to `PAYMASTER_URL?apikey=PIMLICO_API_KEY`; sponsors only the demo's own call. 503 without a key. |
+| `/paymaster/421614` | Same-origin ERC-7677 proxy to paymaster-rs through the `PAYMASTER` VPC binding, with `Authorization: Bearer PAYMASTER_API_KEY`; sponsors only the demo's own call and replaces the context with `{}`. 503 without the binding or key. |
 | `/automation/session` | Same-origin, per-IP budgeted: verifies the login's id_token (issuer JWKS, this client) and creates a one-hour session at `AUTOMATION_URL` with the `AUTOMATION_APP_TOKEN` secret. 503 without it. |
 
 Every upstream request is made once, with no fallback; a send without an answer
 gets a bare 504 and is only observed afterwards. `pm_getPaymasterData` spends a
 per-IP budget and one global budget (`SPONSOR_GLOBAL_LIMIT`, a single-key
-Cloudflare rate limit, per minute). Set a daily or total cap in the Pimlico
-sponsorship policy as well.
+Cloudflare rate limit, per minute). Set a budget in paymaster-rs's tenant
+configuration as well.
+
+Sponsorship uses [paymaster-rs](https://github.com/leekt/paymaste_rs), our own
+ERC-7677 service: Pimlico, ZeroDev and Alchemy paymasters do not support
+EntryPoint 0.9, which Kernel v4 accounts use. It listens on `127.0.0.1:4338`
+on the VM, so the Worker reaches it through a Workers VPC service. Create that
+service and put its id in `vpc_services[PAYMASTER].service_id` in
+`wrangler.jsonc` (it ships as the placeholder `PAYMASTER_VPC_SERVICE_ID`).
 
 ## Configure and deploy
 
 ```sh
 bun run --filter @oaath/demo test         # Worker unit tests
 bun run --filter @oaath/demo test:e2e     # relay binary, portal and demo Workers, Anvil, headless Chrome
-cd demo && bunx wrangler@4.147.0 secret put PIMLICO_API_KEY   # optional: enables sponsorship
+cd demo && bunx wrangler@4.147.0 secret put PAYMASTER_API_KEY   # optional: enables sponsorship
 bun run --filter @oaath/demo deploy:check
 cd demo && bunx wrangler@4.147.0 deploy
 ```
@@ -44,5 +51,4 @@ Automation runs on the service at `AUTOMATION_URL`, configured with
 in its `AUTOMATION_DEFINITIONS` and `https://oaath-demo.taek.tech` in its
 `AUTOMATION_ALLOWED_ORIGINS`. Put the demo's application token there (as
 `demo:<sha256>`) and here with `wrangler secret put AUTOMATION_APP_TOKEN`. The
-page creates and watches plans at the service directly with the session token. `PIMLICO_SPONSORSHIP_POLICY_ID` (optional var) is sent as
-the ERC-7677 context.
+page creates and watches plans at the service directly with the session token.

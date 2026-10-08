@@ -12,6 +12,11 @@ export interface ChainEndpoints {
   readonly bundlerUrl: string;
   /** An ERC-7677 paymaster service; operations are self-funded without it. */
   readonly paymasterUrl: string | null;
+  /**
+   * The paymaster service's API key, sent as the ERC-7677 context `{ apiKey }`
+   * (paymaster-rs); null sends `{}`. Never logged.
+   */
+  readonly paymasterApiKey: string | null;
 }
 
 export interface AutomationServiceConfig {
@@ -125,15 +130,21 @@ export function configFromEnv(
   const chains = new Map<number, ChainEndpoints>();
   for (const chainId of new Set(definitions.map((definition) => definition.chainId))) {
     const paymaster = env[`AUTOMATION_PAYMASTER_URL_${chainId}`];
+    const apiKey = env[`AUTOMATION_PAYMASTER_API_KEY_${chainId}`]?.trim() || null;
+    const paymasterUrl =
+      paymaster === undefined || paymaster === ""
+        ? null
+        : httpUrl(env, `AUTOMATION_PAYMASTER_URL_${chainId}`, paymaster);
+    // A key without a paymaster would be silently unused.
+    if (apiKey !== null && paymasterUrl === null)
+      throw new ConfigError(`AUTOMATION_PAYMASTER_API_KEY_${chainId}`);
     chains.set(
       chainId,
       Object.freeze({
         rpcUrl: httpUrl(env, `AUTOMATION_RPC_URL_${chainId}`),
         bundlerUrl: httpUrl(env, `AUTOMATION_BUNDLER_URL_${chainId}`),
-        paymasterUrl:
-          paymaster === undefined || paymaster === ""
-            ? null
-            : httpUrl(env, `AUTOMATION_PAYMASTER_URL_${chainId}`, paymaster),
+        paymasterUrl,
+        paymasterApiKey: apiKey,
       }),
     );
   }

@@ -1,6 +1,6 @@
 /**
  * The demo's chain, bundler and paymaster proxies. They spend shared providers
- * (and a sponsorship key) on behalf of anyone who loads the demo, so every
+ * (and a paymaster-rs key) on behalf of anyone who loads the demo, so every
  * request is bounded:
  *
  * - an allow-listed method set per role; at most `MAX_BATCH` calls per request;
@@ -14,12 +14,18 @@
  *   observes it, and this proxy never repeats it;
  * - the paymaster sponsors only the demo's own call (`DEMO_TARGET`, zero value,
  *   `DEMO_SELECTOR`) on chain 421614 through EntryPoint 0.9, decoded from the
- *   operation's Kernel callData. The context the page sends is replaced by the
- *   configured sponsorship policy.
+ *   operation's Kernel callData. The context the page sends is replaced by `{}`.
  *
- * Only `content-type` reaches a provider. Upstream URLs and the Pimlico key are
- * never logged or returned; provider answers pass through unchanged only when
- * they are JSON-RPC.
+ * Sponsorship goes to paymaster-rs (leekt/paymaste_rs), our own ERC-7677
+ * service: the hosted paymasters (Pimlico, ZeroDev, Alchemy) do not support
+ * EntryPoint 0.9, which Kernel v4 accounts use. It listens only on the VM's
+ * loopback, so the Worker reaches it through the `PAYMASTER` Workers VPC
+ * service binding and authenticates with `Authorization: Bearer
+ * PAYMASTER_API_KEY`.
+ *
+ * Only `content-type` (and, for paymaster-rs, that bearer key) reaches a
+ * provider. Upstream URLs and the paymaster key are never logged or returned;
+ * provider answers pass through unchanged only when they are JSON-RPC.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -41,12 +47,15 @@ export interface ProxyEnv {
   readonly CHAIN_RPC_URL: string;
   /** ERC-4337 bundler endpoint for 421614. */
   readonly BUNDLER_URL: string;
-  /** ERC-7677 paymaster endpoint without the key; `?apikey=` is appended. */
-  readonly PAYMASTER_URL: string;
-  /** Secret. Unset: the paymaster route answers 503. */
-  readonly PIMLICO_API_KEY?: string;
-  /** Optional Pimlico sponsorship policy, sent as the ERC-7677 context. */
-  readonly PIMLICO_SPONSORSHIP_POLICY_ID?: string;
+  /** Workers VPC service: paymaster-rs on the VM's loopback. Unset: the paymaster route answers 503. */
+  readonly PAYMASTER?: { fetch(request: Request): Promise<Response> };
+  /** Secret: paymaster-rs bearer key. Unset: the paymaster route answers 503. */
+  readonly PAYMASTER_API_KEY?: string;
+}
+
+/** True when the paymaster-rs binding and its key are both configured. */
+export function sponsorshipConfigured(env: ProxyEnv): boolean {
+  return Boolean(env.PAYMASTER && env.PAYMASTER_API_KEY);
 }
 
 export type Role = "chain" | "bundler" | "paymaster";
@@ -161,7 +170,7 @@ async function spend(limiter: RateLimit | undefined, key: string): Promise<boole
 }
 
 /** The paymaster call's sponsorship refusal, or null; its context is replaced in place. */
-function sponsorship(call: Call, env: ProxyEnv): string | null {
+function sponsorship(call: Call): string | null {
   const [operation, entryPoint, chainId] = call.params;
   if (call.params.length !== 4) return "invalid paymaster params";
   if (String(entryPoint).toLowerCase() !== ENTRY_POINT_V09) return "unsupported EntryPoint";
@@ -170,24 +179,14 @@ function sponsorship(call: Call, env: ProxyEnv): string | null {
   if (BigInt(chainId) !== BigInt(DEMO_CHAIN_ID)) return "unsupported chain";
   if (!isDemoCall((operation as { callData?: unknown } | null)?.callData))
     return "the demo sponsors only its own call";
-  call.params[3] = env.PIMLICO_SPONSORSHIP_POLICY_ID
-    ? { sponsorshipPolicyId: env.PIMLICO_SPONSORSHIP_POLICY_ID }
-    : {};
+  call.params[3] = {};
   return null;
-}
-
-function upstreamUrl(role: Role, env: ProxyEnv): string {
-  if (role === "chain") return env.CHAIN_RPC_URL;
-  if (role === "bundler") return env.BUNDLER_URL;
-  const url = new URL(env.PAYMASTER_URL);
-  url.searchParams.set("apikey", env.PIMLICO_API_KEY ?? "");
-  return url.toString();
 }
 
 /** Serves one same-origin proxy request; the caller has checked the path and origin. */
 export async function proxy(role: Role, request: Request, env: ProxyEnv): Promise<Response> {
   if (request.method !== "POST") return reply(405, { error: "Unsupported method" });
-  if (role === "paymaster" && !env.PIMLICO_API_KEY)
+  if (role === "paymaster" && !sponsorshipConfigured(env))
     return reply(503, { error: "Sponsorship is not configured" });
   if (Number(request.headers.get("content-length") ?? "0") > MAX_BODY_BYTES)
     return reply(413, { error: "Request too large" });
@@ -212,7 +211,7 @@ export async function proxy(role: Role, request: Request, env: ProxyEnv): Promis
     if (!METHODS[role].has(call.method)) return refused(call, "method not allowed by the demo");
     if (role === "paymaster") {
       if (batch) return reply(400, { error: "Paymaster calls are not batched" });
-      const refusal = sponsorship(call, env);
+      const refusal = sponsorship(call);
       if (refusal) return refused(call, refusal);
     }
   }
@@ -230,25 +229,38 @@ export async function proxy(role: Role, request: Request, env: ProxyEnv): Promis
     }
   }
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(upstreamUrl(role, env), {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (role === "paymaster") headers.authorization = `Bearer ${env.PAYMASTER_API_KEY}`;
+  const forwarded = new Request(
+    // The VPC binding pins the paymaster's destination; this URL only sets its path.
+    role === "chain"
+      ? env.CHAIN_RPC_URL
+      : role === "bundler"
+        ? env.BUNDLER_URL
+        : "http://paymaster.internal/rpc",
+    {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers,
       body: JSON.stringify(batch ? captured : captured[0]),
       // Workers accepts only "follow" or "manual"; a 3xx is not ok and is refused below.
       redirect: "manual",
       signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    },
+  );
+  let upstream: Response;
+  try {
+    upstream = await (role === "paymaster"
+      ? (env.PAYMASTER as NonNullable<ProxyEnv["PAYMASTER"]>).fetch(forwarded)
+      : fetch(forwarded));
   } catch {
     // No answer is not a refusal: a send may still land. A bare 504 keeps it
     // uncertain in the SDK, which observes and never resends.
     return new Response(null, { status: 504, headers: { "Cache-Control": "no-store" } });
   }
   let body = upstream.ok ? await boundedText(upstream) : null;
-  // A provider that echoes its URL must not hand the key to the page.
-  if (body !== null && role === "paymaster" && env.PIMLICO_API_KEY)
-    body = body.replaceAll(env.PIMLICO_API_KEY, "[redacted]");
+  // A provider that echoes its request must not hand the key to the page.
+  if (body !== null && role === "paymaster" && env.PAYMASTER_API_KEY)
+    body = body.replaceAll(env.PAYMASTER_API_KEY, "[redacted]");
   let answer: unknown = null;
   try {
     answer = body === null ? null : JSON.parse(body);

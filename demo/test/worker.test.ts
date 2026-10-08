@@ -7,7 +7,7 @@ import worker, { DEMO_AUTOMATION, type Env } from "../worker/index.js";
 import { DEMO_SELECTOR, DEMO_TARGET, ENTRY_POINT_V09, isDemoCall } from "../worker/rpc.js";
 
 const ORIGIN = "https://oaath-demo.taek.tech";
-const KEY = "pim_SECRET_test_key_123";
+const KEY = "pmrs_SECRET_test_key_123";
 const allow = { limit: async () => ({ success: true }) };
 
 function environment(overrides: { [K in keyof Env]?: Env[K] | undefined } = {}): Env {
@@ -22,8 +22,9 @@ function environment(overrides: { [K in keyof Env]?: Env[K] | undefined } = {}):
     EXPLORER_TX_URL: "https://sepolia.arbiscan.io/tx/",
     CHAIN_RPC_URL: "https://chain.test/rpc",
     BUNDLER_URL: "https://bundler.test/rpc",
-    PAYMASTER_URL: "https://paymaster.test/v2/421614/rpc",
-    PIMLICO_API_KEY: KEY,
+    // The VPC binding; tests route it through the stubbed global fetch.
+    PAYMASTER: { fetch: (request: Request) => fetch(request) },
+    PAYMASTER_API_KEY: KEY,
     RPC_LIMIT: allow,
     SEND_LIMIT: allow,
     SPONSOR_LIMIT: allow,
@@ -144,11 +145,13 @@ describe("demo worker pages", () => {
       sponsored: true,
     });
     expect(text).not.toContain(KEY);
-    const unsponsored = await worker.fetch(
-      new Request(`${ORIGIN}/config.json`),
-      environment({ PIMLICO_API_KEY: undefined }),
-    );
-    expect((await unsponsored.json()).sponsored).toBe(false);
+    for (const missing of [{ PAYMASTER_API_KEY: undefined }, { PAYMASTER: undefined }]) {
+      const unsponsored = await worker.fetch(
+        new Request(`${ORIGIN}/config.json`),
+        environment(missing),
+      );
+      expect((await unsponsored.json()).sponsored).toBe(false);
+    }
   });
 });
 
@@ -265,14 +268,12 @@ describe("demo worker proxies", () => {
 });
 
 describe("demo paymaster", () => {
-  it("answers 503 when no key is configured", async () => {
+  it("answers 503 without the paymaster binding or key", async () => {
     const requests = upstream(() => Response.json({}));
-    const response = await post(
-      "/paymaster/421614",
-      sponsor(DEMO_CALL),
-      environment({ PIMLICO_API_KEY: undefined }),
-    );
-    expect(response.status).toBe(503);
+    for (const missing of [{ PAYMASTER_API_KEY: undefined }, { PAYMASTER: undefined }]) {
+      const response = await post("/paymaster/421614", sponsor(DEMO_CALL), environment(missing));
+      expect(response.status).toBe(503);
+    }
     expect(requests).toHaveLength(0);
   });
 
@@ -316,33 +317,44 @@ describe("demo paymaster", () => {
     ).toBe(false);
   });
 
-  it("forwards with the key and the configured policy, and never leaks the key", async () => {
+  it("forwards through the binding with a bearer key and empty context, and never leaks the key", async () => {
     const logged: unknown[] = [];
     for (const level of ["log", "info", "warn", "error", "debug"] as const)
       vi.spyOn(console, level).mockImplementation((...args) => void logged.push(...args));
-    const requests = upstream(async (request) =>
-      // A provider echoing its own URL must not hand the key to the page.
+    // Nothing reaches the public network: only the binding is called.
+    const publicFetches = upstream(() => Response.json({}));
+    const requests: Request[] = [];
+    let answer = async (request: Request) =>
+      // A provider echoing its request must not hand the key to the page.
       Response.json({
         jsonrpc: "2.0",
         id: 1,
-        error: { code: -32000, message: `rejected at ${request.url}` },
-      }),
-    );
-    const env = environment({ PIMLICO_SPONSORSHIP_POLICY_ID: "sp_demo" });
-    const response = await post("/paymaster/421614", sponsor(DEMO_CALL), env);
+        error: { code: -32000, message: `rejected ${request.headers.get("authorization")}` },
+      });
+    const env = environment({
+      PAYMASTER: {
+        fetch: async (request: Request) => {
+          requests.push(request.clone());
+          return answer(request);
+        },
+      },
+    });
+    const page = sponsor(DEMO_CALL);
+    (page.params[3] as Record<string, unknown>).apiKey = "page-chosen";
+    const response = await post("/paymaster/421614", page, env);
     const text = await response.text();
     expect(text).not.toContain(KEY);
     expect(text).toContain("[redacted]");
     expect(requests).toHaveLength(1);
-    const url = new URL(requests[0]!.url);
-    expect(`${url.origin}${url.pathname}`).toBe("https://paymaster.test/v2/421614/rpc");
-    expect(url.searchParams.get("apikey")).toBe(KEY);
+    expect(requests[0]!.headers.get("authorization")).toBe(`Bearer ${KEY}`);
+    expect([...requests[0]!.headers.keys()].sort()).toEqual(["authorization", "content-type"]);
     const forwarded = (await requests[0]!.json()) as { params: unknown[] };
-    expect(forwarded.params[3]).toEqual({ sponsorshipPolicyId: "sp_demo" });
+    expect(forwarded.params[3]).toEqual({});
+    expect(publicFetches).toHaveLength(0);
 
-    upstream(() => {
-      throw new Error(`fetch failed for https://paymaster.test/?apikey=${KEY}`);
-    });
+    answer = async () => {
+      throw new Error(`connection reset for Bearer ${KEY}`);
+    };
     const lost = await post(
       "/paymaster/421614",
       sponsor(DEMO_CALL, "pm_getPaymasterStubData"),

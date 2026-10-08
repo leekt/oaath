@@ -59,7 +59,8 @@ const V33 = fileURLToPath(
 );
 const PING = fileURLToPath(new URL("../automation/demo-ping.automation.json", import.meta.url));
 const DEMO_ORIGIN = "https://oaath-demo.taek.tech";
-const PIMLICO_KEY = "e2e-fixture-key";
+const PAYMASTER_KEY = "e2e-fixture-key";
+const AUTOMATION_PAYMASTER_KEY = "e2e-automation-paymaster-key";
 const WALLET = privateKeyToAccount(`0x${"5a".repeat(32)}`);
 const WALLET_ADDRESS = WALLET.address.toLowerCase() as `0x${string}`;
 let walletSignatures = 0;
@@ -385,7 +386,7 @@ async function startLocalArbitrumSepolia() {
   });
 
   // Fixture ERC-7677 service for that paymaster; it records what reached it.
-  const sponsorships: { method: string; apikey: string | null; context: unknown }[] = [];
+  const sponsorships: { method: string; authorization: string | null; context: unknown }[] = [];
   const paymasterPort = await listen(async (request, response) => {
     const rpc = JSON.parse(String(await body(request))) as {
       id: number;
@@ -394,7 +395,7 @@ async function startLocalArbitrumSepolia() {
     };
     sponsorships.push({
       method: rpc.method,
-      apikey: new URL(request.url ?? "/", "http://x").searchParams.get("apikey"),
+      authorization: request.headers.authorization ?? null,
       context: rpc.params[3],
     });
     const result =
@@ -587,8 +588,17 @@ beforeAll(async () => {
     EXPLORER_TX_URL: "https://sepolia.arbiscan.io/tx/",
     CHAIN_RPC_URL: local.chain.url,
     BUNDLER_URL: local.bundlerUrl,
-    PAYMASTER_URL: local.paymasterUrl,
-    PIMLICO_API_KEY: PIMLICO_KEY,
+    // The paymaster-rs VPC binding, pointed at the fixture paymaster.
+    PAYMASTER: {
+      fetch: (request) =>
+        fetch(local.paymasterUrl, {
+          method: request.method,
+          headers: request.headers,
+          body: request.body,
+          duplex: "half",
+        } as RequestInit),
+    },
+    PAYMASTER_API_KEY: PAYMASTER_KEY,
     RPC_LIMIT: { limit: async () => ({ success: true }) },
     SEND_LIMIT: { limit: async () => ({ success: true }) },
     SPONSOR_LIMIT: { limit: async () => ({ success: true }) },
@@ -631,6 +641,7 @@ beforeAll(async () => {
         AUTOMATION_RPC_URL_421614: local.chain.url,
         AUTOMATION_BUNDLER_URL_421614: local.bundlerUrl,
         AUTOMATION_PAYMASTER_URL_421614: local.paymasterUrl,
+        AUTOMATION_PAYMASTER_API_KEY_421614: AUTOMATION_PAYMASTER_KEY,
       },
       loadDefinitions([PING]),
     ),
@@ -750,8 +761,11 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
       "pm_getPaymasterStubData",
       "pm_getPaymasterData",
     ]);
-    expect(local.sponsorships.every((entry) => entry.apikey === PIMLICO_KEY)).toBe(true);
-    expect(await root.content()).not.toContain(PIMLICO_KEY);
+    expect(
+      local.sponsorships.every((entry) => entry.authorization === `Bearer ${PAYMASTER_KEY}`),
+    ).toBe(true);
+    expect(local.sponsorships.every((entry) => JSON.stringify(entry.context) === "{}")).toBe(true);
+    expect(await root.content()).not.toContain(PAYMASTER_KEY);
 
     // 5. An owner operation: the root approves it in OAAth and the page submits it once.
     await local.chain.rpc("anvil_setBalance", [address, toHex(10n ** 18n)]);
@@ -867,12 +881,14 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     expect(local.sent).toHaveLength(4);
     expect(local.sent[3]?.sender.toLowerCase()).toBe(address);
     expect(local.sent[3]?.paymaster?.toLowerCase()).toBe(local.paymaster);
-    // The service asked the paymaster itself; the demo's key never reached it.
+    // The service asked the paymaster itself with its own key in the context;
+    // the demo's key never reached it.
     expect(local.sponsorships.at(-1)).toMatchObject({
       method: "pm_getPaymasterData",
-      apikey: null,
+      authorization: null,
+      context: { apiKey: AUTOMATION_PAYMASTER_KEY },
     });
-    expect(await root.content()).not.toContain(PIMLICO_KEY);
+    expect(await root.content()).not.toContain(PAYMASTER_KEY);
     await root.close();
   }, 600_000);
 });

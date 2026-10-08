@@ -7,7 +7,8 @@
  *   the client id changes without a rebuild.
  * - `/rpc/chain`, `/rpc/bundler`: Arbitrum Sepolia JSON-RPC and ERC-4337
  *   bundler proxies (`rpc.ts`).
- * - `/paymaster/421614`: the ERC-7677 sponsorship proxy to Pimlico; it
+ * - `/paymaster/421614`: the ERC-7677 sponsorship proxy to paymaster-rs over
+ *   the `PAYMASTER` VPC binding (hosted paymasters lack EntryPoint 0.9); it
  *   sponsors only the demo's own call (`rpc.ts`).
  * - `/automation/session`: a verified login becomes a session at the
  *   automation service (`automation.ts`).
@@ -19,7 +20,14 @@
  */
 
 import { type AutomationEnv, automationSession, automationUrl } from "./automation.js";
-import { DEMO_CHAIN_ID, DEMO_SELECTOR, DEMO_TARGET, type ProxyEnv, proxy } from "./rpc.js";
+import {
+  DEMO_CHAIN_ID,
+  DEMO_SELECTOR,
+  DEMO_TARGET,
+  type ProxyEnv,
+  proxy,
+  sponsorshipConfigured,
+} from "./rpc.js";
 
 interface Fetcher {
   fetch(request: Request): Promise<Response>;
@@ -105,8 +113,8 @@ export default {
           target: DEMO_TARGET,
           selector: DEMO_SELECTOR,
           explorerTxUrl: env.EXPLORER_TX_URL ?? null,
-          // Without a key the paymaster answers 503 and the page asks for funding instead.
-          sponsored: Boolean(env.PIMLICO_API_KEY),
+          // Without the binding and key the paymaster answers 503 and the page asks for funding instead.
+          sponsored: sponsorshipConfigured(env),
           // Without a service and credential the automation section stays hidden.
           automation:
             automationUrl(env) === null ? null : { url: automationUrl(env), id: DEMO_AUTOMATION },

@@ -61,7 +61,12 @@ export function testConfig(
     chains: new Map([
       [
         31337,
-        { rpcUrl: "http://127.0.0.1:1", bundlerUrl: "http://127.0.0.1:2", paymasterUrl: null },
+        {
+          rpcUrl: "http://127.0.0.1:1",
+          bundlerUrl: "http://127.0.0.1:2",
+          paymasterUrl: null,
+          paymasterApiKey: null,
+        },
       ],
     ]),
     budgets: { rpc: 10, bundler: 10, paymaster: 10, windowSeconds: 60 },
