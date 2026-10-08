@@ -12,12 +12,25 @@ describe("createAutomation", () => {
       token: "secret-session-token",
       fetch: async (_, init) => {
         calls += 1;
-        expect(init?.redirect).toBe("error");
+        expect(init?.redirect).toBe("manual");
         throw new Error("secret network diagnostic");
       },
     });
     await expect(client.cancel(id)).rejects.toMatchObject({ code: "request_outcome_unknown" });
     expect(calls).toBe(1);
+  });
+
+  it("refuses a redirect without following it", async () => {
+    const client = createAutomation({
+      baseUrl: "http://service",
+      token: "secret-session-token",
+      fetch: async () =>
+        new Response(null, { status: 302, headers: { location: "http://elsewhere" } }),
+    });
+    await expect(client.cancel(id)).rejects.toMatchObject({
+      code: "redirect_refused",
+      status: 302,
+    });
   });
 
   it("passes only structured service codes through", async () => {

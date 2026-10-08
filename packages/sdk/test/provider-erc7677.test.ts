@@ -175,7 +175,8 @@ describe("ERC-7677 sponsorship adapter", () => {
             paymasterData: "0x01020304",
             signature: SIMULATION_SIGNATURE,
           });
-          return estimate();
+          // A bundler post-op estimate is accepted but never replaces the stub's limit.
+          return estimate({ paymasterPostOpGasLimit: "153" });
         },
       },
     });
