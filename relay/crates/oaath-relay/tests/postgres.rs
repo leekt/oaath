@@ -89,7 +89,7 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v1");
+    assert_eq!(version, "oaath.relay-postgres-schema/v2");
     pool.close().await;
 }
 
@@ -1466,5 +1466,65 @@ async fn keeps_a_clients_write_budget_across_restarts() {
     assert_eq!(h.send(request()).await.status, 429);
     clock.advance(60_000);
     h.send(request()).await.ok(201);
+    shutdown(h).await;
+}
+
+#[tokio::test]
+async fn client_ownership_and_edits_survive_process_recreation() {
+    use support::grant::{Root, root_key, sign_in};
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let root = Root::Ecdsa(root_key());
+    let h = fixture.process(clock.clone()).await;
+    let (_, cookie) = sign_in(&h, &root).await;
+    let app = h
+        .send(portal_call(
+            "POST",
+            "/portal/clients",
+            Some(&cookie),
+            Some(json!({"client_name": "Durable app", "redirect_uris": [REDIRECT_URI]})),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    let id = text(&app, "client_id").to_owned();
+    shutdown(h).await;
+
+    let h = fixture.process(clock.clone()).await;
+    let (_, cookie) = sign_in(&h, &root).await;
+    assert_eq!(
+        *h.send(portal_call("GET", "/portal/clients", Some(&cookie), None))
+            .await
+            .ok(200),
+        json!({"clients": [app]})
+    );
+    let updated = h.send(portal_call("PUT", &format!("/portal/clients/{id}"), Some(&cookie), Some(json!({"client_name": "Updated app", "redirect_uris": ["https://new.example/cb"], "revocation_delivery": "dapp"})))).await.ok(200).clone();
+    shutdown(h).await;
+
+    let h = fixture.process(clock).await;
+    let (_, cookie) = sign_in(&h, &root).await;
+    assert_eq!(
+        *h.send(portal_call("GET", "/portal/clients", Some(&cookie), None))
+            .await
+            .ok(200),
+        json!({"clients": [updated]})
+    );
+    let stranger = Root::Ecdsa(k256::ecdsa::SigningKey::from_slice(&[0x66; 32]).unwrap());
+    let (_, other) = sign_in(&h, &stranger).await;
+    assert_eq!(
+        *h.send(portal_call("GET", "/portal/clients", Some(&other), None))
+            .await
+            .ok(200),
+        json!({"clients": []})
+    );
+    h.send(portal_call(
+        "PUT",
+        &format!("/portal/clients/{id}"),
+        Some(&other),
+        Some(json!({"client_name": "Wrong owner", "redirect_uris": [REDIRECT_URI]})),
+    ))
+    .await
+    .failure(E::NotFound);
     shutdown(h).await;
 }

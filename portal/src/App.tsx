@@ -21,6 +21,7 @@ import {
   portalApi,
   transactionIdFromRequestUri,
 } from "./api.js";
+import { Developers } from "./Developers.js";
 import { GrantReview } from "./GrantReview.js";
 import { LinkApproval, LinkRequest, ManageAccounts } from "./Links.js";
 import { OperationReview } from "./OperationReview.js";
@@ -48,6 +49,7 @@ export function App() {
   if (link) return <LinkApproval linkId={link} />;
   const request = /^\/requests\/([A-Za-z0-9._~-]{1,256})$/u.exec(location.pathname)?.[1];
   if (request) return <RequestPage requestId={request} />;
+  if (location.pathname === "/developers") return <Developers />;
   if (location.pathname === "/accounts") return <ManageAccounts />;
   if (location.pathname !== "/authorize") return <Landing />;
   const transactionId = transactionIdFromRequestUri(params.get("request_uri"));

@@ -6,7 +6,7 @@
 //! state and owner      PAR (immutable: client intent, state, nonce) ->
 //!                      request + decision (+ code) written together at decision
 //!                      -> code consumed once at /oauth/token
-//! persisted evidence   oauth_client_v1, oauth_par_v1, then the existing
+//! persisted evidence   oauth_client_v2, oauth_par_v1, then the existing
 //!                      authorization request/decision/code records keyed by the
 //!                      PAR id
 //! resource occupied?   one decision per PAR id; a consumed code is terminal
@@ -224,6 +224,33 @@ pub async fn register_client(
     clock: &dyn RelayClock,
     body: &Map<String, Value>,
 ) -> OAuthResult<RegisteredClient> {
+    let record = capture_client(body, relay_now(clock)?)?;
+    let mut transaction = store.begin().await?;
+    let result = transaction
+        .insert_oauth_client(&record)
+        .await
+        .and_then(|inserted| inserted.then_some(()).ok_or(RelayErrorCode::Internal));
+    settle(transaction, result).await?;
+    Ok(record.into())
+}
+
+impl From<OAuthClientRecord> for RegisteredClient {
+    fn from(record: OAuthClientRecord) -> Self {
+        Self {
+            client_id: record.client_id,
+            client_name: record.client_name,
+            redirect_uris: record.redirect_uris,
+            token_endpoint_auth_method: "none",
+            revocation_delivery: record.revocation_delivery,
+        }
+    }
+}
+
+/// Shared metadata boundary for open registration and authenticated management.
+pub(crate) fn capture_client(
+    body: &Map<String, Value>,
+    created_at: u64,
+) -> OAuthResult<OAuthClientRecord> {
     let metadata = |code| OAuthFailure::new(400, "invalid_client_metadata", code);
     let allowed = [
         "client_name",
@@ -265,26 +292,14 @@ pub async fn register_client(
     if redirect_uris.is_empty() || redirect_uris.len() > MAX_REDIRECT_URIS {
         return Err(OAuthFailure::new(400, "invalid_redirect_uri", INVALID));
     }
-    let record = OAuthClientRecord {
+    Ok(OAuthClientRecord {
         version: OAUTH_CLIENT_RECORD_VERSION,
         client_id: client_identifier(),
         client_name: client_name.to_owned(),
         redirect_uris,
         revocation_delivery,
-        created_at: relay_now(clock)?,
-    };
-    let mut transaction = store.begin().await?;
-    let result = transaction
-        .insert_oauth_client(&record)
-        .await
-        .and_then(|inserted| inserted.then_some(()).ok_or(RelayErrorCode::Internal));
-    settle(transaction, result).await?;
-    Ok(RegisteredClient {
-        client_id: record.client_id,
-        client_name: record.client_name,
-        redirect_uris: record.redirect_uris,
-        token_endpoint_auth_method: "none",
-        revocation_delivery: record.revocation_delivery,
+        created_at,
+        owner_signer_id: None,
     })
 }
 

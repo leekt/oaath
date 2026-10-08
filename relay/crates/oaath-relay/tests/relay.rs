@@ -394,6 +394,8 @@ ambiguous_transaction! {
     remove_link_request(id: &str, at: u64) -> RelayResult<bool>;
     lock_oauth_client(id: &str) -> RelayResult<Option<oauth::records::OAuthClientRecord>>;
     insert_oauth_client(r: &oauth::records::OAuthClientRecord) -> RelayResult<bool>;
+    list_oauth_clients(id: &str) -> RelayResult<Vec<oauth::records::OAuthClientRecord>>;
+    update_oauth_client(r: &oauth::records::OAuthClientRecord) -> RelayResult<bool>;
     lock_par(id: &str) -> RelayResult<Option<oauth::records::ParRecord>>;
     insert_par(r: &oauth::records::ParRecord) -> RelayResult<bool>;
     lock_access_token(hash: &str) -> RelayResult<Option<oauth::records::AccessTokenRecord>>;

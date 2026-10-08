@@ -1,7 +1,7 @@
 //! OAuth client and pushed-authorization-request records.
 //!
-//! A client is immutable once registered; its redirect URIs are fixed and
-//! matched exactly. A PAR is immutable: it holds only the client's intent, and
+//! Client ownership is immutable; its owner may edit metadata. Redirect URIs
+//! are matched exactly. A PAR is immutable: it holds only the client's intent, and
 //! its identifier becomes the authorization request id when the portal decides.
 
 use crate::revocation::RevocationDelivery;
@@ -16,7 +16,7 @@ use crate::records::{
     bounded_str, bounded_text, canonical_identifier, exact_record, limits, timestamp,
 };
 
-pub const OAUTH_CLIENT_RECORD_VERSION: &str = "oaath.oauth-client-record/v1";
+pub const OAUTH_CLIENT_RECORD_VERSION: &str = "oaath.oauth-client-record/v2";
 pub const OAUTH_PAR_RECORD_VERSION: &str = "oaath.oauth-par-record/v1";
 pub const OAUTH_ACCESS_TOKEN_RECORD_VERSION: &str = "oaath.oauth-access-token-record/v1";
 
@@ -70,6 +70,8 @@ pub struct OAuthClientRecord {
     pub version: &'static str,
     pub client_id: String,
     pub client_name: String,
+    /// Null for open registration; otherwise the immutable managing signer.
+    pub owner_signer_id: Option<String>,
     pub redirect_uris: Vec<String>,
     /// Who submits a root-signed revocation of this client's grants.
     pub revocation_delivery: RevocationDelivery,
@@ -84,6 +86,7 @@ impl OAuthClientRecord {
                 "version",
                 "clientId",
                 "clientName",
+                "ownerSignerId",
                 "redirectUris",
                 "revocationDelivery",
                 "createdAt",
@@ -108,6 +111,10 @@ impl OAuthClientRecord {
             version: OAUTH_CLIENT_RECORD_VERSION,
             client_id: canonical_identifier(r.get("clientId"), UNREADABLE)?.to_owned(),
             client_name: bounded_text(r.get("clientName"), MAX_CLIENT_NAME, UNREADABLE)?.to_owned(),
+            owner_signer_id: match r.get("ownerSignerId") {
+                Some(Value::Null) => None,
+                value => Some(canonical_identifier(value, UNREADABLE)?.to_owned()),
+            },
             redirect_uris,
             revocation_delivery: RevocationDelivery::parse(r.get("revocationDelivery"))
                 .ok_or(UNREADABLE)?,

@@ -1083,3 +1083,227 @@ fieldset {
   display: block;
   margin-top: 4px;
 }
+
+/* Developer console: app list and focused configuration in the account workspace. */
+.console-session {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: 0.875rem;
+}
+.console-empty {
+  max-width: 520px;
+  padding: 64px 0;
+}
+.console-empty p {
+  color: var(--ink-2);
+  margin-bottom: 24px;
+}
+.console-ownership {
+  margin: 36px 0 0;
+  max-width: 70ch;
+}
+.client-list {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+  border-top: 1px solid var(--rule);
+}
+.client-list li {
+  border-bottom: 1px solid var(--rule);
+}
+.client-row.button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto 20px;
+  gap: 24px;
+  padding: 22px 12px;
+  text-align: left;
+  border-radius: 0;
+  color: var(--ink);
+}
+.client-row-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.client-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.client-row-origin {
+  color: var(--ink-2);
+  font-size: 0.75rem;
+  max-width: 30ch;
+  overflow-wrap: anywhere;
+}
+.console-success {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--pass);
+  font-size: 0.875rem;
+}
+.console-back {
+  margin-bottom: 20px;
+}
+.console-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 64px;
+  margin-top: 36px;
+}
+.client-form {
+  display: grid;
+  gap: 28px;
+  align-content: start;
+}
+.console-field {
+  display: grid;
+  gap: 8px;
+}
+.console-field > label,
+.console-delivery legend,
+.console-reference > label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.console-field textarea {
+  font-size: 0.8125rem;
+  resize: vertical;
+}
+.console-field [data-slot="description"],
+.console-field > p,
+.field-help {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.console-field > div:last-child {
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+}
+.console-delivery {
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.console-delivery legend {
+  padding: 0 0 8px;
+}
+.console-delivery [role="radiogroup"] {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+.console-delivery label {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  cursor: pointer;
+}
+.console-radio {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  margin-top: 2px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 50%;
+}
+.console-radio[data-checked] {
+  border-color: var(--accent);
+}
+.console-radio > span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.console-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 4px;
+}
+.console-reference {
+  padding-top: 4px;
+  font-size: 0.875rem;
+}
+.console-reference h2 {
+  font-size: 1.125rem;
+  margin-bottom: 20px;
+}
+.console-reference h3 {
+  margin-top: 32px;
+}
+.console-reference > p {
+  color: var(--ink-2);
+}
+.console-reference > input {
+  width: 100%;
+  margin: 8px 0 12px;
+  font-size: 0.75rem;
+}
+.console-reference .field-help {
+  margin-top: 10px;
+}
+.console-endpoints {
+  padding-block: 16px;
+  border-block: 1px solid var(--rule);
+}
+.console-endpoints summary {
+  cursor: pointer;
+  font-weight: 550;
+}
+.console-endpoints dt {
+  margin-top: 14px;
+  color: var(--ink-2);
+  font-size: 0.75rem;
+}
+.console-endpoints dd {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .console-columns {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .console-reference {
+    padding-top: 28px;
+    border-top: 1px solid var(--rule);
+  }
+  .console-empty {
+    padding-block: 36px;
+  }
+  .client-row.button {
+    grid-template-columns: 1fr 20px;
+    padding-inline: 0;
+    gap: 16px;
+  }
+  .client-row-origin {
+    display: none;
+  }
+}
+
+.console-title > .button {
+  flex: none;
+  white-space: nowrap;
+}
+.console-delivery .choice-detail {
+  display: block;
+  margin-top: 3px;
+}
+.console-success > svg {
+  flex: none;
+}

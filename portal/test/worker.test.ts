@@ -40,6 +40,7 @@ describe("portal worker", () => {
       "/link/Ab_c-1",
       "/requests/Ab_c-1",
       "/accounts",
+      "/developers",
     ]) {
       const response = await call(path);
       expect(response.status).toBe(200);

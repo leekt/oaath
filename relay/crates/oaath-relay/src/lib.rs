@@ -9,6 +9,7 @@ pub mod authority;
 pub mod authorization;
 pub mod bundler;
 pub mod chain;
+pub mod clients;
 pub mod clock;
 pub mod error;
 pub mod grant;

@@ -456,6 +456,24 @@ impl Relay {
                     Some(_) => return Err(RelayErrorCode::NotFound),
                 }
             }
+            if group == Some("clients") && (count == 2 || count == 3) {
+                let signer = crate::session::session_signer(store, clock, headers).await?;
+                if count == 2 && method == Method::GET {
+                    return reply(200, &crate::clients::list(store, &signer).await?);
+                }
+                require_method(
+                    method,
+                    if count == 2 {
+                        &Method::POST
+                    } else {
+                        &Method::PUT
+                    },
+                )?;
+                let id = third.map(|id| canonical_str(id, INVALID)).transpose()?;
+                let body = body_record(headers, body, self.max_body_bytes).await?;
+                let client = crate::clients::save(store, clock, &signer, id, &body).await?;
+                return reply(if id.is_some() { 200 } else { 201 }, &client);
+            }
             if count == 2 && group == Some("signers") {
                 require_method(method, &Method::POST)?;
                 let body = body_record(headers, body, self.max_body_bytes).await?;
