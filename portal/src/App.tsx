@@ -71,6 +71,9 @@ function Landing() {
       <p>
         <a href="/accounts">Manage your accounts</a>
       </p>
+      <p>
+        <a href="https://oaath-demo.taek.tech">Try the demo app</a>
+      </p>
     </Frame>
   );
 }
