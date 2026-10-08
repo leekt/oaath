@@ -15,6 +15,9 @@
 //! OAATH_BUNDLER_421614 optional bundler JSON-RPC URL for chain 421614 (a
 //!                     Pimlico endpoint): estimates and submits root-signed
 //!                     revocations; without it none are prepared. Never logged
+//! OAATH_WRITES_PER_MINUTE optional hard budget of public writes (client and
+//!                     signer registration, PAR, sign-in challenges) per route
+//!                     and Worker-attested client address per minute; default 30
 //! --create-schema     create the current PostgreSQL schema first; fails if
 //!                     any object already exists
 //! ```
@@ -88,6 +91,16 @@ async fn run() -> Result<(), String> {
         _ => None,
     };
 
+    let writes_per_minute = match std::env::var("OAATH_WRITES_PER_MINUTE") {
+        Ok(text) if !text.is_empty() => Some(
+            text.parse::<u64>()
+                .ok()
+                .filter(|limit| *limit >= 1)
+                .ok_or("OAATH_WRITES_PER_MINUTE must be a positive integer")?,
+        ),
+        _ => None,
+    };
+
     let store: Arc<dyn RelayStore> = match std::env::var("OAATH_POSTGRES_URL") {
         Ok(url) if !url.is_empty() => {
             let pool = PgPoolOptions::new()
@@ -125,6 +138,7 @@ async fn run() -> Result<(), String> {
         oauth,
         chain,
         bundler,
+        writes_per_minute,
     };
     let relay =
         Relay::new(options).map_err(|code| format!("relay configuration is invalid ({code})"))?;
