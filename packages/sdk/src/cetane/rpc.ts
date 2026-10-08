@@ -96,6 +96,15 @@ function accountValidationReverted(data: unknown): boolean {
   }
 }
 
+// Marks only a well-formed JSON-RPC error answer to eth_sendUserOperation,
+// captured from the wire by this owner. Transport failures, timeouts,
+// malformed bodies and caller-created errors never carry it.
+const submissionRejections = new WeakSet<OaathRpcError>();
+/** True only when the bundler conclusively answered the one send with a JSON-RPC error. */
+export function isSubmissionRejection(error: unknown): error is OaathRpcError {
+  return error instanceof OaathRpcError && submissionRejections.has(error);
+}
+
 const transient = new WeakSet<OaathRpcError>();
 function unavailable(cause?: unknown): OaathRpcError {
   const error = new OaathRpcError("oaath_rpc_unavailable", null, null, { cause });
@@ -109,6 +118,7 @@ function copyRpcError(error: OaathRpcError): OaathRpcError {
   if (error.failure)
     Object.defineProperty(copy, "failure", { value: error.failure, enumerable: true });
   if (accountValidationRejections.has(error)) accountValidationRejections.add(copy);
+  if (submissionRejections.has(error)) submissionRejections.add(copy);
   if (transient.has(error)) transient.add(copy);
   return copy;
 }
@@ -322,6 +332,7 @@ export function rpcOwner(input: CetaneChainPortOptions) {
               accountValidationReverted(error.data)
             )
               accountValidationRejections.add(failure);
+            if (method === "eth_sendUserOperation") submissionRejections.add(failure);
             if ([-32005, -32016, 429].includes(error.code)) transient.add(failure);
             throw failure;
           }

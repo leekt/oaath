@@ -291,6 +291,48 @@ describe("Operation abandonment", () => {
     );
   });
 
+  it("terminalizes only an attempted send as rejected, round-trips it, and frees its lane", () => {
+    const reject = (operation: Operation, at = 12) =>
+      advanceOperation(operation, {
+        type: "mark_abandoned",
+        identity,
+        abandonedAt: at,
+        reason: "submission_rejected",
+      });
+    const rejected = reject(attempted(prepared()));
+    expect(rejected).toEqual({
+      version: "oaath.operation/v1",
+      lane: null,
+      submission: null,
+      identity,
+      revision: 2,
+      state: "abandoned",
+      preparedAt: 10,
+      abandonedAt: 12,
+      abandonment: { reason: "submission_rejected" },
+      updatedAt: 12,
+      observation: null,
+    });
+    expect(operationOccupiesLane(rejected)).toBe(false);
+    expect(parseOperation(JSON.parse(JSON.stringify(rejected)))).toEqual(rejected);
+
+    // A rejection never reaches an unsent, acknowledged, or terminal identity.
+    const sent = submitted(attempted(prepared()));
+    for (const source of [prepared(), sent, included(sent), rejected]) {
+      expectOperationError(() => reject(source, 20), "operation_transition_forbidden");
+    }
+    expectOperationError(() => reject(attempted(prepared()), 10), "operation_transition_invalid");
+    // Revision binds each reason to the path that produced it.
+    expectOperationError(
+      () => parseOperation({ ...rejected, revision: 1 }),
+      "operation_record_invalid",
+    );
+    expectOperationError(
+      () => parseOperation({ ...abandoned(prepared()), revision: 2 }),
+      "operation_record_invalid",
+    );
+  });
+
   it("property-checks monotonic prepared abandonment as permanently terminal", () => {
     fc.assert(
       fc.property(
