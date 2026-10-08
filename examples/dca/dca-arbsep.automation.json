@@ -1,0 +1,596 @@
+[
+  {
+    "id": "dca.arbsep.1m.v1",
+    "name": "Recurring tETH purchase, every minute",
+    "chainId": 421614,
+    "contracts": {
+      "token": {
+        "address": "REPLACE_SELL_TOKEN",
+        "abi": [
+          {
+            "type": "function",
+            "name": "mint",
+            "stateMutability": "nonpayable",
+            "inputs": [
+              {
+                "name": "to",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              }
+            ],
+            "outputs": []
+          },
+          {
+            "type": "function",
+            "name": "approve",
+            "stateMutability": "nonpayable",
+            "inputs": [
+              {
+                "name": "spender",
+                "type": "address"
+              },
+              {
+                "name": "amount",
+                "type": "uint256"
+              }
+            ],
+            "outputs": [
+              {
+                "name": "",
+                "type": "bool"
+              }
+            ]
+          }
+        ]
+      },
+      "dca": {
+        "address": "REPLACE_DCA_EXECUTOR",
+        "abi": [
+          {
+            "type": "function",
+            "name": "cancel",
+            "inputs": [
+              {
+                "name": "planId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ],
+            "outputs": [],
+            "stateMutability": "nonpayable"
+          },
+          {
+            "type": "function",
+            "name": "execute",
+            "inputs": [
+              {
+                "name": "planId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "slot",
+                "type": "uint32",
+                "internalType": "uint32"
+              }
+            ],
+            "outputs": [
+              {
+                "name": "amountOut",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ],
+            "stateMutability": "nonpayable"
+          },
+          {
+            "type": "function",
+            "name": "open",
+            "inputs": [
+              {
+                "name": "planId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "budget",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "runs",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "startAt",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "interval",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "grace",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxSlippageBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              }
+            ],
+            "outputs": [],
+            "stateMutability": "nonpayable"
+          }
+        ]
+      }
+    },
+    "params": {
+      "budget": {
+        "type": "uint256",
+        "label": "Total budget (tUSD base units)",
+        "decimals": 6,
+        "min": "1",
+        "max": "1000000000"
+      },
+      "maxSlippageBps": {
+        "type": "uint16",
+        "label": "Max slippage (bps)",
+        "max": "1000"
+      }
+    },
+    "schedule": {
+      "every": "1m",
+      "count": {
+        "min": 1,
+        "max": 20
+      },
+      "grace": "50s"
+    },
+    "setup": [
+      {
+        "contract": "token",
+        "function": "mint",
+        "args": ["$plan.account", "$param.budget"]
+      },
+      {
+        "contract": "token",
+        "function": "approve",
+        "args": ["$contract.dca", "$param.budget"]
+      },
+      {
+        "contract": "dca",
+        "function": "open",
+        "args": [
+          "$plan.id",
+          "$param.budget",
+          "$plan.occurrences",
+          "$plan.startAt",
+          "$plan.every",
+          "$plan.grace",
+          "$param.maxSlippageBps"
+        ]
+      }
+    ],
+    "call": {
+      "contract": "dca",
+      "function": "execute",
+      "args": ["$plan.id", "$slot.index"]
+    },
+    "cancel": [
+      {
+        "contract": "dca",
+        "function": "cancel",
+        "args": ["$plan.id"]
+      },
+      {
+        "contract": "token",
+        "function": "approve",
+        "args": ["$contract.dca", "0"]
+      }
+    ]
+  },
+  {
+    "id": "dca.arbsep.5m.v1",
+    "name": "Recurring tETH purchase, every 5 minutes",
+    "chainId": 421614,
+    "contracts": {
+      "token": {
+        "address": "REPLACE_SELL_TOKEN",
+        "abi": [
+          {
+            "type": "function",
+            "name": "mint",
+            "stateMutability": "nonpayable",
+            "inputs": [
+              {
+                "name": "to",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              }
+            ],
+            "outputs": []
+          },
+          {
+            "type": "function",
+            "name": "approve",
+            "stateMutability": "nonpayable",
+            "inputs": [
+              {
+                "name": "spender",
+                "type": "address"
+              },
+              {
+                "name": "amount",
+                "type": "uint256"
+              }
+            ],
+            "outputs": [
+              {
+                "name": "",
+                "type": "bool"
+              }
+            ]
+          }
+        ]
+      },
+      "dca": {
+        "address": "REPLACE_DCA_EXECUTOR",
+        "abi": [
+          {
+            "type": "function",
+            "name": "cancel",
+            "inputs": [
+              {
+                "name": "planId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ],
+            "outputs": [],
+            "stateMutability": "nonpayable"
+          },
+          {
+            "type": "function",
+            "name": "execute",
+            "inputs": [
+              {
+                "name": "planId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "slot",
+                "type": "uint32",
+                "internalType": "uint32"
+              }
+            ],
+            "outputs": [
+              {
+                "name": "amountOut",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ],
+            "stateMutability": "nonpayable"
+          },
+          {
+            "type": "function",
+            "name": "open",
+            "inputs": [
+              {
+                "name": "planId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "budget",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "runs",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "startAt",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "interval",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "grace",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxSlippageBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              }
+            ],
+            "outputs": [],
+            "stateMutability": "nonpayable"
+          }
+        ]
+      }
+    },
+    "params": {
+      "budget": {
+        "type": "uint256",
+        "label": "Total budget (tUSD base units)",
+        "decimals": 6,
+        "min": "1",
+        "max": "1000000000"
+      },
+      "maxSlippageBps": {
+        "type": "uint16",
+        "label": "Max slippage (bps)",
+        "max": "1000"
+      }
+    },
+    "schedule": {
+      "every": "5m",
+      "count": {
+        "min": 1,
+        "max": 20
+      },
+      "grace": "4m"
+    },
+    "setup": [
+      {
+        "contract": "token",
+        "function": "mint",
+        "args": ["$plan.account", "$param.budget"]
+      },
+      {
+        "contract": "token",
+        "function": "approve",
+        "args": ["$contract.dca", "$param.budget"]
+      },
+      {
+        "contract": "dca",
+        "function": "open",
+        "args": [
+          "$plan.id",
+          "$param.budget",
+          "$plan.occurrences",
+          "$plan.startAt",
+          "$plan.every",
+          "$plan.grace",
+          "$param.maxSlippageBps"
+        ]
+      }
+    ],
+    "call": {
+      "contract": "dca",
+      "function": "execute",
+      "args": ["$plan.id", "$slot.index"]
+    },
+    "cancel": [
+      {
+        "contract": "dca",
+        "function": "cancel",
+        "args": ["$plan.id"]
+      },
+      {
+        "contract": "token",
+        "function": "approve",
+        "args": ["$contract.dca", "0"]
+      }
+    ]
+  },
+  {
+    "id": "dca.arbsep.1h.v1",
+    "name": "Recurring tETH purchase, hourly",
+    "chainId": 421614,
+    "contracts": {
+      "token": {
+        "address": "REPLACE_SELL_TOKEN",
+        "abi": [
+          {
+            "type": "function",
+            "name": "mint",
+            "stateMutability": "nonpayable",
+            "inputs": [
+              {
+                "name": "to",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              }
+            ],
+            "outputs": []
+          },
+          {
+            "type": "function",
+            "name": "approve",
+            "stateMutability": "nonpayable",
+            "inputs": [
+              {
+                "name": "spender",
+                "type": "address"
+              },
+              {
+                "name": "amount",
+                "type": "uint256"
+              }
+            ],
+            "outputs": [
+              {
+                "name": "",
+                "type": "bool"
+              }
+            ]
+          }
+        ]
+      },
+      "dca": {
+        "address": "REPLACE_DCA_EXECUTOR",
+        "abi": [
+          {
+            "type": "function",
+            "name": "cancel",
+            "inputs": [
+              {
+                "name": "planId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ],
+            "outputs": [],
+            "stateMutability": "nonpayable"
+          },
+          {
+            "type": "function",
+            "name": "execute",
+            "inputs": [
+              {
+                "name": "planId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "slot",
+                "type": "uint32",
+                "internalType": "uint32"
+              }
+            ],
+            "outputs": [
+              {
+                "name": "amountOut",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ],
+            "stateMutability": "nonpayable"
+          },
+          {
+            "type": "function",
+            "name": "open",
+            "inputs": [
+              {
+                "name": "planId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "budget",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "runs",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "startAt",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "interval",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "grace",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxSlippageBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              }
+            ],
+            "outputs": [],
+            "stateMutability": "nonpayable"
+          }
+        ]
+      }
+    },
+    "params": {
+      "budget": {
+        "type": "uint256",
+        "label": "Total budget (tUSD base units)",
+        "decimals": 6,
+        "min": "1",
+        "max": "1000000000"
+      },
+      "maxSlippageBps": {
+        "type": "uint16",
+        "label": "Max slippage (bps)",
+        "max": "1000"
+      }
+    },
+    "schedule": {
+      "every": "1h",
+      "count": {
+        "min": 1,
+        "max": 20
+      },
+      "grace": "15m"
+    },
+    "setup": [
+      {
+        "contract": "token",
+        "function": "mint",
+        "args": ["$plan.account", "$param.budget"]
+      },
+      {
+        "contract": "token",
+        "function": "approve",
+        "args": ["$contract.dca", "$param.budget"]
+      },
+      {
+        "contract": "dca",
+        "function": "open",
+        "args": [
+          "$plan.id",
+          "$param.budget",
+          "$plan.occurrences",
+          "$plan.startAt",
+          "$plan.every",
+          "$plan.grace",
+          "$param.maxSlippageBps"
+        ]
+      }
+    ],
+    "call": {
+      "contract": "dca",
+      "function": "execute",
+      "args": ["$plan.id", "$slot.index"]
+    },
+    "cancel": [
+      {
+        "contract": "dca",
+        "function": "cancel",
+        "args": ["$plan.id"]
+      },
+      {
+        "contract": "token",
+        "function": "approve",
+        "args": ["$contract.dca", "0"]
+      }
+    ]
+  }
+]
