@@ -4,6 +4,7 @@
 
 pub mod chain;
 pub mod grant;
+pub mod revocation;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -155,6 +156,7 @@ pub fn options(
             key: IdTokenKey::from_pkcs8_pem(Some(ID_TOKEN_KID), &id_token_pem()).unwrap(),
         }),
         chain: None,
+        bundler: None,
     }
 }
 

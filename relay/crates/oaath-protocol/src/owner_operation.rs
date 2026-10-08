@@ -355,6 +355,35 @@ fn capture_request(value: &Value) -> ProtocolResult<OwnerOperationRequest> {
     })
 }
 
+/// Composes the exact request for `calls` on `account`: `callData` is
+/// Kernel's execution of the calls (the given one is ignored) and the hash is
+/// EntryPoint 0.9's, then the whole request is captured as a received one is.
+pub fn compose_owner_operation_request(
+    account: KernelAccountProfile,
+    chain_id: u64,
+    calls: Vec<OwnerOperationCall>,
+    mut user_operation: OwnerUserOperation,
+) -> ProtocolResult<OwnerOperationRequest> {
+    ensure((1..=MAX_OWNER_OPERATION_CALLS).contains(&calls.len()), CODE)?;
+    user_operation.call_data = kernel_execution(&calls);
+    let user_operation_hash = hex_hash(user_operation_hash(
+        chain_id,
+        ENTRY_POINT_V09,
+        &user_operation,
+    ));
+    capture_request(
+        &OwnerOperationRequest {
+            account,
+            chain_id,
+            entry_point: ENTRY_POINT_V09.to_owned(),
+            calls,
+            user_operation,
+            user_operation_hash,
+        }
+        .to_json(),
+    )
+}
+
 pub fn parse_owner_operation_request(value: &Value) -> ProtocolResult<OwnerOperationRequest> {
     capture_request(value)
 }

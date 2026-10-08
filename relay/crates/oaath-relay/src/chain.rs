@@ -1,5 +1,5 @@
-//! The relay's one budgeted chain reader, and the account-ownership proof an
-//! import needs.
+//! The relay's one budgeted chain reader: the account-ownership proof an
+//! import needs, and a revocation's permission state.
 //!
 //! ```text
 //! OAATH_RPC_421614   one JSON-RPC URL for chain 421614; never logged
@@ -46,9 +46,10 @@ pub const WEBAUTHN_ROOT_VALIDATOR: &str = "0x6f781fff97b830daa2e11ee0ad6344aff71
 /// ERC-1967 `implementation` slot.
 const IMPLEMENTATION_SLOT: &str =
     "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
-const ALLOWED: [&str; 5] = [
+const ALLOWED: [&str; 6] = [
     "eth_chainId",
     "eth_blockNumber",
+    "eth_getBlockByNumber",
     "eth_getCode",
     "eth_getStorageAt",
     "eth_call",
@@ -62,6 +63,8 @@ sol! {
     function ecdsaValidatorStorage(address account) external view returns (address);
     function publicKey(address account) external view returns (uint256 x, uint256 y);
     function webAuthnValidatorStorage(address account) external view returns (uint256 x, uint256 y);
+    function isModuleInstalled(uint256 moduleType, address module, bytes additionalContext) external view returns (bool);
+    function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
 }
 
 /// One configured chain endpoint. Its URL is a credential: never printed.
@@ -264,6 +267,107 @@ pub async fn prove_kernel_root(
         return Err(REFUSED);
     }
     Ok(())
+}
+
+/// One Kernel v4 permission, identified by its signer module and bytes4 id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PermissionTarget {
+    pub account: Address,
+    pub signer: Address,
+    pub permission_id: [u8; 4],
+}
+
+/// What a revocation is prepared from, read at one block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionState {
+    /// Whether the permission's signer is installed; an undeployed account has none.
+    pub installed: bool,
+    /// The EntryPoint nonce of the root validator's standard-mode `lane`.
+    pub nonce: U256,
+}
+
+async fn installed_at(
+    reads: &mut Reads<'_>,
+    target: &PermissionTarget,
+    block: &str,
+) -> RelayResult<bool> {
+    let account = format!("{:#x}", target.account);
+    let code = reads.hex("eth_getCode", json!([account, block])).await?;
+    if code.is_empty() {
+        return Ok(false);
+    }
+    let answer = reads
+        .call(
+            &account,
+            isModuleInstalledCall {
+                moduleType: U256::from(6),
+                module: target.signer,
+                additionalContext: Bytes::from(target.permission_id.to_vec()),
+            }
+            .abi_encode(),
+            block,
+        )
+        .await?;
+    match answer.as_slice() {
+        word if word.len() == 32 && word[..31] == [0; 31] && word[31] == 0 => Ok(false),
+        word if word.len() == 32 && word[..31] == [0; 31] && word[31] == 1 => Ok(true),
+        _ => Err(UNAVAILABLE),
+    }
+}
+
+/// At the latest block: whether the permission is installed, and the root
+/// lane's EntryPoint nonce. Anything unreadable is `relay_chain_unavailable`.
+pub async fn permission_state(
+    reader: &ChainReader,
+    target: &PermissionTarget,
+    entry_point: Address,
+    lane: u16,
+) -> RelayResult<PermissionState> {
+    let mut reads = reader.session();
+    if reads.quantity("eth_chainId").await? != reader.chain_id {
+        return Err(UNAVAILABLE);
+    }
+    let block = format!("0x{:x}", reads.quantity("eth_blockNumber").await?);
+    let installed = installed_at(&mut reads, target, &block).await?;
+    let nonce = reads
+        .call(
+            &format!("{entry_point:#x}"),
+            getNonceCall {
+                sender: target.account,
+                key: alloy_primitives::aliases::U192::from(lane),
+            }
+            .abi_encode(),
+            &block,
+        )
+        .await?;
+    let nonce: [u8; 32] = nonce.try_into().map_err(|_| UNAVAILABLE)?;
+    Ok(PermissionState {
+        installed,
+        nonce: U256::from_be_bytes(nonce),
+    })
+}
+
+/// The finalized block's number, and whether the permission is installed
+/// there.
+pub async fn finalized_permission(
+    reader: &ChainReader,
+    target: &PermissionTarget,
+) -> RelayResult<(u64, bool)> {
+    let mut reads = reader.session();
+    if reads.quantity("eth_chainId").await? != reader.chain_id {
+        return Err(UNAVAILABLE);
+    }
+    let block = reads
+        .rpc("eth_getBlockByNumber", json!(["finalized", false]))
+        .await?;
+    let number = block
+        .get("number")
+        .and_then(Value::as_str)
+        .and_then(|text| text.strip_prefix("0x"))
+        .and_then(|digits| u64::from_str_radix(digits, 16).ok())
+        .ok_or(UNAVAILABLE)?;
+    let installed = installed_at(&mut reads, target, &format!("0x{number:x}")).await?;
+    Ok((number, installed))
 }
 
 /// For tests and fixtures: the ABI words a validator returns for `owner`.

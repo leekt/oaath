@@ -4,6 +4,7 @@
 //! matched exactly. A PAR is immutable: it holds only the client's intent, and
 //! its identifier becomes the authorization request id when the portal decides.
 
+use crate::revocation::RevocationDelivery;
 use oaath_protocol::capture::parse_json;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -70,6 +71,8 @@ pub struct OAuthClientRecord {
     pub client_id: String,
     pub client_name: String,
     pub redirect_uris: Vec<String>,
+    /// Who submits a root-signed revocation of this client's grants.
+    pub revocation_delivery: RevocationDelivery,
     pub created_at: u64,
 }
 
@@ -82,6 +85,7 @@ impl OAuthClientRecord {
                 "clientId",
                 "clientName",
                 "redirectUris",
+                "revocationDelivery",
                 "createdAt",
             ],
             UNREADABLE,
@@ -105,6 +109,8 @@ impl OAuthClientRecord {
             client_id: canonical_identifier(r.get("clientId"), UNREADABLE)?.to_owned(),
             client_name: bounded_text(r.get("clientName"), MAX_CLIENT_NAME, UNREADABLE)?.to_owned(),
             redirect_uris,
+            revocation_delivery: RevocationDelivery::parse(r.get("revocationDelivery"))
+                .ok_or(UNREADABLE)?,
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
         })
     }

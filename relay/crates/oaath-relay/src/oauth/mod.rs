@@ -33,6 +33,7 @@ pub mod operation;
 pub mod pending;
 pub mod records;
 
+use crate::revocation::RevocationDelivery;
 use oaath_protocol::capture::parse_json;
 use oaath_protocol::identity::parse_kernel_account_profile;
 use serde::Serialize;
@@ -213,6 +214,7 @@ pub struct RegisteredClient {
     pub client_name: String,
     pub redirect_uris: Vec<String>,
     pub token_endpoint_auth_method: &'static str,
+    pub revocation_delivery: RevocationDelivery,
 }
 
 /// RFC 7591 open registration of one public client.
@@ -222,7 +224,12 @@ pub async fn register_client(
     body: &Map<String, Value>,
 ) -> OAuthResult<RegisteredClient> {
     let metadata = |code| OAuthFailure::new(400, "invalid_client_metadata", code);
-    let allowed = ["client_name", "redirect_uris", "token_endpoint_auth_method"];
+    let allowed = [
+        "client_name",
+        "redirect_uris",
+        "token_endpoint_auth_method",
+        "revocation_delivery",
+    ];
     if body.keys().any(|key| !allowed.contains(&key.as_str())) {
         return Err(metadata(INVALID));
     }
@@ -232,6 +239,11 @@ pub async fn register_client(
         // private_key_jwt is a later stage.
         Some(_) => return Err(metadata(INVALID)),
     }
+    // OAAth submits revocations unless the client opts in to submit them itself.
+    let revocation_delivery = match body.get("revocation_delivery") {
+        None => RevocationDelivery::Relay,
+        value => RevocationDelivery::parse(value).ok_or_else(|| metadata(INVALID))?,
+    };
     let client_name = body
         .get("client_name")
         .and_then(Value::as_str)
@@ -257,6 +269,7 @@ pub async fn register_client(
         client_id: client_identifier(),
         client_name: client_name.to_owned(),
         redirect_uris,
+        revocation_delivery,
         created_at: relay_now(clock)?,
     };
     let mut transaction = store.begin().await?;
@@ -270,6 +283,7 @@ pub async fn register_client(
         client_name: record.client_name,
         redirect_uris: record.redirect_uris,
         token_endpoint_auth_method: "none",
+        revocation_delivery: record.revocation_delivery,
     })
 }
 

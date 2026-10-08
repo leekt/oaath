@@ -17,6 +17,7 @@ pub mod identity;
 pub mod ids;
 pub mod kernel_account;
 pub mod kernel_install;
+pub mod kernel_revocation;
 pub mod owner_operation;
 pub mod permission;
 pub mod pkce;

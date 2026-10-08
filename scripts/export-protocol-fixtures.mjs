@@ -148,6 +148,7 @@ const EVALUATE = {
   parseVerifyGrantRevisionInput: P.parseVerifyGrantRevisionInput,
   parseOaathGrantRef: P.parseOaathGrantRef,
   parseGrantVerificationResult: P.parseGrantVerificationResult,
+  encodeKernelPermissionUninstallCalls: P.encodeKernelPermissionUninstallCalls,
 };
 
 /** Records one case; `input` may hold `Raw` numbers or be a whole `Text`. */
@@ -2237,6 +2238,43 @@ record("parseOaathGrantRef", "version v2", { ...GRANT_REF, version: "oaath.grant
   } finally {
     for (const chain of chains) chain.stop();
   }
+}
+
+// ------------------------------------------------- permission uninstall
+
+{
+  const fn = "encodeKernelPermissionUninstallCalls";
+  const permission = "ab12cd34";
+  const install = (moduleType, module, extra = "") => ({
+    moduleType,
+    module,
+    moduleData: `0x${permission}${"00".repeat(28)}${extra}`,
+    internalData: `0x${permission}${"01".repeat(4)}`,
+  });
+  const packages = [
+    install(5, hex("51", 20), "0102"),
+    install(5, hex("52", 20)),
+    install(6, hex("61", 20), "aabbccdd"),
+  ];
+  const base = { account: hex("a1", 20), packages };
+  record(fn, "two policies and a signer", base);
+  record(fn, "signer only after one policy", { ...base, packages: [packages[0], packages[2]] });
+  record(fn, "no signer", { ...base, packages: packages.slice(0, 2) });
+  record(fn, "two signers", { ...base, packages: [...packages, packages[2]] });
+  record(fn, "short module data", {
+    ...base,
+    packages: [packages[0], { ...packages[2], moduleData: `0x${permission}` }],
+  });
+  record(fn, "another module type", {
+    ...base,
+    packages: [{ ...packages[0], moduleType: 1 }, ...packages],
+  });
+  record(fn, "module type as text", {
+    ...base,
+    packages: [{ ...packages[0], moduleType: "5" }, packages[2]],
+  });
+  record(fn, "zero account", { ...base, account: ZERO_ADDRESS });
+  record(fn, "extra field", { ...base, chainId: 1 });
 }
 
 // ------------------------------------------------------------------ output

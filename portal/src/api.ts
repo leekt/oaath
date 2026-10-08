@@ -300,6 +300,26 @@ export interface PendingRequest {
   readonly expires_at: number;
 }
 
+/** `/portal/grants/{id}/revocation`: an invalidated grant's on-chain removal. */
+export interface RevocationView {
+  readonly grant_id: string;
+  readonly status:
+    | "not_installed"
+    | "pending_signature"
+    | "submitted"
+    | "delivered"
+    | "included"
+    | "finalized"
+    | "failed";
+  readonly delivery: "relay" | "dapp";
+  /** The grant's install packages: what the uninstall removes. */
+  readonly packages: unknown;
+  /** The unsigned uninstall the root signs, while one is prepared. */
+  readonly request: unknown;
+  readonly user_operation_hash: string | null;
+  readonly transaction_hash: string | null;
+}
+
 /** `POST /portal/accounts/import`: the root's signed import statement. */
 export interface ImportAccountRequest {
   readonly root_signer_id: string;
@@ -467,6 +487,18 @@ export const portalApi = {
     }),
   rejectPending: (id: string) =>
     call<PendingRequest>(`/portal/requests/${segment(id)}/reject`, { method: "POST", body: {} }),
+  revocation: (grantId: string) =>
+    call<RevocationView>(`/portal/grants/${segment(grantId)}/revocation`),
+  prepareRevocation: (grantId: string, estimationSignature: string) =>
+    call<RevocationView>(`/portal/grants/${segment(grantId)}/revocation/prepare`, {
+      method: "POST",
+      body: { estimation_signature: estimationSignature },
+    }),
+  signRevocation: (grantId: string, signature: string) =>
+    call<RevocationView>(`/portal/grants/${segment(grantId)}/revocation/sign`, {
+      method: "POST",
+      body: { signature },
+    }),
   memberGrant: (grantId: string) => call<MemberGrantView>(`/portal/grants/${segment(grantId)}`),
   rejectLink: (id: string) =>
     call<PortalLink>(`/portal/links/${segment(id)}/reject`, { method: "POST", body: {} }),

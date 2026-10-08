@@ -20,6 +20,7 @@ use oaath_protocol::identity::{
 };
 use oaath_protocol::kernel_account::derive_kernel_v4_account_address;
 use oaath_protocol::kernel_install::parse_kernel_replayable_install_owner_signing_request;
+use oaath_protocol::kernel_revocation::kernel_permission_uninstall_calls;
 use oaath_protocol::permission::{
     PermissionDecision, hash_permission_decision, hash_permission_request,
     parse_approved_permission, parse_permission_decision, parse_permission_request,
@@ -102,6 +103,14 @@ fn evaluate(function: &str, input: &Value) -> ProtocolResult<Value> {
         "parseGrantVerificationResult" => {
             parse_grant_verification_result(input).map(|r| r.to_json())
         }
+        "encodeKernelPermissionUninstallCalls" => kernel_permission_uninstall_calls(input).map(|calls| {
+            Value::Array(
+                calls
+                    .into_iter()
+                    .map(|call| json!({ "target": call.target, "value": call.value, "data": call.data }))
+                    .collect(),
+            )
+        }),
         other => panic!("fixture names an unported function {other}"),
     }
 }

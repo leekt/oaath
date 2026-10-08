@@ -28,6 +28,9 @@
 //! GET  /portal/grants/{grantId}                      portal  a member grant (root, member)
 //! GET  /portal/accounts/{a}/requests                 portal  the root's pending grant requests
 //! GET|POST /portal/requests/{id}(/prepare|approve|reject)  portal  a member's grant request
+//! GET  /portal/grants/{id}/revocation                portal  the root: on-chain revocation status
+//! POST /portal/grants/{id}/revocation/prepare|sign   portal  the root signs the uninstall
+//! GET  /oauth/grants/{id}/revocation                 oauth   the stored status; a dapp's signed uninstall
 //! ```
 //!
 //! A signer's accounts, account creation, and grant prepare and approved
@@ -44,6 +47,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::account_import::import_account;
+use crate::bundler::Bundler;
 use crate::chain::ChainReader;
 use crate::clock::RelayClock;
 use crate::error::{RelayErrorCode, RelayResult};
@@ -64,6 +68,7 @@ use crate::portal::{
 };
 use crate::records::canonical_str;
 use crate::registry::MembershipStatus;
+use crate::revocation::{self, RevocationPorts};
 use crate::session::{
     cleared_session_cookie, issue_challenge, require_signer, session_cookie, session_signer,
     sign_in, sign_out,
@@ -91,6 +96,8 @@ pub struct RelayOptions {
     pub oauth: Option<OAuthConfiguration>,
     /// Optional chain reader; account import is refused without it.
     pub chain: Option<Arc<ChainReader>>,
+    /// Optional bundler; revocations are neither prepared nor submitted without it.
+    pub bundler: Option<Arc<Bundler>>,
 }
 
 pub struct Relay {
@@ -102,6 +109,7 @@ pub struct Relay {
     max_body_bytes: usize,
     oauth: Option<OAuthConfiguration>,
     chain: Option<Arc<ChainReader>>,
+    bundler: Option<Arc<Bundler>>,
 }
 
 fn duration(value: Option<u64>, fallback: u64, maximum: u64) -> RelayResult<u64> {
@@ -249,6 +257,7 @@ impl Relay {
                 .map_err(|_| RelayErrorCode::Internal)?,
             oauth: options.oauth,
             chain: options.chain,
+            bundler: options.bundler,
         })
     }
 
@@ -351,6 +360,12 @@ impl Relay {
                 require_method(method, &Method::GET)?;
                 let id = canonical_str(id, INVALID)?;
                 let view = grant::grant_view(store, clock, self.kms.as_ref(), headers, id).await?;
+                Ok(reply(200, &view)?)
+            }
+            ["oauth", "grants", id, "revocation"] => {
+                require_method(method, &Method::GET)?;
+                let id = canonical_str(id, INVALID)?;
+                let view = revocation::dapp_revocation(store, self.kms.as_ref(), id).await?;
                 Ok(reply(200, &view)?)
             }
             ["oauth", "grants", id, "invalidate"] => {
@@ -541,6 +556,43 @@ impl Relay {
                     200,
                     &pending::list_pending(store, clock, account_id, &session).await?,
                 );
+            }
+            if group == Some("grants") && fourth == Some("revocation") && (count == 4 || count == 5)
+            {
+                let session = session_signer(store, clock, headers).await?;
+                let grant_id = identifier_segment(third)?;
+                let kms = self.kms.as_ref();
+                let ports = RevocationPorts {
+                    chain: self.chain.as_deref(),
+                    bundler: self.bundler.as_deref(),
+                };
+                return match segment(4) {
+                    None => {
+                        require_method(method, &Method::GET)?;
+                        let view = revocation::revocation_status(
+                            store, clock, kms, &ports, grant_id, &session,
+                        );
+                        reply(200, &view.await?)
+                    }
+                    Some("prepare") => {
+                        require_method(method, &Method::POST)?;
+                        let body = body_record(headers, body, self.max_body_bytes).await?;
+                        let view = revocation::prepare_revocation(
+                            store, clock, kms, &ports, grant_id, &body, &session,
+                        );
+                        reply(200, &view.await?)
+                    }
+                    Some("sign") => {
+                        require_method(method, &Method::POST)?;
+                        let body = body_record(headers, body, self.max_body_bytes).await?;
+                        let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
+                        let view = revocation::sign_revocation(
+                            store, clock, kms, &ports, issuer, grant_id, &body, &session,
+                        );
+                        reply(200, &view.await?)
+                    }
+                    Some(_) => Err(RelayErrorCode::NotFound),
+                };
             }
             if group == Some("grants") && count == 3 {
                 require_method(method, &Method::GET)?;

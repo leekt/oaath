@@ -1393,3 +1393,43 @@ async fn keeps_a_member_grant_request_pending_across_restarts() {
     assert_eq!(again.body["error"], json!("invalid_grant"));
     shutdown(h).await;
 }
+
+#[tokio::test]
+async fn a_submitted_revocation_is_observed_after_a_restart_and_never_resubmitted() {
+    use support::revocation::*;
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let (stub_url, shared) = stub(Send::Hang).await;
+    let pool = fixture.pool().await;
+    let h = harness_on(
+        Arc::new(PostgresRelayStore::owning(pool)),
+        clock.clone(),
+        configure(&stub_url),
+    );
+    let granted = template_grant(&h).await;
+    suspend(&h, &granted).await;
+    let request = prepare(&h, &granted).await.ok(200)["request"].clone();
+    // The bundler never answers the one submission.
+    assert_eq!(
+        sign(&h, &granted, &request).await.ok(200)["status"],
+        "submitted"
+    );
+    shutdown(h).await;
+
+    let pool = fixture.pool().await;
+    let h = harness_on(
+        Arc::new(PostgresRelayStore::owning(pool)),
+        clock,
+        configure(&stub_url),
+    );
+    assert_eq!(status(&h, &granted).await.ok(200)["status"], "submitted");
+    sign(&h, &granted, &request)
+        .await
+        .failure(E::AlreadyDecided);
+    shared.lock().unwrap().receipt = Some(receipt(&request, true));
+    shared.lock().unwrap().installed = false;
+    assert_eq!(status(&h, &granted).await.ok(200)["status"], "finalized");
+    assert_eq!(calls(&shared, "eth_sendUserOperation"), 1);
+    shutdown(h).await;
+}
