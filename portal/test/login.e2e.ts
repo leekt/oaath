@@ -2095,7 +2095,8 @@ describe("revoking an invalidated grant on chain", () => {
       }),
     });
     const pushedBody = (await pushed.json()) as { request_uri?: string };
-    if (!pushedBody.request_uri) throw new Error(`par ${pushed.status} ${JSON.stringify(pushedBody)}`);
+    if (!pushedBody.request_uri)
+      throw new Error(`par ${pushed.status} ${JSON.stringify(pushedBody)}`);
     const grantId = pushedBody.request_uri.split(":").pop() ?? "";
     const prepared = (
       await relayCall(`/portal/transactions/${grantId}/prepare`, root.cookie, {
