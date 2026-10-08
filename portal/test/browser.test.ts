@@ -678,8 +678,14 @@ describe("portal in Chrome", () => {
     });
     expect(await page.$("::-p-text(No signers on this browser yet.)")).not.toBeNull();
     await clickText(page, "Add signer");
+    // Wait for the newly mounted Add signer panel before checking its motion.
+    await page.waitForSelector("#add-wallet-method");
     await clickText(page, "Wallet");
-    await page.waitForSelector("::-p-text(No browser wallet found.)");
+    // React updates this text node in place; poll its content rather than the
+    // text selector's cached candidate from the discovery loading state.
+    await page.waitForFunction(() =>
+      document.querySelector(".empty-state")?.textContent?.startsWith("No browser wallet found."),
+    );
     expect(await page.$("::-p-text(Phone)")).toBeNull();
     await capture(page, "4-empty-wallets");
     await clickText(page, "Back");
