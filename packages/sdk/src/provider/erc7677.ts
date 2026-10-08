@@ -300,14 +300,31 @@ interface CapturedFinalData {
   readonly data: `0x${string}`;
 }
 
-function captureFinalData(value: unknown): Readonly<CapturedFinalData> {
+function captureFinalData(
+  value: unknown,
+  sent: Readonly<{ verificationGasLimit: string | null; postOpGasLimit: string }>,
+): Readonly<CapturedFinalData> {
   const record = allowedRecord(
     value,
-    ["paymaster", "paymasterData"],
+    ["paymaster", "paymasterData", "paymasterVerificationGasLimit", "paymasterPostOpGasLimit"],
     ["paymaster", "paymasterData"],
     "ERC-7677 final result",
     new WeakSet(),
   );
+  // Some services (e.g. paymaster-rs) echo the gas limits their signature binds. They may
+  // only repeat the limits this request sent; a different limit would invalidate the quote.
+  if (
+    Object.hasOwn(record, "paymasterVerificationGasLimit") &&
+    quantity(record.paymasterVerificationGasLimit, "ERC-7677 final paymaster verification gas") !==
+      sent.verificationGasLimit
+  )
+    invalidEvidence("ERC-7677 final paymaster verification gas differs from the request");
+  if (
+    Object.hasOwn(record, "paymasterPostOpGasLimit") &&
+    quantity(record.paymasterPostOpGasLimit, "ERC-7677 final paymaster post-op gas") !==
+      sent.postOpGasLimit
+  )
+    invalidEvidence("ERC-7677 final paymaster post-op gas differs from the request");
   return Object.freeze({
     address: canonicalAddress(record.paymaster, "ERC-7677 final paymaster"),
     data: canonicalBytes(record.paymasterData, "ERC-7677 final paymaster data"),
@@ -613,6 +630,11 @@ export function createErc7677SponsorshipCapability(
               paymasterContext,
             ),
           ),
+          {
+            verificationGasLimit:
+              stub.verificationGasLimit ?? estimate.paymasterVerificationGasLimit,
+            postOpGasLimit: stub.postOpGasLimit,
+          },
         );
         assertFinalMatchesStub(stub, finalData);
       }
