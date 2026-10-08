@@ -72,6 +72,8 @@ function signerText(credential: OperatorCredentialProfile): string {
 }
 
 export function grantFailure(error: unknown): string {
+  // The page shows a short message; the console keeps the cause for diagnosis.
+  console.error("[oaath-portal] grant", error);
   if (error instanceof PortalApiError && error.status === 403)
     return "Only this account's owner can approve a grant.";
   switch (error instanceof RootSigningError ? error.code : (error as { code?: string })?.code) {
