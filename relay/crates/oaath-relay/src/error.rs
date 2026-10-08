@@ -110,6 +110,11 @@ pub enum RelayErrorCode {
     #[error("relay_rate_limited")]
     #[serde(rename = "relay_rate_limited")]
     RateLimited,
+    /// A PAR `id_token_hint` is not this issuer's live id_token for this
+    /// client, or names a signer and account that no longer belong together.
+    #[error("relay_id_token_hint_invalid")]
+    #[serde(rename = "relay_id_token_hint_invalid")]
+    IdTokenHintInvalid,
     /// An invariant the relay owns was violated.
     #[error("relay_internal")]
     #[serde(rename = "relay_internal")]
@@ -146,6 +151,7 @@ impl RelayErrorCode {
             Self::CredentialRegistered => 409,
             Self::RequestBudgetExhausted => 429,
             Self::RateLimited => 429,
+            Self::IdTokenHintInvalid => 400,
             Self::Internal => 500,
         }
     }

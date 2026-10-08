@@ -3,9 +3,11 @@
  * every account the signer is an active member of, and a malformed
  * `oaath_accounts` claim refuses the whole login.
  */
+import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loginWithOAAth } from "../src/index.js";
-import { installOAuthPortal } from "./support/oauth-portal.js";
+import { createOAAth, loginWithOAAth } from "../src/index.js";
+import { createChainFixture, permissionInput } from "./support/browser.js";
+import { installOAuthPortal, ORIGIN } from "./support/oauth-portal.js";
 
 const ACCOUNT = "0x62b5f314710bc515d87276a9d00527ac482b2e6a";
 const OTHER = "0x00000000000000000000000000000000000000aa";
@@ -44,5 +46,22 @@ describe("loginWithOAAth", () => {
     await expect(loginWithOAAth(options)).rejects.toMatchObject({
       code: "oaath_client_identity_invalid",
     });
+  });
+
+  it("sends the login's id_token as the hint of a later grant request", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const { approvals, pars } = await installOAuthPortal({ account: ACCOUNT });
+    const { kind: _, ...options } = approvals;
+    const login = await loginWithOAAth(options);
+    const chain = createChainFixture({ chainId: 31337 });
+    const realm = createOAAth({ chains: [chain.capability], approvals, origin: ORIGIN });
+    const grant = await (await realm.connect()).requestPermission(permissionInput());
+    expect(grant.state).toBe("active");
+    const [loginPar, grantPar] = [...pars.values()];
+    // The login itself carries no hint; the grant carries the login's id_token.
+    expect(loginPar?.get("id_token_hint")).toBeNull();
+    expect(grantPar?.get("authorization_details")).not.toBeNull();
+    expect(grantPar?.get("id_token_hint")).toBe(login.idToken);
+    await realm.close();
   });
 });

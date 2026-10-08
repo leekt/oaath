@@ -40,6 +40,8 @@ describe("OAuth-approved Grants", () => {
     const [detail] = JSON.parse([...pars.values()][0]!.get("authorization_details")!);
     expect(detail.signer).toEqual(binding.operatorCredential);
     expect(detail.chains).toEqual([31337]);
+    // No login on this page: the portal asks for the signer and account.
+    expect([...pars.values()][0]?.get("id_token_hint")).toBeNull();
     await realm.close();
 
     // Reload: the stored binding and Grant come back without the portal.

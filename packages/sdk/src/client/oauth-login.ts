@@ -13,6 +13,12 @@
  *                    iss, aud = clientId, nonce)
  * ```
  *
+ * A later grant or owner-operation request to the same issuer and client sends
+ * the login's id_token as the OIDC `id_token_hint`, so the portal opens on the
+ * chosen signer and account and only asks for the signature. The hint lives in
+ * this page's memory and is sent only while the issuer still binds it (one
+ * hour after issue); without it the portal asks for both again.
+ *
  * The result names the account and signer the user chose, and every account
  * the signer is an active member of. It is identity, not authority: `verified` is true because the signer proved control of its
  * credential to OAAth and is a member of the account, and a Grant still needs
@@ -26,13 +32,35 @@ import {
   parseKernelAccountProfile,
   parseOwnerCredentialProfile,
 } from "@oaath/protocol";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, decodeJwt, jwtVerify } from "jose";
 import { clientFail, OaathClientError } from "./errors.js";
 
 /** The message a redirect page posts to its opener. */
 const RESPONSE_MESSAGE = "oaath.authorization-response/v1";
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const POPUP_FEATURES = "popup,width=440,height=760";
+/** The issuer binds an `id_token_hint` up to this long after its `iat`. */
+const HINT_MAX_AGE_SECONDS = 3_600;
+/** Stop sending a hint this long before the issuer would refuse it. */
+const HINT_MARGIN_SECONDS = 120;
+
+/** The last login's id_token and `iat` per issuer and client, for this page only. */
+const loginHints = new Map<string, Readonly<{ idToken: string; issuedAt: number }>>();
+
+function hintKey(issuer: string, clientId: string): string {
+  return `${issuer} ${clientId}`;
+}
+
+/** The remembered login's id_token while the issuer still binds it, else null. */
+function loginHint(issuer: string, clientId: string): string | null {
+  const hint = loginHints.get(hintKey(issuer, clientId));
+  if (!hint) return null;
+  if (Date.now() / 1_000 >= hint.issuedAt + HINT_MAX_AGE_SECONDS - HINT_MARGIN_SECONDS) {
+    loginHints.delete(hintKey(issuer, clientId));
+    return null;
+  }
+  return hint.idToken;
+}
 
 export interface OaathLoginOptions {
   /** The OAAth issuer, for example `https://oaath.taek.tech` (no trailing slash). */
@@ -288,8 +316,12 @@ async function authorize(
   );
   const state = randomToken();
   const nonce = randomToken();
+  // A grant or operation after a login opens on the login's signer and account.
+  const hint =
+    extra.authorization_details === undefined ? null : loginHint(options.issuer, options.clientId);
   const pushed = (await postForm(`${options.issuer}/oauth/par`, {
     ...extra,
+    ...(hint === null ? {} : { id_token_hint: hint }),
     client_id: options.clientId,
     redirect_uri: options.redirectUri,
     response_type: "code",
@@ -400,6 +432,13 @@ export async function loginWithOAAth(value: OaathLoginOptions): Promise<Readonly
     // Sign-in names no grant, so nothing awaits the root.
     if (released === null)
       return clientFail("oaath_client_issuer_rejected", "the issuer left the sign-in pending");
+    // The token is verified; its `iat` bounds how long it is sent as a hint.
+    const { iat } = decodeJwt(released.login.idToken);
+    if (typeof iat === "number")
+      loginHints.set(hintKey(value.issuer, value.clientId), {
+        idToken: released.login.idToken,
+        issuedAt: iat,
+      });
     return released.login;
   } finally {
     popup.close();

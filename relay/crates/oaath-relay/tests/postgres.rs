@@ -500,7 +500,27 @@ async fn keeps_a_login_transaction_and_its_code_across_restarts() {
         ("redirect_uri", REDIRECT_URI),
     ];
     let tokens = third.send(oauth_form("/oauth/token", &exchange)).await;
-    assert!(tokens.ok(200)["id_token"].is_string());
+    let id_token = text(tokens.ok(200), "id_token").to_owned();
+    // The login's id_token binds a later request to its signer and account.
+    let hinted = third
+        .send(oauth_form(
+            "/oauth/par",
+            &[
+                ("client_id", &client_id),
+                ("redirect_uri", REDIRECT_URI),
+                ("response_type", "code"),
+                ("code_challenge", &challenge),
+                ("code_challenge_method", "S256"),
+                ("scope", "openid"),
+                ("id_token_hint", &id_token),
+            ],
+        ))
+        .await;
+    let hinted = text(hinted.ok(201), "request_uri")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_owned();
     shutdown(third).await;
 
     let last = fixture.process(clock).await;
@@ -510,6 +530,16 @@ async fn keeps_a_login_transaction_and_its_code_across_restarts() {
         replay.body["error_code"],
         json!("relay_code_already_consumed")
     );
+    let bound = last
+        .send(portal_request(
+            "GET",
+            &format!("/portal/transactions/{hinted}"),
+            None,
+        ))
+        .await;
+    let bound = &bound.ok(200)["bound"];
+    assert_eq!(bound["signer_id"], json!(signer));
+    assert_eq!(bound["account"]["account_id"], account["account_id"]);
     shutdown(last).await;
 }
 

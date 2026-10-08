@@ -214,8 +214,11 @@ pub fn schema_statements() -> Vec<String> {
     nonce text,
     scope text NOT NULL,
     authorization_details text,
+    bound_signer_id text REFERENCES oaath_signer_v1 (signer_id),
+    bound_account_id text REFERENCES oaath_account_v1 (account_id),
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
-    expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max})
+    expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max}),
+    CHECK ((bound_signer_id IS NULL) = (bound_account_id IS NULL))
   )"
         ),
         format!(
@@ -649,6 +652,8 @@ fn par_record(row: &PgRow) -> RelayResult<ParRecord> {
             ("nonce", "nonce", false),
             ("scope", "scope", false),
             ("authorizationDetails", "authorization_details", false),
+            ("boundSignerId", "bound_signer_id", false),
+            ("boundAccountId", "bound_account_id", false),
             ("createdAt", "created_at", true),
             ("expiresAt", "expires_at", true),
         ],
@@ -1596,7 +1601,8 @@ impl RelayTransaction for PostgresTransaction {
         self.first(
             sqlx::query(
                 "SELECT par_id, record_version, client_id, redirect_uri, code_challenge, state, \
-                 nonce, scope, authorization_details, created_at, expires_at FROM oauth_par_v1 \
+                 nonce, scope, authorization_details, bound_signer_id, bound_account_id, \
+                 created_at, expires_at FROM oauth_par_v1 \
                  WHERE par_id = $1 FOR UPDATE",
             )
             .bind(par_id),
@@ -1611,8 +1617,9 @@ impl RelayTransaction for PostgresTransaction {
             sqlx::query(
                 "INSERT INTO oauth_par_v1 (\
                  par_id, record_version, client_id, redirect_uri, code_challenge, state, nonce, \
-                 scope, authorization_details, created_at, expires_at) \
-                 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11 \
+                 scope, authorization_details, bound_signer_id, bound_account_id, created_at, \
+                 expires_at) \
+                 SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13 \
                  WHERE EXISTS (SELECT 1 FROM oauth_client_v1 WHERE client_id = $3) \
                  ON CONFLICT DO NOTHING",
             )
@@ -1625,6 +1632,8 @@ impl RelayTransaction for PostgresTransaction {
             .bind(&record.nonce)
             .bind(&record.scope)
             .bind(&record.authorization_details)
+            .bind(&record.bound_signer_id)
+            .bind(&record.bound_account_id)
             .bind(bigint(record.created_at))
             .bind(bigint(record.expires_at)),
         )

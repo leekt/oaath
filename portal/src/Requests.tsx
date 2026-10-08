@@ -85,12 +85,25 @@ export function AskOwner({
   detail: GrantDetail;
   signer: RememberedSigner;
   account: PortalAccount;
-  onAsk: () => void;
+  /** May first sign the member in (a request bound by the app's login). */
+  onAsk: () => void | Promise<void>;
   onCancel: () => void;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => heading.current?.focus(), []);
+  async function ask() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onAsk();
+    } catch (failure) {
+      setError(message(failure));
+      setBusy(false);
+    }
+  }
   const url = requestUrl(transaction.transaction_id);
   return (
     <section aria-labelledby="ask-heading">
@@ -113,7 +126,7 @@ export function AskOwner({
         {url}
       </p>
       <div className="actions">
-        <button type="button" className="primary" onClick={onAsk}>
+        <button type="button" className="primary" disabled={busy} onClick={ask}>
           Send request to the owner
         </button>
         <button
@@ -129,7 +142,12 @@ export function AskOwner({
           {copied ? "Copied" : "Copy link"}
         </button>
       </div>
-      <CancelButton onCancel={onCancel} disabled={false} />
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <CancelButton onCancel={onCancel} disabled={busy} />
     </section>
   );
 }
