@@ -153,15 +153,18 @@ const STATUS: Readonly<Record<Run["status"], readonly [string, Tone]>> = {
 
 /**
  * One row for the setup and each buy, in order. A buy the service has not
- * scheduled yet shows as upcoming at its slot time.
+ * scheduled yet shows as upcoming at its slot time while the plan runs, and as
+ * not run once the plan has ended (`ended`), since nothing will schedule it.
  */
 export function runRows(
   runs: readonly Run[],
   schedule: Readonly<{ startAt: number; every: number; occurrences: number }>,
   explorerTxUrl: string | null,
+  ended: boolean,
 ): RunRow[] {
+  const unscheduled = ended ? (["Not run", "failed"] as const) : (["Upcoming", "pending"] as const);
   const row = (run: Run | undefined, key: string, label: string, at: number): RunRow => {
-    const [status, tone] = run ? STATUS[run.status] : (["Upcoming", "pending"] as const);
+    const [status, tone] = run ? STATUS[run.status] : unscheduled;
     return {
       key,
       label,

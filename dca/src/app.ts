@@ -339,7 +339,12 @@ function render(plan: Plan, runs: Parameters<typeof runRows>[0]) {
   $("plan-details").textContent =
     `Plan ${plan.id}\nAccount ${plan.terms.account}\nDefinition ${plan.automation.id}` +
     (plan.signer ? `\nService session key ${plan.signer}` : "");
-  const rows = runRows(runs, plan.terms.schedule, config.explorerTxUrl);
+  const rows = runRows(
+    runs,
+    plan.terms.schedule,
+    config.explorerTxUrl,
+    TERMINAL.includes(plan.status),
+  );
   $("runs").replaceChildren(
     ...rows.map((row) => {
       const item = document.createElement("li");

@@ -15,6 +15,7 @@ import {
   processRun,
   type RunLane,
 } from "../src/executor.js";
+import { tick } from "../src/scheduler.js";
 import { createOperationStore } from "../src/store.js";
 import { ACCOUNT, definition, testContext } from "./support/fixture.js";
 import { postgresAvailable, startCluster, type TestCluster } from "./support/postgres.js";
@@ -75,6 +76,26 @@ const laneHash = (lane: number) =>
     ? `0x${"cd".repeat(32)}`
     : `0x${lane.toString(16).padStart(64, "e")}`) as `0x${string}`;
 const laneKey = (lane: RunLane) => (lane === null ? 0 : Number(lane.nonceKey));
+/** Included on chain, not final, with this UserOperation outcome. */
+const included = (inclusion: "success" | "reverted"): Observation => ({
+  status: "pending",
+  transactionHash: `0x${"ee".repeat(32)}`,
+  inclusion,
+  execution: null,
+});
+const planStatus = async (context: ServiceContext, planId: string) =>
+  (
+    await context.pool.query("SELECT status, diagnostic FROM automation_plans WHERE id=$1", [
+      planId,
+    ])
+  ).rows[0];
+const runKeys = async (context: ServiceContext, planId: string) =>
+  (
+    await context.pool.query(
+      "SELECT run_key, lane, status FROM automation_runs WHERE plan_id=$1 ORDER BY run_key",
+      [planId],
+    )
+  ).rows;
 
 /** Journals like the SDK, then answers observations from a script. */
 function scriptedGateway(
@@ -387,6 +408,91 @@ describe.skipIf(!postgresAvailable)("executor", () => {
     await context.pool.end();
   });
 
+  it("activates on an included, successful setup and sends slot 0 on its own lane before setup finality", async () => {
+    const clock = { now: START - 50 };
+    const context = await testContext(await cluster.database(), clock);
+    const { planId, grantId } = await insertPlan(context, "authorized");
+    const gateway = scriptedGateway(context, grantId, { observations: [included("success")] });
+    await tick(context);
+    await drain(context, gateway.open);
+    expect((await run(context, planId, "setup")).status).toBe("observed");
+    expect((await planStatus(context, planId)).status).toBe("active");
+
+    clock.now = START + 1;
+    await tick(context);
+    await drain(context, gateway.open);
+    expect(await runKeys(context, planId)).toEqual([
+      { run_key: "occurrence:0", lane: 1, status: "submitted" },
+      { run_key: "setup", lane: 0, status: "observed" },
+    ]);
+    expect((await run(context, planId, "occurrence:0")).op_hash).toBe(laneHash(1));
+    expect(gateway.lanes.sends).toEqual([0, 1]);
+    await context.pool.end();
+  });
+
+  it("admits no occurrence for a reverted setup and fails the plan when it ends", async () => {
+    const clock = { now: START - 50 };
+    const context = await testContext(await cluster.database(), clock);
+    const { planId, grantId } = await insertPlan(context, "authorized");
+    const terms = (
+      await context.pool.query("SELECT terms FROM automation_plans WHERE id=$1", [planId])
+    ).rows[0].terms;
+    const gateway = scriptedGateway(context, grantId, {
+      observations: [
+        included("reverted"),
+        {
+          status: "finalized",
+          transactionHash: `0x${"ee".repeat(32)}`,
+          execution: {
+            sender: ACCOUNT,
+            calls: resolveCalls(definition, terms, "setup"),
+            outcome: "reverted",
+          },
+        },
+      ],
+    });
+    await tick(context);
+    await drain(context, gateway.open);
+    clock.now = START + 1;
+    await tick(context);
+    expect((await planStatus(context, planId)).status).toBe("authorized");
+    expect((await runKeys(context, planId)).map((row) => row.run_key)).toEqual(["setup"]);
+    clock.now += 120;
+    await drain(context, gateway.open);
+    await tick(context);
+    expect(await planStatus(context, planId)).toEqual({
+      status: "failed",
+      diagnostic: "setup_failed",
+    });
+    expect(await runKeys(context, planId)).toEqual([
+      { run_key: "setup", lane: 0, status: "failed" },
+    ]);
+    expect(gateway.lanes.sends).toEqual([0]);
+    await context.pool.end();
+  });
+
+  it("fails an activated plan whose included setup is later dropped", async () => {
+    const clock = { now: START - 50 };
+    const context = await testContext(await cluster.database(), clock);
+    const { planId, grantId } = await insertPlan(context, "authorized");
+    const gateway = scriptedGateway(context, grantId, {
+      observations: [
+        included("success"),
+        { status: "dropped", transactionHash: null, execution: null },
+      ],
+    });
+    await tick(context);
+    await drain(context, gateway.open);
+    expect((await planStatus(context, planId)).status).toBe("active");
+    clock.now += 120;
+    await drain(context, gateway.open);
+    expect((await planStatus(context, planId)).status).toBe("failed");
+    clock.now = START + 1;
+    await tick(context);
+    expect((await runKeys(context, planId)).map((row) => row.run_key)).toEqual(["setup"]);
+    await context.pool.end();
+  });
+
   it("fails closed when finalized calls are not the run's calls", async () => {
     const clock = { now: START + 1 };
     const context = await testContext(await cluster.database(), clock);
@@ -445,6 +551,32 @@ describe.skipIf(!postgresAvailable)("claims across replicas", () => {
       [stale?.plan_id, stale?.run_key, stale?.generation],
     );
     expect(write.rowCount).toBe(0);
+    await a.pool.end();
+    await b.pool.end();
+  });
+
+  it("sends setup and slot 0 exactly once across two replicas when setup is only included", async () => {
+    const clock = { now: START - 50 };
+    const url = await cluster.database();
+    const a = await testContext(url, clock, "replica-a");
+    const b = await testContext(url, clock, "replica-b");
+    const { planId, grantId } = await insertPlan(a, "authorized");
+    const gateway = scriptedGateway(a, grantId, { observations: [included("success")] });
+    for (const at of [START - 50, START + 1, START + 122, START + 243]) {
+      clock.now = at;
+      await Promise.all([tick(a), tick(b)]);
+      await Promise.all(
+        [a, b, a, b].map(async (replica) => {
+          const claimed = await claimRun(replica);
+          if (claimed !== null) await processRun(replica, claimed, gateway.open);
+        }),
+      );
+    }
+    expect([...gateway.lanes.sends].sort()).toEqual([0, 1]);
+    expect(await runKeys(a, planId)).toEqual([
+      { run_key: "occurrence:0", lane: 1, status: "submitted" },
+      { run_key: "setup", lane: 0, status: "observed" },
+    ]);
     await a.pool.end();
     await b.pool.end();
   });

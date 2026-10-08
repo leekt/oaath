@@ -5,19 +5,36 @@
  * ```text
  * plan     draft -> awaiting_consent -> authorized -> active <-> paused
  *          active|paused -> completed | expired;  any open plan -> cancelling -> cancelled
- *          authorized --setup failed--> failed
+ *          authorized --setup included and successful--> active            (executor)
+ *          authorized|active|paused --setup failed, reverted, dropped--> failed (executor)
+ *          draft|awaiting_consent --terms end--> expired
+ *          authorized --Grant end, setup never included--> expired (setup_not_included)
+ * schedule the terms own every slot window: slot N opens at startAt + N*every and
+ *          closes grace later, as the setup's on-chain plan and the Grant policy
+ *          were signed. Activation moves no window; it gates admission, so slot N
+ *          is due at max(its opening, activation) and is skipped once its window
+ *          closes. The Grant end (the approved policy's validUntil + 1, never
+ *          after the terms' endAt) caps every window; a slot opening at or after
+ *          it is skipped as grant_expired.
+ * deadline an authorized plan waits for its setup to be included and never
+ *          expires before the Grant end, whatever its setup run's state; at the
+ *          Grant end no operation can validate, so it expires. An active plan
+ *          completes or expires only once none of its runs (setup included) is open.
  * run      inserted due (or skipped when its window already closed), with its lane
  * lane     derived here once and stored on the run: setup and cancel use the
- *          default lane 0, occurrence slot N uses lane N (Kernel nonce key N),
- *          so slot 0 shares the default lane that alone may enable the permission
+ *          default lane 0. Occurrence slot N uses lane N + 1 when the plan has a
+ *          setup, which alone installs the permission on lane 0 and may still
+ *          await finality there; without a setup slot N uses lane N, so slot 0
+ *          installs on lane 0.
  * occupied one unresolved operation per (plan, lane), enforced by a unique index.
  *          Occurrences may be open together, up to `maxOpenSlots`, once one of
  *          the plan's operations is included (the permission install is on
  *          chain); before that, one at a time. A slot that cannot open waits and
  *          is skipped once its own window closes.
  * forbidden admitting an occurrence for a plan that is not active (so never
- *          before setup finalized); a cancel run while another run of the plan
- *          is open; two open runs on one lane
+ *          before its setup is included and successful); a slot window past the
+ *          Grant end; a cancel run while another run of the plan is open; two
+ *          open runs on one lane
  * ```
  *
  * Every admission happens in one transaction holding the plan row, so
@@ -57,15 +74,30 @@ async function installIncluded(client: Client, planId: string): Promise<boolean>
   return result.rowCount !== 0;
 }
 
-/** The run's Kernel nonce lane: the default lane 0 for setup and cancel, the slot for an occurrence. */
-function runLane(kind: "setup" | "occurrence" | "cancel", slot: number | null): number {
-  return kind === "occurrence" ? (slot as number) : 0;
+/**
+ * The run's Kernel nonce lane: the default lane 0 for setup and cancel; an
+ * occurrence's slot, moved past lane 0 when a setup holds that lane.
+ */
+function runLane(
+  plan: PlanRow,
+  kind: "setup" | "occurrence" | "cancel",
+  slot: number | null,
+): number {
+  if (kind !== "occurrence") return 0;
+  return (slot as number) + (plan.definition.setup.length > 0 ? 1 : 0);
+}
+
+/** Unix seconds from which the plan's Grant no longer validates: its approved policy's end, never after the terms' end. */
+function grantEnd(plan: PlanRow): number {
+  const { endAt } = plan.terms.schedule;
+  const validUntil = plan.permission?.validUntil ?? null;
+  return validUntil === null ? endAt : Math.min(endAt, validUntil + 1);
 }
 
 async function insertRun(
   client: Client,
+  plan: PlanRow,
   run: Readonly<{
-    planId: string;
     key: string;
     kind: "setup" | "occurrence" | "cancel";
     slot: number | null;
@@ -79,11 +111,11 @@ async function insertRun(
     `INSERT INTO automation_runs(plan_id,run_key,kind,slot,lane,scheduled_at,closes_at,status,reason,next_attempt_at)
      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$6) ON CONFLICT (plan_id, run_key) DO NOTHING`,
     [
-      run.planId,
+      plan.id,
       run.key,
       run.kind,
       run.slot,
-      runLane(run.kind, run.slot),
+      runLane(plan, run.kind, run.slot),
       run.scheduledAt,
       run.closesAt,
       run.status,
@@ -104,24 +136,25 @@ async function admitOccurrences(client: Client, now: number, maxOpenSlots: numbe
   for (const plan of plans) {
     const { schedule } = plan.terms;
     const active = plan.status === "active";
+    const end = grantEnd(plan);
     let slot = plan.next_slot;
     let open = await openRuns(client, plan.id);
     const limit = (await installIncluded(client, plan.id)) ? maxOpenSlots : 1;
     while (slot < schedule.occurrences) {
       const at = slotTime(plan.terms, slot);
-      const closes = at + schedule.grace;
-      if (now < at) break;
-      const missed = now >= closes;
+      const closes = Math.min(at + schedule.grace, end);
+      const outsideGrant = at >= end;
+      if (!outsideGrant && now < at) break;
+      const missed = outsideGrant || now >= closes;
       if (!missed && (!active || open >= limit)) break;
-      await insertRun(client, {
-        planId: plan.id,
+      await insertRun(client, plan, {
         key: `occurrence:${slot}`,
         kind: "occurrence",
         slot,
         scheduledAt: at,
         closesAt: closes,
         status: missed ? "skipped" : "due",
-        reason: missed ? "window_missed" : null,
+        reason: outsideGrant ? "grant_expired" : missed ? "window_missed" : null,
       });
       slot += 1;
       if (!missed) open += 1;
@@ -133,7 +166,7 @@ async function admitOccurrences(client: Client, now: number, maxOpenSlots: numbe
     const status =
       done && open === 0 && active
         ? "completed"
-        : now >= schedule.endAt && open === 0
+        : now >= end && open === 0
           ? "expired"
           : plan.status;
     await client.query(
@@ -162,8 +195,7 @@ async function admitSetup(client: Client, now: number): Promise<void> {
       );
       continue;
     }
-    await insertRun(client, {
-      planId: plan.id,
+    await insertRun(client, plan, {
       key: "setup",
       kind: "setup",
       slot: null,
@@ -205,8 +237,7 @@ async function admitCancellation(client: Client, now: number): Promise<void> {
       );
       continue;
     }
-    await insertRun(client, {
-      planId: plan.id,
+    await insertRun(client, plan, {
       key: "cancel",
       kind: "cancel",
       slot: null,
@@ -222,9 +253,14 @@ async function admitCancellation(client: Client, now: number): Promise<void> {
 export async function tick(context: ServiceContext): Promise<void> {
   const now = context.now();
   await transaction(context.pool, async (client) => {
+    // Unapproved plans expire at the terms' end. An authorized plan waits for
+    // its setup until the Grant end, then expires: nothing can validate after it.
     await client.query(
-      `UPDATE automation_plans SET status='expired', revision=revision+1
-       WHERE status IN ('draft','awaiting_consent','authorized') AND (terms->'schedule'->>'endAt')::bigint<=$1`,
+      `UPDATE automation_plans SET status='expired', revision=revision+1,
+         diagnostic=CASE WHEN status='authorized' THEN 'setup_not_included' ELSE diagnostic END
+       WHERE status IN ('draft','awaiting_consent','authorized')
+         AND LEAST((terms->'schedule'->>'endAt')::bigint,
+           COALESCE((permission->>'validUntil')::bigint + 1, (terms->'schedule'->>'endAt')::bigint))<=$1`,
       [now],
     );
     await admitSetup(client, now);
