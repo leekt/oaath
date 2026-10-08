@@ -46,7 +46,12 @@ import {
   verifyOwnerOperation,
 } from "@oaath/sdk/kernel";
 import { calculateJwkThumbprint, createRemoteJWKSet, type JWK, jwtVerify } from "jose";
-import puppeteer, { type Browser, type Page, type Protocol } from "puppeteer-core";
+import puppeteer, {
+  type Browser,
+  type BrowserContext,
+  type Page,
+  type Protocol,
+} from "puppeteer-core";
 import {
   decodeEventLog,
   encodeAbiParameters,
@@ -64,14 +69,14 @@ import {
   type UserOperation,
 } from "viem/account-abstraction";
 import { privateKeyToAccount } from "viem/accounts";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import worker, { type Env, ORIGIN } from "../worker/index.js";
 
 const DIST = fileURLToPath(new URL("../dist", import.meta.url));
 const RELAY_DIR = fileURLToPath(new URL("../../relay", import.meta.url));
 /** The fixture wallet's key: it signs in (SIWE) and signs a grant's root approval. */
-const WALLET = privateKeyToAccount(`0x${"5a".repeat(32)}`);
-const WALLET_ADDRESS = WALLET.address.toLowerCase() as `0x${string}`;
+let WALLET = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+let WALLET_ADDRESS = WALLET.address.toLowerCase() as `0x${string}`;
 /** Every EIP-712 approval the fixture wallet signed: logins ask for none. */
 let walletSignatures = 0;
 const EXAMPLE = fileURLToPath(new URL("../../examples/oauth-login/server.mjs", import.meta.url));
@@ -86,6 +91,7 @@ const V33 = fileURLToPath(
 );
 
 let browser: Browser;
+let deviceContext: BrowserContext;
 let relay: ReturnType<typeof spawn> | undefined;
 const servers: Server[] = [];
 const closers: (() => Promise<void>)[] = [];
@@ -381,7 +387,7 @@ async function capture(page: Page, name: string) {
 async function openDapp(
   url = dapp,
   ready = "#login:not([disabled])",
-  context: Pick<Browser, "newPage"> = browser,
+  context: Pick<Browser, "newPage"> = deviceContext,
 ) {
   const page = await context.newPage();
   // The dapp's PAR waits until the popup is instrumented; it is delayed, never altered.
@@ -471,6 +477,39 @@ beforeAll(async () => {
   });
 });
 
+// Every test owns its browser storage, cookies, signer and first account.
+beforeEach(async () => {
+  WALLET = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+  WALLET_ADDRESS = WALLET.address.toLowerCase() as `0x${string}`;
+  walletSignatures = 0;
+  rpcUpstream = "http://127.0.0.1:9/";
+  bundlerUpstream = "http://127.0.0.1:9/";
+  deviceContext = await browser.createBrowserContext();
+});
+
+afterEach(async () => {
+  await Promise.all(
+    browser
+      .browserContexts()
+      .filter((context) => context !== browser.defaultBrowserContext())
+      .map((context) => context.close()),
+  );
+});
+
+/** Establishes the wallet root through the real login flow for this test only. */
+async function createWalletAccount() {
+  const dappPage = await openDapp();
+  const popup = await startLogin(dappPage);
+  await click(popup, "::-p-text(Add signer)");
+  await click(popup, "#add-wallet-method");
+  await click(popup, "[aria-label='Available wallets'] button::-p-text(E2E Wallet)");
+  await popup.waitForSelector("::-p-text(This signer has no account yet.)");
+  await click(popup, "::-p-text(Create account)");
+  await click(popup, "button[aria-label^='Smart account 0x']");
+  expect(await outcome(dappPage.page)).toBe("signed-in");
+  await dappPage.page.close();
+}
+
 afterAll(async () => {
   await browser?.close();
   relay?.kill("SIGTERM");
@@ -541,6 +580,7 @@ describe("Login with OAAth from the SDK against the real relay", () => {
   });
 
   it("refuses an authorization response with another login's state", async () => {
+    await createWalletAccount();
     const dappPage = await openDapp();
     const popup = await startLogin(dappPage, (callback) => {
       callback.searchParams.set("state", "another-login");
@@ -552,6 +592,7 @@ describe("Login with OAAth from the SDK against the real relay", () => {
   });
 
   it("refuses an authorization response from another issuer (RFC 9207)", async () => {
+    await createWalletAccount();
     const dappPage = await openDapp();
     const popup = await startLogin(dappPage, (callback) => {
       callback.searchParams.set("iss", "https://issuer.example");
@@ -632,7 +673,7 @@ async function pushGrant(page: Page): Promise<PushedGrant> {
 
 /** The portal for one pushed grant, opened in its own tab with the fixture wallet. */
 async function openGrant(pushed: PushedGrant) {
-  const page = await browser.newPage();
+  const page = await deviceContext.newPage();
   await page.setViewport({ width: 390, height: 844 });
   await installWallet(page);
   const query = new URLSearchParams({ client_id: pushed.clientId, request_uri: pushed.requestUri });
@@ -679,11 +720,12 @@ async function approveAndRedeem(dappPage: Page, popup: Page, pushed: PushedGrant
 
 describe("dapp grants approved by the account root against the real relay", () => {
   it("shows the wallet root the dapp's signer and policy, and its one signature approves it", async () => {
-    const dappPage = await browser.newPage();
+    await createWalletAccount();
+    const dappPage = await deviceContext.newPage();
     await dappPage.goto(`${dapp}/`);
     const pushed = await pushGrant(dappPage);
     const popup = await openGrant(pushed);
-    // The wallet signer and its account from the login proof are remembered.
+    // This test’s setup remembered its own wallet signer and account.
     await click(popup, "#wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
     const account = await popup.waitForSelector("button[aria-label^='Smart account 0x']");
@@ -718,7 +760,8 @@ describe("dapp grants approved by the account root against the real relay", () =
   });
 
   it("approves with a passkey root and refuses a signer that is not the account's root", async () => {
-    const dappPage = await browser.newPage();
+    await createWalletAccount();
+    const dappPage = await deviceContext.newPage();
     await dappPage.goto(`${dapp}/`);
     const pushed = await pushGrant(dappPage);
     const popup = await openGrant(pushed);
@@ -733,7 +776,7 @@ describe("dapp grants approved by the account root against the real relay", () =
         isUserVerified: true,
       },
     });
-    // The browser still holds the wallet signer's session from the previous test.
+    // The setup signed this test's wallet in before the passkey takes over.
     const wallet = await popup.evaluate(async () => {
       const signers = JSON.parse(localStorage.getItem("oaath.portal.signers/v1") ?? "[]") as {
         signer_id: string;
@@ -793,6 +836,7 @@ describe("dapp grants approved by the account root against the real relay", () =
 
 describe("dapp Grants requested with the SDK through the portal popup", () => {
   it("names the SDK's session key, the wallet root signs, and a reload resumes the Grant", async () => {
+    await createWalletAccount();
     const dappPage = await openDapp(grantDapp, "#grant:not([hidden])");
     const popup = await startLogin(dappPage, undefined, "#grant");
     await click(popup, "#wallet-method");
@@ -984,6 +1028,7 @@ async function startLocalArbitrumSepolia() {
 
 describe("the live Grant demo, rehearsed on a local Arbitrum Sepolia", () => {
   it("grants, then one covered call deploys, enables and executes through the budgeted proxy", async () => {
+    await createWalletAccount();
     const local = await startLocalArbitrumSepolia();
     const { startGrantDemo } = (await import(GRANT_DEMO)) as { startGrantDemo: StartGrantDemo };
     const lines: string[] = [];
@@ -1135,8 +1180,9 @@ async function withCredential(page: Page, credentials: readonly Protocol.WebAuth
 
 describe("adding a passkey on a second device to an existing account", () => {
   it("links, the root approves, the passkey logs in, and suspension refuses it until restored", async () => {
+    await createWalletAccount();
     // The root device: its remembered wallet signer owns an account.
-    const root = await browser.newPage();
+    const root = await deviceContext.newPage();
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
@@ -1274,8 +1320,9 @@ describe("adding a passkey on a second device to an existing account", () => {
   });
 
   it("links with a policy template: the root's one signature is the member's enable", async () => {
+    await createWalletAccount();
     // The owner keeps a template for the account.
-    const root = await browser.newPage();
+    const root = await deviceContext.newPage();
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
@@ -1378,7 +1425,8 @@ async function redeem(dappPage: Page, pushed: PushedGrant, code: string) {
 
 describe("a member's grant request waits for the account root", () => {
   it("the member asks, the token is pending, the root approves in /accounts, the dapp redeems", async () => {
-    const root = await browser.newPage();
+    await createWalletAccount();
+    const root = await deviceContext.newPage();
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
@@ -1467,6 +1515,7 @@ describe("a member's grant request waits for the account root", () => {
 
 describe("a member's Grant requested with the SDK waits for the root, then installs on chain", () => {
   it("returns pending, the root approves in /accounts, redeemPending after a reload yields the Grant, and the first operation enables it", async () => {
+    await createWalletAccount();
     const local = await startLocalArbitrumSepolia();
     const { startGrantDemo } = (await import(GRANT_DEMO)) as { startGrantDemo: StartGrantDemo };
     const demo = await startGrantDemo({
@@ -1485,7 +1534,7 @@ describe("a member's Grant requested with the SDK waits for the root, then insta
     });
     closers.push(demo.close);
 
-    const root = await browser.newPage();
+    const root = await deviceContext.newPage();
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
@@ -2348,6 +2397,7 @@ describe("revoking an invalidated grant on chain", () => {
 
 describe("importing an existing account through the portal's chain-read proxy", () => {
   it("checks the root and lists modules, marking an executor installed elsewhere as outside", async () => {
+    await createWalletAccount();
     const local = await startLocalArbitrumSepolia();
     rpcUpstream = local.chain.url;
     const deployment = kernelDeployment({ chainId: 421_614 });
@@ -2578,7 +2628,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
     // reads-backed binding over its /rpc proxy, and signs only if the relay's
     // install digest is the same.
     const owner = owned.toLowerCase();
-    const root = await browser.newPage();
+    const root = await deviceContext.newPage();
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
@@ -2630,7 +2680,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
     await device.close();
 
     // A dapp's oaath_grant on the imported account.
-    const grantDapp = await browser.newPage();
+    const grantDapp = await deviceContext.newPage();
     await grantDapp.goto(`${dapp}/`);
     const pushed = await pushGrant(grantDapp);
     const review = await openGrant(pushed);
@@ -2678,7 +2728,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
     });
     expect(operation.request.userOperation.sender).toBe(owner);
     await local.chain.rpc("anvil_setBalance", [owner, toHex(10n ** 18n)]);
-    const operationDapp = await browser.newPage();
+    const operationDapp = await deviceContext.newPage();
     await operationDapp.goto(`${dapp}/`);
     const pushedOperation = await pushOperation(operationDapp, operation.request);
     const approval = await openGrant(pushedOperation);
@@ -2780,9 +2830,10 @@ async function pushOperation(page: Page, request: unknown): Promise<PushedGrant>
 
 describe("an owner operation approved by the account root and submitted by the dapp", () => {
   it("signs one exact operation in the portal, releases it once, and the dapp submits it", async () => {
+    await createWalletAccount();
     const local = await startLocalArbitrumSepolia();
     const target = `0x${"be".repeat(20)}` as const;
-    // The wallet root's first registry account, from the login proof.
+    // The wallet root's first registry account, created by this test's setup.
     const prepared = prepareOwnerOperation({
       account: {
         version: "oaath.kernel-account-profile/v1",
@@ -2812,7 +2863,7 @@ describe("an owner operation approved by the account root and submitted by the d
     const sender = prepared.request.userOperation.sender;
     await local.chain.rpc("anvil_setBalance", [sender, toHex(10n ** 18n)]);
 
-    const dappPage = await browser.newPage();
+    const dappPage = await deviceContext.newPage();
     await dappPage.goto(`${dapp}/`);
     const pushed = await pushOperation(dappPage, prepared.request);
     const popup = await openGrant(pushed);
