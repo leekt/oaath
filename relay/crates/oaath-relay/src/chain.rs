@@ -46,11 +46,12 @@ pub const WEBAUTHN_ROOT_VALIDATOR: &str = "0x6f781fff97b830daa2e11ee0ad6344aff71
 /// ERC-1967 `implementation` slot.
 const IMPLEMENTATION_SLOT: &str =
     "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
-const ALLOWED: [&str; 6] = [
+const ALLOWED: [&str; 7] = [
     "eth_chainId",
     "eth_blockNumber",
     "eth_getBlockByNumber",
     "eth_getCode",
+    "eth_getBalance",
     "eth_getStorageAt",
     "eth_call",
 ];
@@ -59,6 +60,7 @@ const UNAVAILABLE: RelayErrorCode = RelayErrorCode::ChainUnavailable;
 const REFUSED: RelayErrorCode = RelayErrorCode::Forbidden;
 
 sol! {
+    function balanceOf(address account) external view returns (uint256);
     function root() external view returns (bytes21);
     function ecdsaValidatorStorage(address account) external view returns (address);
     function publicKey(address account) external view returns (uint256 x, uint256 y);
@@ -284,6 +286,8 @@ pub struct PermissionState {
     /// Whether the account has code; a counterfactual account can still be
     /// deployed by an enable operation.
     pub deployed: bool,
+    /// For an undeployed account: native balance plus its EntryPoint deposit, at this block.
+    pub available_funds: Option<U256>,
     /// Whether the permission's signer is installed; an undeployed account has none.
     pub installed: bool,
     /// Kernel's stored install nonce for the approval's key; none while undeployed.
@@ -370,8 +374,43 @@ pub async fn permission_state(
         )
         .await?;
     let nonce: [u8; 32] = nonce.try_into().map_err(|_| UNAVAILABLE)?;
+    let available_funds = if deployed {
+        None
+    } else {
+        let result = reads.rpc("eth_getBalance", json!([account, block])).await?;
+        let digits = result
+            .as_str()
+            .and_then(|text| text.strip_prefix("0x"))
+            .filter(|digits| {
+                !digits.is_empty()
+                    && digits.len() <= 64
+                    && (digits.len() == 1 || !digits.starts_with('0'))
+                    && digits
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            })
+            .ok_or(UNAVAILABLE)?;
+        let balance = U256::from_str_radix(digits, 16).map_err(|_| UNAVAILABLE)?;
+        let deposit = reads
+            .call(
+                &format!("{entry_point:#x}"),
+                balanceOfCall {
+                    account: target.account,
+                }
+                .abi_encode(),
+                &block,
+            )
+            .await?;
+        let deposit: [u8; 32] = deposit.try_into().map_err(|_| UNAVAILABLE)?;
+        Some(
+            balance
+                .checked_add(U256::from_be_bytes(deposit))
+                .ok_or(UNAVAILABLE)?,
+        )
+    };
     Ok(PermissionState {
         deployed,
+        available_funds,
         installed,
         install_nonce,
         nonce: U256::from_be_bytes(nonce),

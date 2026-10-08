@@ -31,6 +31,8 @@ pub struct Stub {
     /// enable replayable, 1 consumes it.
     pub install_sequence: u64,
     pub deployed: bool,
+    pub balance: Value,
+    pub deposit: u64,
     pub send: Send,
     pub receipt: Option<Value>,
     pub calls: HashMap<String, usize>,
@@ -59,6 +61,7 @@ async fn answer(State(stub): State<Shared>, Json(request): Json<Value>) -> Json<
         "eth_getBlockByNumber" => {
             json!({ "number": "0x20", "hash": format!("0x{}", "ab".repeat(32)) })
         }
+        "eth_getBalance" => stub.balance.clone(),
         "eth_getCode" => json!(if stub.deployed { "0x6080" } else { "0x" }),
         "eth_call" => {
             let data = request["params"][0]["data"].as_str().unwrap_or_default();
@@ -68,7 +71,9 @@ async fn answer(State(stub): State<Shared>, Json(request): Json<Value>) -> Json<
                 "0x{}",
                 hex::encode(&alloy_primitives::keccak256(b"nonce(uint192)")[..4])
             );
-            if data.starts_with("0x112d3a7d") {
+            if data.starts_with("0x70a08231") {
+                json!(word(stub.deposit))
+            } else if data.starts_with("0x112d3a7d") {
                 json!(word(u64::from(stub.installed)))
             } else if data.starts_with(&nonce_selector) {
                 // key << 64 | sequence, for the key asked.
@@ -108,6 +113,8 @@ pub async fn stub(send: Send) -> (String, Shared) {
         installed: true,
         install_sequence: 0,
         deployed: true,
+        balance: json!("0xde0b6b3a7640000"),
+        deposit: 0,
         send,
         receipt: None,
         calls: HashMap::new(),

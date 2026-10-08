@@ -78,6 +78,10 @@ pub enum RelayErrorCode {
     #[error("relay_chain_unavailable")]
     #[serde(rename = "relay_chain_unavailable")]
     ChainUnavailable,
+    /// An undeployed account cannot fund the estimated revocation operation.
+    #[error("relay_insufficient_funds")]
+    #[serde(rename = "relay_insufficient_funds")]
+    InsufficientFunds,
     /// The Grant's capability is durably invalidated.
     #[error("relay_capability_invalidated")]
     #[serde(rename = "relay_capability_invalidated")]
@@ -134,6 +138,7 @@ impl RelayErrorCode {
             Self::ApnsPayloadTooLarge => 500,
             Self::ApnsCredentialsInvalid => 500,
             Self::ChainUnavailable => 503,
+            Self::InsufficientFunds => 409,
             Self::CapabilityInvalidated => 409,
             Self::MembershipSuspended => 403,
             Self::AuthorizationPending => 400,
