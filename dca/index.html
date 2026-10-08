@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f2f4f7" />
+    <meta name="description" content="Dollar-cost averaging with OAAth: approve one plan, and an automation service buys on schedule on Arbitrum Sepolia." />
+    <title>OAAth DCA · Example</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to the app</a>
+    <header class="masthead wrap">
+      <a class="mark" href="/" aria-label="OAAth DCA home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-5"/></svg>
+        OAAth <span class="demo-label">DCA</span>
+      </a>
+      <a id="portal-link" class="nav-link" href="https://oaath.taek.tech" target="_blank" rel="noopener">Account portal <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+    </header>
+
+    <main id="main" class="wrap">
+      <div class="intro">
+        <div>
+          <h1>Buy on a schedule.<br />Approve it once.</h1>
+          <p>Sign in, set a small plan, and approve it in OAAth.<br class="desktop-break" /> An automation service makes every buy for you.</p>
+        </div>
+        <div class="network-context">
+          <span class="network-name"><span class="network-dot" aria-hidden="true"></span> Arbitrum Sepolia</span>
+          <p>Test network · test tokens</p>
+          <span id="gas-context">Gas paid by the service</span>
+        </div>
+      </div>
+
+      <p id="startup-message" role="status" class="startup-message">Connecting…</p>
+      <div class="workspace">
+        <aside class="journey" aria-label="Progress">
+          <p class="journey-title">Four steps</p>
+          <ol>
+            <li id="progress-login" data-state="current"><a href="#s-login" aria-current="step"><span class="step-index">1</span><span><strong>Sign in</strong><span id="progress-login-label">Your account</span></span></a></li>
+            <li id="progress-plan"><a href="#s-plan"><span class="step-index">2</span><span><strong>Set a plan</strong><span id="progress-plan-label">Amount and schedule</span></span></a></li>
+            <li id="progress-approve"><a href="#s-plan"><span class="step-index">3</span><span><strong>Approve once</strong><span id="progress-approve-label">In OAAth</span></span></a></li>
+            <li id="progress-watch"><a href="#s-watch"><span class="step-index">4</span><span><strong>Watch it buy</strong><span id="progress-watch-label">Every purchase</span></span></a></li>
+          </ol>
+          <p class="journey-note">Test tokens only. The plan mints its own test tUSD, so you need no funds.</p>
+        </aside>
+
+        <div class="task-sheet">
+          <section id="s-login" class="task" aria-labelledby="login-heading">
+            <div class="task-heading"><h2 id="login-heading">Sign in with OAAth</h2><span id="login-badge" class="state-label">Start here</span></div>
+            <p>Use a passkey or wallet and choose your account in the OAAth window. Signing in approves nothing.</p>
+            <div id="identity-summary" class="identity-summary" hidden>
+              <span class="identity-mark" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 3 7v6c0 4 9 8 9 8s9-4 9-8V7Z"/><path d="m8 12 3 3 5-6"/></svg></span>
+              <div><strong id="identity-title">Your account</strong><code id="identity-account"></code></div>
+            </div>
+            <div class="actions"><button id="login" class="button button-primary" type="button" disabled>Sign in with OAAth</button><span class="action-note">Opens a secure sign-in window</span></div>
+          </section>
+
+          <section id="s-plan" class="task" aria-labelledby="plan-heading">
+            <div class="task-heading"><h2 id="plan-heading">Set a plan, approve once</h2><span id="plan-badge" class="state-label">Sign in first</span></div>
+            <p>Each buy swaps test tUSD for test tETH on Uniswap v3. The plan's first operation mints the whole budget of test tUSD into your account.</p>
+            <form id="plan-form" class="plan-form" hidden>
+              <label>Amount per buy <span class="field"><input id="amount" name="amount" inputmode="decimal" autocomplete="off" value="1" required /><span>tUSD</span></span></label>
+              <label>Number of buys <input id="buys" name="buys" type="number" min="1" step="1" value="3" required /></label>
+              <label>Interval <select id="interval" name="interval"></select></label>
+              <p id="plan-summary" class="plan-summary" aria-live="polite"></p>
+              <div class="actions"><button id="approve" class="button button-primary" type="submit">Approve in OAAth</button><span class="action-note">One approval covers every buy</span></div>
+            </form>
+            <details class="disclosure"><summary>What does the approval allow?</summary><div class="disclosure-body"><p>A session key held by the automation service may call, for this plan's duration and operation count only: <code>mint</code> and <code>approve</code> on test tUSD, and <code>open</code>, <code>execute</code> and <code>cancel</code> on the shared DCA executor. The executor enforces the budget, one buy per slot inside its window, and a minimum output from the price feeds.</p></div></details>
+          </section>
+
+          <section id="s-watch" class="task" aria-labelledby="watch-heading">
+            <div class="task-heading"><h2 id="watch-heading">Watch it buy</h2><span id="watch-badge" class="state-label">No plan yet</span></div>
+            <p id="watch-empty">Your plan's buys appear here after you approve it.</p>
+            <div id="watch" hidden>
+              <dl class="permission-limits">
+                <div><dt>Plan</dt><dd id="plan-status">–</dd></div>
+                <div><dt>tUSD balance</dt><dd id="sell-balance">–</dd></div>
+                <div><dt>tETH balance</dt><dd id="buy-balance">–</dd></div>
+              </dl>
+              <ol id="runs" class="runs"></ol>
+              <details class="disclosure"><summary>Plan details</summary><pre id="plan-details"></pre></details>
+              <div class="actions"><button id="new-plan" class="button button-outline" type="button">Start another plan</button></div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="feedback" class="feedback" hidden><span class="feedback-dot" aria-hidden="true"></span><p id="result" role="status" aria-live="polite"></p></div>
+    </main>
+    <footer class="site-footer wrap"><span>OAAth · Your account, your choice.</span><span>Testnet example · Proof of concept</span></footer>
+    <script type="module" src="/src/entry.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.147.0/config-schema.json",
+  "name": "oaath-dca",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-05",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "dca.taek.tech", "custom_domain": true }],
+  // The Worker decides every route first; `/callback` maps to callback.html itself.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none"
+  },
+  "vars": {
+    "DCA_ORIGIN": "https://dca.taek.tech",
+    "OAATH_ISSUER": "https://oaath.taek.tech",
+    // REPLACE: register with POST https://oaath.taek.tech/oauth/clients
+    // (redirect_uris ["https://dca.taek.tech/callback"]) and put the returned id here.
+    "OAATH_CLIENT_ID": "REPLACE_WITH_REGISTERED_CLIENT_ID",
+    "EXPLORER_TX_URL": "https://sepolia.arbiscan.io/tx/",
+    "CHAIN_RPC_URL": "https://sepolia-rollup.arbitrum.io/rpc",
+    // The hosted automation service. The app stays off until the AUTOMATION_APP_TOKEN
+    // secret holds this app's credential there.
+    "AUTOMATION_URL": "https://oaath-automation.taek.tech"
+  },
+  // Server-side calls to the hosted automation service go through its Worker directly.
+  "services": [{ "binding": "AUTOMATION_SERVICE", "service": "oaath-automation" }],
+  // Per IP: every proxied chain read and session request.
+  "ratelimits": [
+    { "name": "RPC_LIMIT", "namespace_id": "4216160", "simple": { "limit": 120, "period": 60 } }
+  ],
+  "observability": { "enabled": true }
+}
