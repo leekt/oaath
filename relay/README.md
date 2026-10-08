@@ -21,12 +21,13 @@ cargo run -p oaath-relay -- --create-schema   # with OAATH_POSTGRES_URL: create 
 | `OAATH_ISSUER` | The issuer URL (no trailing slash). Enables `/oauth/*`, discovery and the portal transaction routes. |
 | `OAATH_ID_TOKEN_KEY` | Path to the ES256 (P-256) PKCS#8 PEM id_token signing key; required with `OAATH_ISSUER`. |
 | `OAATH_ID_TOKEN_KID` | Optional `kid`; defaults to the key's RFC 7638 thumbprint. |
-| `OAATH_RPC_421614` | Optional JSON-RPC URL for chain 421614, read only to prove an imported account's root; without it imports are refused. |
+| `OAATH_RPC_421614` | Optional JSON-RPC URL for chain 421614, read only to prove an imported account's root and to read a revocation's permission state; without it imports and revocations are refused. |
+| `OAATH_BUNDLER_421614` | Optional bundler JSON-RPC URL for chain 421614 (Pimlico: it uses `pimlico_getUserOperationGasPrice`). It estimates and submits root-signed revocations, one attempt each, within a budget of 32 bundler requests per revocation, and never resubmits. Without it no revocation is prepared. |
 
 `--create-schema` creates the current PostgreSQL schema and fails if any object
 already exists. There are no migrations: an older schema is recreated. Logs
-never include codes, artifacts, verifiers, tokens, keys, request bodies or the
-RPC URL.
+never include codes, artifacts, verifiers, tokens, keys, request bodies, the
+RPC URL or the bundler URL.
 
 ## Endpoints
 

@@ -27,7 +27,9 @@ use crate::records::{
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
 use crate::registry::{AccountRecord, AccountSignerRecord, MembershipStatus, SignerRecord};
+use crate::revocation::{RevocationDelivery, RevocationRecord};
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
+use oaath_protocol::capture::parse_json;
 
 pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v1";
 
@@ -196,6 +198,7 @@ pub fn schema_statements() -> Vec<String> {
     record_version text NOT NULL,
     client_name text NOT NULL,
     redirect_uris text NOT NULL,
+    revocation_delivery text NOT NULL CHECK (revocation_delivery IN ('relay', 'dapp')),
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
   )"
         ),
@@ -255,6 +258,14 @@ pub fn schema_statements() -> Vec<String> {
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
   )"
         ),
+        "CREATE TABLE oaath_revocation_v1 (
+    grant_id text PRIMARY KEY
+      REFERENCES oaath_relay_authorization_request_v1 (request_id),
+    record_version text NOT NULL,
+    revision bigint NOT NULL CHECK (revision >= 1),
+    record text NOT NULL
+  )"
+        .to_owned(),
         format!(
             "CREATE TABLE oaath_pending_grant_v1 (
     request_id text PRIMARY KEY
@@ -525,6 +536,24 @@ fn template_record(row: &PgRow) -> RelayResult<PolicyTemplateRecord> {
     )?)
 }
 
+/// The record text owns the fact; its key columns must agree with it.
+fn revocation_record(row: &PgRow) -> RelayResult<RevocationRecord> {
+    let unreadable = |_| RelayErrorCode::RecordUnreadable;
+    let text: String = row.try_get("record").map_err(unreadable)?;
+    let grant_id: String = row.try_get("grant_id").map_err(unreadable)?;
+    let version: String = row.try_get("record_version").map_err(unreadable)?;
+    let revision: i64 = row.try_get("revision").map_err(unreadable)?;
+    let record =
+        RevocationRecord::parse(&parse_json(&text).map_err(|_| RelayErrorCode::RecordUnreadable)?)?;
+    if record.grant_id != grant_id
+        || record.version != version
+        || i64::try_from(record.revision).ok() != Some(revision)
+    {
+        return Err(RelayErrorCode::RecordUnreadable);
+    }
+    Ok(record)
+}
+
 const PENDING_COLUMNS: &str = "request_id, record_version, account_id, member_signer_id, \
      artifact_id, code_ref, created_at, expires_at, outcome, decided_at";
 
@@ -583,6 +612,7 @@ fn client_record(row: &PgRow) -> RelayResult<OAuthClientRecord> {
             ("version", "record_version", false),
             ("clientId", "client_id", false),
             ("clientName", "client_name", false),
+            ("revocationDelivery", "revocation_delivery", false),
             ("createdAt", "created_at", true),
         ],
     )?;
@@ -1224,6 +1254,43 @@ impl RelayTransaction for PostgresTransaction {
         .await
     }
 
+    async fn lock_revocation(&mut self, grant_id: &str) -> RelayResult<Option<RevocationRecord>> {
+        self.first(
+            sqlx::query(
+                "SELECT grant_id, record_version, revision, record FROM oaath_revocation_v1 \
+                 WHERE grant_id = $1 FOR UPDATE",
+            )
+            .bind(grant_id),
+            revocation_record,
+        )
+        .await
+    }
+
+    async fn save_revocation(&mut self, record: &RevocationRecord) -> RelayResult<bool> {
+        let text = serde_json::to_string(record).map_err(|_| RelayErrorCode::Internal)?;
+        let query = if record.revision == 1 {
+            sqlx::query(
+                "INSERT INTO oaath_revocation_v1 (grant_id, record_version, revision, record) \
+                 SELECT $1, $2, $3, $4 WHERE EXISTS (SELECT 1 FROM \
+                 oaath_relay_authorization_request_v1 WHERE request_id = $1) \
+                 ON CONFLICT DO NOTHING",
+            )
+        } else {
+            sqlx::query(
+                "UPDATE oaath_revocation_v1 SET record_version = $2, revision = $3, record = $4 \
+                 WHERE grant_id = $1 AND revision = $3 - 1",
+            )
+        };
+        self.applied(
+            query
+                .bind(&record.grant_id)
+                .bind(record.version)
+                .bind(bigint(record.revision))
+                .bind(text),
+        )
+        .await
+    }
+
     async fn lock_pending_grant(
         &mut self,
         request_id: &str,
@@ -1448,8 +1515,8 @@ impl RelayTransaction for PostgresTransaction {
     ) -> RelayResult<Option<OAuthClientRecord>> {
         self.first(
             sqlx::query(
-                "SELECT client_id, record_version, client_name, redirect_uris, created_at \
-                 FROM oauth_client_v1 WHERE client_id = $1 FOR UPDATE",
+                "SELECT client_id, record_version, client_name, redirect_uris, \
+                 revocation_delivery, created_at FROM oauth_client_v1 WHERE client_id = $1 FOR UPDATE",
             )
             .bind(client_id),
             client_record,
@@ -1463,13 +1530,17 @@ impl RelayTransaction for PostgresTransaction {
         self.applied(
             sqlx::query(
                 "INSERT INTO oauth_client_v1 (\
-                 client_id, record_version, client_name, redirect_uris, created_at\
-                 ) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+                 client_id, record_version, client_name, redirect_uris, revocation_delivery, \
+                 created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
             )
             .bind(&record.client_id)
             .bind(record.version)
             .bind(&record.client_name)
             .bind(uris)
+            .bind(match record.revocation_delivery {
+                RevocationDelivery::Relay => "relay",
+                RevocationDelivery::Dapp => "dapp",
+            })
             .bind(bigint(record.created_at)),
         )
         .await

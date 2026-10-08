@@ -40,6 +40,7 @@ use crate::records::{
     CapabilityInvalidationRecord, EncryptedArtifactRecord,
 };
 use crate::registry::{AccountRecord, AccountSignerRecord, MembershipStatus, SignerRecord};
+use crate::revocation::RevocationRecord;
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
 #[async_trait]
@@ -178,6 +179,11 @@ pub trait RelayTransaction: Send {
         &mut self,
         account_id: &str,
     ) -> RelayResult<Option<AccountImportRecord>>;
+
+    async fn lock_revocation(&mut self, grant_id: &str) -> RelayResult<Option<RevocationRecord>>;
+    /// Inserts revision 1, or replaces revision `n - 1` with `n`; `false`
+    /// when another transition came first or the grant is unknown.
+    async fn save_revocation(&mut self, record: &RevocationRecord) -> RelayResult<bool>;
 
     async fn lock_pending_grant(
         &mut self,

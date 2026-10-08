@@ -24,6 +24,7 @@ import {
 import { signMemberGrant, signMembershipApproval } from "./membership.js";
 import { Policies, templateSummary } from "./Policies.js";
 import { PendingRequests } from "./Requests.js";
+import { RevokeOnChain } from "./Revocation.js";
 import { Frame, message, Notice, QrCode, SignerStep } from "./shared.js";
 import { type RememberedSigner, rememberSigner, shortAddress, signerDetail } from "./signers.js";
 
@@ -430,13 +431,16 @@ type MemberAction = "suspend" | "restore" | "remove";
 const CONFIRM: Readonly<Record<MemberAction, { label: string; note: string }>> = {
   suspend: {
     label: "Confirm suspension",
-    note: "They can't sign in as this account, and its app access is cut off. Nothing changes on-chain.",
+    note: "They can't sign in as this account, and its app access is cut off. Revoke on chain afterwards to remove it there too.",
   },
   restore: {
     label: "Confirm restore",
     note: "They can sign in again. App access cut off by the suspension stays off.",
   },
-  remove: { label: "Confirm removal", note: "They leave this account. Nothing changes on-chain." },
+  remove: {
+    label: "Confirm removal",
+    note: "They leave this account. Revoke on chain afterwards to remove its app access there too.",
+  },
 };
 
 /** One signer of the account, with every membership that admitted it. */
@@ -446,6 +450,7 @@ interface MemberEntry {
   readonly member: PortalMember;
   /** Grants the signer holds on the account (dapp or template). */
   readonly grants: number;
+  readonly grantIds: readonly string[];
 }
 
 function entries(members: readonly PortalMember[]): MemberEntry[] {
@@ -462,6 +467,7 @@ function entries(members: readonly PortalMember[]): MemberEntry[] {
         (rows.every((row) => row.grant_id) ? "App signer" : (KIND_LABEL[first.kind] ?? first.kind)),
       member: rows.find((row) => row.role === "root") ?? first,
       grants: rows.filter((row) => row.grant_id !== null).length,
+      grantIds: rows.flatMap((row) => (row.grant_id === null ? [] : [row.grant_id])),
     };
   });
 }
@@ -476,6 +482,8 @@ function Members({ account, signer }: { account: PortalAccount; signer: Remember
     readonly action: MemberAction;
   } | null>(null);
   const [assigning, setAssigning] = useState<Readonly<Record<string, string>>>({});
+  /** Grants cut off here this visit (a removed member is no longer listed). */
+  const [cutOff, setCutOff] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -509,11 +517,15 @@ function Members({ account, signer }: { account: PortalAccount; signer: Remember
   }
 
   function act(member: PortalMember, action: MemberAction) {
-    return run(() =>
-      action === "remove"
-        ? portalApi.removeMember(accountId, member.signer_id)
-        : portalApi.setMemberStatus(accountId, member.signer_id, action),
+    const grantIds = (members ?? []).flatMap((row) =>
+      row.signer_id === member.signer_id && row.grant_id !== null ? [row.grant_id] : [],
     );
+    return run(async () => {
+      await (action === "remove"
+        ? portalApi.removeMember(accountId, member.signer_id)
+        : portalApi.setMemberStatus(accountId, member.signer_id, action));
+      if (action !== "restore") setCutOff((current) => [...new Set([...current, ...grantIds])]);
+    });
   }
 
   /** A fresh grant from a template: the owner signs the member's enable once. */
@@ -659,8 +671,41 @@ function Members({ account, signer }: { account: PortalAccount; signer: Remember
           </p>
         )}
       </section>
+      <RevocationList
+        grantIds={[
+          ...new Set([
+            ...cutOff,
+            ...(members ?? []).flatMap((row) =>
+              row.status === "suspended" && row.grant_id !== null ? [row.grant_id] : [],
+            ),
+          ]),
+        ]}
+        account={account}
+        signer={signer}
+      />
       <Policies accountId={accountId} templates={templates} onChange={setTemplates} />
     </>
+  );
+}
+
+/** Grants cut off off-chain whose permission may still be installed on chain. */
+function RevocationList({
+  grantIds,
+  account,
+  signer,
+}: {
+  grantIds: readonly string[];
+  account: PortalAccount;
+  signer: RememberedSigner;
+}) {
+  if (grantIds.length === 0) return null;
+  return (
+    <section aria-labelledby="revocations-heading" className="members">
+      <h2 id="revocations-heading">On-chain revocation</h2>
+      {grantIds.map((grantId) => (
+        <RevokeOnChain key={grantId} grantId={grantId} account={account} signer={signer} />
+      ))}
+    </section>
   );
 }
 

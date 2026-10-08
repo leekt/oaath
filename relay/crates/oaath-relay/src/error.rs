@@ -98,6 +98,10 @@ pub enum RelayErrorCode {
     #[error("relay_credential_registered")]
     #[serde(rename = "relay_credential_registered")]
     CredentialRegistered,
+    /// The operation's request budget is spent; nothing more is sent.
+    #[error("relay_request_budget_exhausted")]
+    #[serde(rename = "relay_request_budget_exhausted")]
+    RequestBudgetExhausted,
     /// An invariant the relay owns was violated.
     #[error("relay_internal")]
     #[serde(rename = "relay_internal")]
@@ -131,6 +135,7 @@ impl RelayErrorCode {
             Self::AuthorizationPending => 400,
             Self::AccessDenied => 403,
             Self::CredentialRegistered => 409,
+            Self::RequestBudgetExhausted => 429,
             Self::Internal => 500,
         }
     }

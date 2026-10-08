@@ -7,6 +7,7 @@ pub mod account_import;
 pub mod authentication;
 pub mod authority;
 pub mod authorization;
+pub mod bundler;
 pub mod chain;
 pub mod clock;
 pub mod error;
@@ -20,6 +21,7 @@ pub mod policy;
 pub mod portal;
 pub mod records;
 pub mod registry;
+pub mod revocation;
 pub mod session;
 pub mod store;
 

@@ -84,7 +84,7 @@ fn capture_install(value: &Value) -> ProtocolResult<KernelInstall> {
 }
 
 /// A type-5 policy opens a permission that type-6 signers close in order.
-fn validate_package_sequence(packages: &[KernelInstall]) -> ProtocolResult<()> {
+pub(crate) fn validate_package_sequence(packages: &[KernelInstall]) -> ProtocolResult<()> {
     ensure((1..=MAX_PACKAGES).contains(&packages.len()), CODE)?;
     let mut pending: Option<&str> = None;
     for install in packages {

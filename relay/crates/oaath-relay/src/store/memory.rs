@@ -29,6 +29,7 @@ use crate::records::{
 use crate::registry::{
     AccountRecord, AccountSignerRecord, MembershipRole, MembershipStatus, SignerRecord,
 };
+use crate::revocation::RevocationRecord;
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 
 #[derive(Clone, Default)]
@@ -50,6 +51,7 @@ struct Tables {
     policy_templates: HashMap<String, Value>,
     account_imports: HashMap<String, Value>,
     pending_grants: HashMap<String, Value>,
+    revocations: HashMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -544,6 +546,25 @@ impl RelayTransaction for MemoryTransaction {
             account_id,
             AccountImportRecord::parse,
         )
+    }
+
+    async fn lock_revocation(&mut self, grant_id: &str) -> RelayResult<Option<RevocationRecord>> {
+        read(&self.staged.revocations, grant_id, RevocationRecord::parse)
+    }
+
+    async fn save_revocation(&mut self, record: &RevocationRecord) -> RelayResult<bool> {
+        let current = self.lock_revocation(&record.grant_id).await?;
+        let follows = match &current {
+            None => record.revision == 1 && self.staged.requests.contains_key(&record.grant_id),
+            Some(current) => current.revision + 1 == record.revision,
+        };
+        if !follows {
+            return Ok(false);
+        }
+        self.staged
+            .revocations
+            .insert(record.grant_id.clone(), to_value(record));
+        Ok(true)
     }
 
     async fn lock_pending_grant(

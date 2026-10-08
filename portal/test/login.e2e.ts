@@ -23,8 +23,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { p256 } from "@noble/curves/nist.js";
 import {
+  encodeKernelPermissionUninstallCalls,
   hashOwnerCredentialProfile,
   OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+  parseOwnerOperationRequest,
   parsePermissionRequest,
 } from "@oaath/protocol";
 import { deriveSessionPolicyProfiles } from "@oaath/sdk/advanced";
@@ -154,6 +156,22 @@ async function startRelay(issuer: string) {
       outgoing.writeHead(502).end();
     }
   });
+  // Revocations go through this loopback hop to whichever local bundler a test started.
+  const bundlerPort = await listen(async (incoming, outgoing) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of incoming) chunks.push(chunk as Buffer);
+    try {
+      const upstream = await fetch(bundlerUpstream, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: Buffer.concat(chunks),
+      });
+      outgoing.writeHead(upstream.status, { "content-type": "application/json" });
+      outgoing.end(Buffer.from(await upstream.arrayBuffer()));
+    } catch {
+      outgoing.writeHead(502).end();
+    }
+  });
   relay = spawn(join(RELAY_DIR, "target/debug/oaath-relay"), [], {
     stdio: ["ignore", "ignore", "inherit"],
     env: {
@@ -164,6 +182,7 @@ async function startRelay(issuer: string) {
       OAATH_ISSUER: issuer,
       OAATH_ID_TOKEN_KEY: join(work, "id-token.pem"),
       OAATH_RPC_421614: `http://127.0.0.1:${rpcPort}/`,
+      OAATH_BUNDLER_421614: `http://127.0.0.1:${bundlerPort}/`,
     },
   });
   const base = `http://127.0.0.1:${port}`;
@@ -181,6 +200,8 @@ async function startRelay(issuer: string) {
  * its local Arbitrum Sepolia, so no test can reach a public endpoint.
  */
 let rpcUpstream = "http://127.0.0.1:9/";
+/** The relay's bundler: closed until a test starts its local bundler. */
+let bundlerUpstream = "http://127.0.0.1:9/";
 
 /** The portal origin: Node's HTTP server in front of the real Worker module. */
 async function startPortal() {
@@ -863,7 +884,10 @@ async function startLocalArbitrumSepolia() {
     else if (rpc.method === "eth_supportedEntryPoints") result = [deployment.entryPoint.address];
     else if (rpc.method === "eth_getUserOperationReceipt")
       result = receipts.get(String(rpc.params[0])) ?? null;
-    else if (rpc.method === "eth_estimateUserOperationGas")
+    else if (rpc.method === "pimlico_getUserOperationGasPrice") {
+      const price = { maxFeePerGas: "0x77359400", maxPriorityFeePerGas: "0x3b9aca00" };
+      result = { slow: price, standard: price, fast: price };
+    } else if (rpc.method === "eth_estimateUserOperationGas")
       result = {
         callGasLimit: "0xdbba0",
         verificationGasLimit: "0x2dc6c0",
@@ -1492,9 +1516,9 @@ describe("a member's Grant requested with the SDK waits for the root, then insta
 });
 
 /** One JSON call straight to the relay, with an optional session cookie. */
-async function relayCall(path: string, cookie?: string, body?: unknown) {
+async function relayCall(path: string, cookie?: string, body?: unknown, method?: "DELETE") {
   const response = await fetch(`${relayBase}${path}`, {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     headers: {
       ...(body === undefined ? {} : { "content-type": "application/json" }),
       ...(cookie ? { cookie } : {}),
@@ -1572,244 +1596,653 @@ function softwarePasskey() {
   return { credential, key };
 }
 
+/** Submits one signed operation through the EntryPoint; answers its event's success, or null. */
+async function handleOperation(
+  local: Awaited<ReturnType<typeof startLocalArbitrumSepolia>>,
+  prepared: {
+    readonly userOperation: {
+      sender: `0x${string}`;
+      nonce: string;
+      callData: `0x${string}`;
+      callGasLimit: string;
+      verificationGasLimit: string;
+      preVerificationGas: string;
+      maxFeePerGas: string;
+      maxPriorityFeePerGas: string;
+      factory: { address: `0x${string}`; data: `0x${string}` } | null;
+    };
+  },
+  signature: `0x${string}`,
+): Promise<boolean | null> {
+  const operation = prepared.userOperation;
+  const hash = await local.stack.wallet.sendTransaction({
+    to: kernelDeployment({ chainId: 421_614 }).entryPoint.address,
+    gas: 8_000_000n,
+    data: encodeFunctionData({
+      abi: entryPoint07Abi,
+      functionName: "handleOps",
+      args: [
+        [
+          toPackedUserOperation({
+            sender: operation.sender,
+            nonce: BigInt(operation.nonce),
+            callData: operation.callData,
+            callGasLimit: BigInt(operation.callGasLimit),
+            verificationGasLimit: BigInt(operation.verificationGasLimit),
+            preVerificationGas: BigInt(operation.preVerificationGas),
+            maxFeePerGas: BigInt(operation.maxFeePerGas),
+            maxPriorityFeePerGas: BigInt(operation.maxPriorityFeePerGas),
+            ...(operation.factory
+              ? { factory: operation.factory.address, factoryData: operation.factory.data }
+              : {}),
+            signature,
+          }),
+        ],
+        local.stack.submitter.address,
+      ],
+    }),
+  });
+  const receipt = await local.chain.client.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") return null;
+  const event = receipt.logs
+    .map((log) => {
+      try {
+        return decodeEventLog({
+          abi: entryPoint07Abi,
+          topics: log.topics as never,
+          data: log.data,
+        });
+      } catch {
+        return null;
+      }
+    })
+    .find((entry) => entry?.eventName === "UserOperationEvent");
+  return event?.eventName === "UserOperationEvent" ? event.args.success : null;
+}
+
+/**
+ * Through the real relay: a root's account (derived, or deployed outside
+ * OAAth and imported), a policy template, and a software-passkey member the
+ * root grants it; the member's first covered call enables and executes.
+ */
+async function memberGrantOnChain(kind: "derived" | "imported") {
+  const local = await startLocalArbitrumSepolia();
+  rpcUpstream = local.chain.url;
+  const deployment = kernelDeployment({ chainId: 421_614 });
+  const [ports] = createCetaneChainPorts({ 421614: { publicRpcUrls: [local.chain.url] } });
+  if (!ports) throw new Error("no chain reads");
+  const reads = ports.reads;
+
+  // The root: an ECDSA key that signs in with SIWE and owns one account.
+  const rootAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+  const rootProfile = {
+    version: "oaath.owner-credential-profile/v1",
+    kind: "ecdsa",
+    address: rootAccount.address.toLowerCase() as `0x${string}`,
+  } as const;
+  const rootKey = kernelKey({
+    account: { address: rootProfile.address, sign: ({ hash }) => rootAccount.sign({ hash }) },
+    validator: ECDSA_VALIDATOR,
+  });
+  const root = await relaySignIn(rootProfile, async (challenge) =>
+    rootAccount.signMessage({ message: challenge.message ?? "" }),
+  );
+  const owner = createKernelRuntime({
+    deployment,
+    operator: ownerOperator({
+      key: kernelKey({ credential: rootProfile, validator: ECDSA_VALIDATOR }),
+    }),
+    reads,
+  });
+  let account: { account_id: string; address: `0x${string}` };
+  if (kind === "derived") {
+    account = (
+      await relayCall("/portal/accounts", root.cookie, {
+        root_signer_id: root.signerId,
+        creation_key: randomBytes(16).toString("hex"),
+      })
+    ).json as typeof account;
+  } else {
+    // An account deployed outside OAAth, then imported with the root's statement.
+    const existing = await owner.bindAccount({
+      accountIndex: "90",
+      initialPackages: owner.packages,
+    });
+    if (existing.state !== "counterfactual" || !("factoryDeployCalldata" in existing))
+      throw new Error("account already deployed");
+    const hash = await local.stack.wallet.sendTransaction({
+      to: existing.factory,
+      data: existing.factoryDeployCalldata,
+      gas: 3_000_000n,
+    });
+    await local.chain.client.waitForTransactionReceipt({ hash });
+    const address = existing.account.toLowerCase() as `0x${string}`;
+    const issuedAt = Math.floor(Date.now() / 1000) - 5;
+    const fingerprint = `0x${"33".repeat(32)}` as const;
+    const signature = await rootAccount.sign({
+      hash: hashTypedData({
+        domain: { name: "OAAth", version: "1" },
+        types: {
+          AccountImport: [
+            { name: "account", type: "address" },
+            { name: "ownerProfileHash", type: "bytes32" },
+            { name: "inventoryFingerprint", type: "bytes32" },
+            { name: "issuedAt", type: "uint64" },
+            { name: "nonce", type: "string" },
+          ],
+        },
+        primaryType: "AccountImport",
+        message: {
+          account: address,
+          ownerProfileHash: hashOwnerCredentialProfile(rootProfile),
+          inventoryFingerprint: fingerprint,
+          issuedAt: BigInt(issuedAt),
+          nonce: "member-grant-1",
+        },
+      }),
+    });
+    account = (
+      await relayCall("/portal/accounts/import", root.cookie, {
+        root_signer_id: root.signerId,
+        address,
+        inventory_fingerprint: fingerprint,
+        issued_at: issuedAt,
+        nonce: "member-grant-1",
+        signature,
+      })
+    ).json as typeof account;
+  }
+  const target = `0x${"7c".repeat(20)}` as const;
+  const template = (
+    await relayCall(`/portal/accounts/${account.account_id}/policies`, root.cookie, {
+      name: "Member payments",
+      lifetime_seconds: 3_600,
+      policy: {
+        calls: [{ target, selector: "0x12345678", valueLimit: "500" }],
+        perChainOperationLimit: { count: 3, intervalSeconds: null },
+      },
+    })
+  ).json as { template_id: string };
+
+  // The member: a passkey that asks to join, and the root grants it the template.
+  const passkey = softwarePasskey();
+  const member = await relaySignIn(passkey.credential, async (challenge) =>
+    passkey.key.sign(`0x${challenge.nonce}`),
+  );
+  const linkId = String(
+    (
+      await relayCall("/portal/links", member.cookie, {
+        signer_id: member.signerId,
+        account: account.address,
+        label: "Laptop",
+      })
+    ).json.link_id,
+  );
+  const prepared = (
+    await relayCall(`/portal/links/${linkId}/prepare`, root.cookie, {
+      template_id: template.template_id,
+    })
+  ).json as {
+    permission_request: unknown;
+    signing_request: { expectedDigest: `0x${string}` };
+  };
+  const request = parsePermissionRequest(prepared.permission_request);
+  expect(request.operatorCredential).toMatchObject({
+    kind: "webauthn",
+    publicKey: passkey.credential.publicKey,
+  });
+  // The root signs only the install the SDK derives itself.
+  const approval =
+    kind === "derived"
+      ? prepareDerivedAccountPermissionApproval({
+          request,
+          chainId: 421_614,
+          account: account.address,
+        })
+      : await prepareKernelPermissionApproval({ request, chainId: 421_614, reads });
+  expect(approval.signingRequest.expectedDigest).toBe(prepared.signing_request.expectedDigest);
+  const decision = await approval.sign(rootKey, Math.floor(Date.now() / 1000));
+  await relayCall(`/portal/links/${linkId}/approve`, root.cookie, {
+    template_id: template.template_id,
+    artifact: JSON.stringify(decision),
+  });
+
+  // The member reads its grant and spends it: the first covered call
+  // installs the permission in enable mode and executes.
+  const grant = (await relayCall(`/portal/grants/${linkId}`, member.cookie)).json as {
+    status: string;
+    permission_request: unknown;
+    enable: Parameters<typeof materializeKernelPermission>[0]["approval"];
+  };
+  expect(grant.status).toBe("approved");
+  expect(grant.enable.account).toBe(account.address);
+  const granted = parsePermissionRequest(grant.permission_request);
+  const session = createKernelRuntime({
+    deployment,
+    operator: sessionOperator({
+      key: passkey.key,
+      policies: deriveSessionPolicyProfiles(granted.policy),
+    }),
+    reads,
+  });
+  const profile = granted.logicalAccount;
+  const bound =
+    "accountIndex" in profile
+      ? await session.bindAccount({
+          accountIndex: profile.accountIndex,
+          initialPackages: owner.packages,
+        })
+      : await session.bindAccount({ address: account.address });
+  expect("accountIndex" in profile).toBe(kind === "derived");
+  await local.chain.rpc("anvil_setBalance", [account.address, toHex(10n ** 18n)]);
+  const first = await materializeKernelPermission({
+    approval: grant.enable,
+    runtime: session,
+    grantId: linkId,
+    account: bound,
+    nonceKey: "0",
+    sequence: "0",
+    calls: [{ target, value: "500", data: "0x12345678" }],
+    gas: {
+      callGasLimit: "900000",
+      verificationGasLimit: "3000000",
+      preVerificationGas: "150000",
+      maxFeePerGas: "2000000000",
+      maxPriorityFeePerGas: "1000000000",
+    },
+  });
+  expect(first.prepared.userOperation.factory === null).toBe(kind === "imported");
+  expect(await handleOperation(local, first.prepared, first.signature)).toBe(true);
+  expect(await local.chain.rpc("eth_getBalance", [target, "latest"])).toBe("0x1f4");
+  return {
+    local,
+    reads,
+    rootAccount,
+    rootProfile,
+    root,
+    owner,
+    account,
+    member,
+    linkId,
+    session,
+    target,
+  };
+}
+
 describe("a template-granted passkey member's first operation on chain", () => {
   it.each(["derived", "imported"] as const)(
     "%s account: the root's one signature through the relay, then the member's first call enables and executes",
     async (kind) => {
-      const local = await startLocalArbitrumSepolia();
-      rpcUpstream = local.chain.url;
-      const deployment = kernelDeployment({ chainId: 421_614 });
-      const [ports] = createCetaneChainPorts({ 421614: { publicRpcUrls: [local.chain.url] } });
-      if (!ports) throw new Error("no chain reads");
-      const reads = ports.reads;
-
-      // The root: an ECDSA key that signs in with SIWE and owns one account.
-      const rootAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
-      const rootProfile = {
-        version: "oaath.owner-credential-profile/v1",
-        kind: "ecdsa",
-        address: rootAccount.address.toLowerCase() as `0x${string}`,
-      } as const;
-      const rootKey = kernelKey({
-        account: { address: rootProfile.address, sign: ({ hash }) => rootAccount.sign({ hash }) },
-        validator: ECDSA_VALIDATOR,
-      });
-      const root = await relaySignIn(rootProfile, async (challenge) =>
-        rootAccount.signMessage({ message: challenge.message ?? "" }),
-      );
-      const owner = createKernelRuntime({
-        deployment,
-        operator: ownerOperator({
-          key: kernelKey({ credential: rootProfile, validator: ECDSA_VALIDATOR }),
-        }),
-        reads,
-      });
-      let account: { account_id: string; address: `0x${string}` };
-      if (kind === "derived") {
-        account = (
-          await relayCall("/portal/accounts", root.cookie, {
-            root_signer_id: root.signerId,
-            creation_key: randomBytes(16).toString("hex"),
-          })
-        ).json as typeof account;
-      } else {
-        // An account deployed outside OAAth, then imported with the root's statement.
-        const existing = await owner.bindAccount({
-          accountIndex: "90",
-          initialPackages: owner.packages,
-        });
-        if (existing.state !== "counterfactual" || !("factoryDeployCalldata" in existing))
-          throw new Error("account already deployed");
-        const hash = await local.stack.wallet.sendTransaction({
-          to: existing.factory,
-          data: existing.factoryDeployCalldata,
-          gas: 3_000_000n,
-        });
-        await local.chain.client.waitForTransactionReceipt({ hash });
-        const address = existing.account.toLowerCase() as `0x${string}`;
-        const issuedAt = Math.floor(Date.now() / 1000) - 5;
-        const fingerprint = `0x${"33".repeat(32)}` as const;
-        const signature = await rootAccount.sign({
-          hash: hashTypedData({
-            domain: { name: "OAAth", version: "1" },
-            types: {
-              AccountImport: [
-                { name: "account", type: "address" },
-                { name: "ownerProfileHash", type: "bytes32" },
-                { name: "inventoryFingerprint", type: "bytes32" },
-                { name: "issuedAt", type: "uint64" },
-                { name: "nonce", type: "string" },
-              ],
-            },
-            primaryType: "AccountImport",
-            message: {
-              account: address,
-              ownerProfileHash: hashOwnerCredentialProfile(rootProfile),
-              inventoryFingerprint: fingerprint,
-              issuedAt: BigInt(issuedAt),
-              nonce: "member-grant-1",
-            },
-          }),
-        });
-        account = (
-          await relayCall("/portal/accounts/import", root.cookie, {
-            root_signer_id: root.signerId,
-            address,
-            inventory_fingerprint: fingerprint,
-            issued_at: issuedAt,
-            nonce: "member-grant-1",
-            signature,
-          })
-        ).json as typeof account;
-      }
-      const target = `0x${"7c".repeat(20)}` as const;
-      const template = (
-        await relayCall(`/portal/accounts/${account.account_id}/policies`, root.cookie, {
-          name: "Member payments",
-          lifetime_seconds: 3_600,
-          policy: {
-            calls: [{ target, selector: "0x12345678", valueLimit: "500" }],
-            perChainOperationLimit: { count: 3, intervalSeconds: null },
-          },
-        })
-      ).json as { template_id: string };
-
-      // The member: a passkey that asks to join, and the root grants it the template.
-      const passkey = softwarePasskey();
-      const member = await relaySignIn(passkey.credential, async (challenge) =>
-        passkey.key.sign(`0x${challenge.nonce}`),
-      );
-      const linkId = String(
-        (
-          await relayCall("/portal/links", member.cookie, {
-            signer_id: member.signerId,
-            account: account.address,
-            label: "Laptop",
-          })
-        ).json.link_id,
-      );
-      const prepared = (
-        await relayCall(`/portal/links/${linkId}/prepare`, root.cookie, {
-          template_id: template.template_id,
-        })
-      ).json as {
-        permission_request: unknown;
-        signing_request: { expectedDigest: `0x${string}` };
-      };
-      const request = parsePermissionRequest(prepared.permission_request);
-      expect(request.operatorCredential).toMatchObject({
-        kind: "webauthn",
-        publicKey: passkey.credential.publicKey,
-      });
-      // The root signs only the install the SDK derives itself.
-      const approval =
-        kind === "derived"
-          ? prepareDerivedAccountPermissionApproval({
-              request,
-              chainId: 421_614,
-              account: account.address,
-            })
-          : await prepareKernelPermissionApproval({ request, chainId: 421_614, reads });
-      expect(approval.signingRequest.expectedDigest).toBe(prepared.signing_request.expectedDigest);
-      const decision = await approval.sign(rootKey, Math.floor(Date.now() / 1000));
-      await relayCall(`/portal/links/${linkId}/approve`, root.cookie, {
-        template_id: template.template_id,
-        artifact: JSON.stringify(decision),
-      });
-
-      // The member reads its grant and spends it: the first covered call
-      // installs the permission in enable mode and executes.
-      const grant = (await relayCall(`/portal/grants/${linkId}`, member.cookie)).json as {
-        status: string;
-        permission_request: unknown;
-        enable: Parameters<typeof materializeKernelPermission>[0]["approval"];
-      };
-      expect(grant.status).toBe("approved");
-      expect(grant.enable.account).toBe(account.address);
-      const granted = parsePermissionRequest(grant.permission_request);
-      const session = createKernelRuntime({
-        deployment,
-        operator: sessionOperator({
-          key: passkey.key,
-          policies: deriveSessionPolicyProfiles(granted.policy),
-        }),
-        reads,
-      });
-      const profile = granted.logicalAccount;
-      const bound =
-        "accountIndex" in profile
-          ? await session.bindAccount({
-              accountIndex: profile.accountIndex,
-              initialPackages: owner.packages,
-            })
-          : await session.bindAccount({ address: account.address });
-      expect("accountIndex" in profile).toBe(kind === "derived");
-      await local.chain.rpc("anvil_setBalance", [account.address, toHex(10n ** 18n)]);
-      const first = await materializeKernelPermission({
-        approval: grant.enable,
-        runtime: session,
-        grantId: linkId,
-        account: bound,
-        nonceKey: "0",
-        sequence: "0",
-        calls: [{ target, value: "500", data: "0x12345678" }],
-        gas: {
-          callGasLimit: "900000",
-          verificationGasLimit: "3000000",
-          preVerificationGas: "150000",
-          maxFeePerGas: "2000000000",
-          maxPriorityFeePerGas: "1000000000",
-        },
-      });
-      const operation = first.prepared.userOperation;
-      expect(operation.factory === null).toBe(kind === "imported");
-      const hash = await local.stack.wallet.sendTransaction({
-        to: deployment.entryPoint.address,
-        gas: 8_000_000n,
-        data: encodeFunctionData({
-          abi: entryPoint07Abi,
-          functionName: "handleOps",
-          args: [
-            [
-              toPackedUserOperation({
-                sender: operation.sender,
-                nonce: BigInt(operation.nonce),
-                callData: operation.callData,
-                callGasLimit: BigInt(operation.callGasLimit),
-                verificationGasLimit: BigInt(operation.verificationGasLimit),
-                preVerificationGas: BigInt(operation.preVerificationGas),
-                maxFeePerGas: BigInt(operation.maxFeePerGas),
-                maxPriorityFeePerGas: BigInt(operation.maxPriorityFeePerGas),
-                ...(operation.factory
-                  ? { factory: operation.factory.address, factoryData: operation.factory.data }
-                  : {}),
-                signature: first.signature,
-              }),
-            ],
-            local.stack.submitter.address,
-          ],
-        }),
-      });
-      const receipt = await local.chain.client.waitForTransactionReceipt({ hash });
-      expect(receipt.status).toBe("success");
-      const event = receipt.logs
-        .map((log) => {
-          try {
-            return decodeEventLog({
-              abi: entryPoint07Abi,
-              topics: log.topics as never,
-              data: log.data,
-            });
-          } catch {
-            return null;
-          }
-        })
-        .find((entry) => entry?.eventName === "UserOperationEvent");
-      expect(event?.eventName === "UserOperationEvent" && event.args.success).toBe(true);
-      expect(await local.chain.rpc("eth_getBalance", [target, "latest"])).toBe("0x1f4");
+      await memberGrantOnChain(kind);
     },
     120_000,
   );
+});
+
+/** Whether `account` still has the grant's permission installed, from its install packages. */
+async function permissionInstalled(
+  local: Awaited<ReturnType<typeof startLocalArbitrumSepolia>>,
+  account: `0x${string}`,
+  packages: readonly { moduleType: number; module: `0x${string}`; moduleData: `0x${string}` }[],
+) {
+  const signer = packages.find((entry) => entry.moduleType === 6);
+  if (!signer) throw new Error("no signer package");
+  const answer = await local.chain.rpc("eth_call", [
+    {
+      to: account,
+      data: encodeFunctionData({
+        abi: parseAbi([
+          "function isModuleInstalled(uint256 moduleType, address module, bytes context) view returns (bool)",
+        ]),
+        functionName: "isModuleInstalled",
+        args: [6n, signer.module, signer.moduleData.slice(0, 10) as `0x${string}`],
+      }),
+    },
+    "latest",
+  ]);
+  return BigInt(answer as string) === 1n;
+}
+
+interface Revocation {
+  status: string;
+  delivery: string;
+  packages: { moduleType: number; module: `0x${string}`; moduleData: `0x${string}` }[];
+  request: {
+    calls: unknown;
+    userOperationHash: `0x${string}`;
+    userOperation: Record<string, unknown>;
+  } | null;
+}
+
+/** The root prepares and signs the grant's uninstall through the relay; answers the signed view. */
+async function rootRevokes(
+  grantId: string,
+  rootCookie: string,
+  rootProfile: {
+    readonly version: "oaath.owner-credential-profile/v1";
+    readonly kind: "ecdsa";
+    readonly address: `0x${string}`;
+  },
+  rootAccount: ReturnType<typeof privateKeyToAccount>,
+  address: `0x${string}`,
+) {
+  const path = `/portal/grants/${grantId}/revocation`;
+  expect(((await relayCall(path, rootCookie)).json as unknown as Revocation).status).toBe(
+    "pending_signature",
+  );
+  const prepared = (
+    await relayCall(`${path}/prepare`, rootCookie, {
+      estimation_signature: kernelKey({ credential: rootProfile, validator: ECDSA_VALIDATOR })
+        .dummySignature,
+    })
+  ).json as unknown as Revocation;
+  if (!prepared.request) throw new Error("no prepared revocation");
+  // The relay's calls are exactly the protocol's uninstall of this grant's packages.
+  const request = parseOwnerOperationRequest(prepared.request);
+  expect(request.calls).toEqual(
+    encodeKernelPermissionUninstallCalls({
+      account: address,
+      packages: prepared.packages as never,
+    }),
+  );
+  expect(request.userOperation.sender).toBe(address);
+  const signature = await rootAccount.signMessage({ message: { raw: request.userOperationHash } });
+  const signed = (await relayCall(`${path}/sign`, rootCookie, { signature }))
+    .json as unknown as Revocation;
+  return { prepared, signed, request };
+}
+
+/** Polls the root's status, mining blocks, until it is finalized. */
+async function finalized(
+  local: Awaited<ReturnType<typeof startLocalArbitrumSepolia>>,
+  grantId: string,
+  rootCookie: string,
+) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const view = (await relayCall(`/portal/grants/${grantId}/revocation`, rootCookie))
+      .json as unknown as Revocation;
+    if (view.status === "finalized" || view.status === "failed") return view.status;
+    await local.chain.rpc("anvil_mine", ["0x40"]);
+  }
+  return "unfinished";
+}
+
+describe("revoking an invalidated grant on chain", () => {
+  it("removes a member: the root signs the uninstall once, the relay submits it, and the member's next call fails", async () => {
+    const context = await memberGrantOnChain("derived");
+    const { local, session, linkId, target } = context;
+    bundlerUpstream = local.bundlerUrl;
+    const address = context.account.address;
+    const gas = {
+      callGasLimit: "900000",
+      verificationGasLimit: "3000000",
+      preVerificationGas: "150000",
+      maxFeePerGas: "2000000000",
+      maxPriorityFeePerGas: "1000000000",
+    };
+    const deployed = await session.bindAccount({
+      accountIndex: "0",
+      initialPackages: context.owner.packages,
+    });
+    const next = async (sequence: string) => {
+      const prepared = session.prepareOperation({
+        kind: "execution",
+        grantId: linkId,
+        account: deployed,
+        nonceKey: "0",
+        sequence,
+        calls: [{ target, value: "500", data: "0x12345678" }],
+        gas,
+      });
+      return handleOperation(local, prepared, await session.signOperation(prepared));
+    };
+    // Installed: the member's second call runs in standard mode.
+    expect(await next("0")).toBe(true);
+
+    // The root removes the member: off chain at once, then on chain with one signature.
+    await relayCall(
+      `/portal/accounts/${context.account.account_id}/members/${context.member.signerId}`,
+      context.root.cookie,
+      undefined,
+      "DELETE",
+    );
+    const submittedBefore = local.sent.length;
+    const { prepared, signed } = await rootRevokes(
+      linkId,
+      context.root.cookie,
+      context.rootProfile,
+      context.rootAccount,
+      address,
+    );
+    expect(prepared.delivery).toBe("relay");
+    expect(signed.status).toBe("submitted");
+    expect(local.sent).toHaveLength(submittedBefore + 1);
+    expect(await finalized(local, linkId, context.root.cookie)).toBe("finalized");
+    expect(local.sent).toHaveLength(submittedBefore + 1);
+    expect(await permissionInstalled(local, address, prepared.packages)).toBe(false);
+    // Uninstalled: the member's next call no longer validates.
+    expect(await next("1")).not.toBe(true);
+    expect(await local.chain.rpc("eth_getBalance", [target, "latest"])).toBe("0x3e8");
+  }, 180_000);
+
+  it("a dapp that opted in receives the root-signed uninstall and submits it itself", async () => {
+    const local = await startLocalArbitrumSepolia();
+    rpcUpstream = local.chain.url;
+    bundlerUpstream = local.bundlerUrl;
+    const deployment = kernelDeployment({ chainId: 421_614 });
+    const [ports] = createCetaneChainPorts({ 421614: { publicRpcUrls: [local.chain.url] } });
+    if (!ports) throw new Error("no chain reads");
+    const reads = ports.reads;
+    const rootAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+    const rootProfile = {
+      version: "oaath.owner-credential-profile/v1",
+      kind: "ecdsa",
+      address: rootAccount.address.toLowerCase() as `0x${string}`,
+    } as const;
+    const root = await relaySignIn(rootProfile, async (challenge) =>
+      rootAccount.signMessage({ message: challenge.message ?? "" }),
+    );
+    const account = (
+      await relayCall("/portal/accounts", root.cookie, {
+        root_signer_id: root.signerId,
+        creation_key: randomBytes(16).toString("hex"),
+      })
+    ).json as { account_id: string; address: `0x${string}` };
+
+    // The dapp registers with revocation_delivery "dapp" and asks for a grant for its key.
+    const redirectUri = `${dapp}/callback`;
+    const client = (
+      await relayCall("/oauth/clients", undefined, {
+        client_name: "Opt-in dapp",
+        redirect_uris: [redirectUri],
+        revocation_delivery: "dapp",
+      })
+    ).json as { client_id: string; revocation_delivery: string };
+    expect(client.revocation_delivery).toBe("dapp");
+    const sessionAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+    const target = `0x${"7d".repeat(20)}` as const;
+    const now = Math.floor(Date.now() / 1000);
+    const verifier = randomBytes(32).toString("base64url");
+    const pushed = await fetch(`${relayBase}/oauth/par`, {
+      method: "POST",
+      body: new URLSearchParams({
+        client_id: client.client_id,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+        code_challenge_method: "S256",
+        scope: "openid",
+        authorization_details: JSON.stringify([
+          {
+            type: "oaath_grant",
+            signer: {
+              version: "oaath.operator-credential-profile/v1",
+              kind: "ecdsa",
+              address: sessionAccount.address.toLowerCase(),
+            },
+            policy: {
+              version: "oaath.grant-policy/v1",
+              calls: [{ target, selector: "0x12345678", valueLimit: "500", argumentEquals: [] }],
+              validAfter: now,
+              validUntil: now + 3600,
+              perChainOperationLimit: { count: 3, intervalSeconds: null },
+            },
+            chains: [421614],
+            expires_at: now + 7200,
+            device_id: "opt-in-device",
+          },
+        ]),
+      }),
+    });
+    const pushedBody = (await pushed.json()) as { request_uri?: string };
+    if (!pushedBody.request_uri)
+      throw new Error(`par ${pushed.status} ${JSON.stringify(pushedBody)}`);
+    const grantId = pushedBody.request_uri.split(":").pop() ?? "";
+    const prepared = (
+      await relayCall(`/portal/transactions/${grantId}/prepare`, root.cookie, {
+        signer_id: root.signerId,
+        account_id: account.account_id,
+      })
+    ).json as { permission_request: unknown };
+    const approval = prepareDerivedAccountPermissionApproval({
+      request: parsePermissionRequest(prepared.permission_request),
+      chainId: 421_614,
+      account: account.address,
+    });
+    const rootKey = kernelKey({
+      account: { address: rootProfile.address, sign: ({ hash }) => rootAccount.sign({ hash }) },
+      validator: ECDSA_VALIDATOR,
+    });
+    const decision = await approval.sign(rootKey, now);
+    const redirect = (
+      await relayCall(`/portal/transactions/${grantId}/decision`, root.cookie, {
+        outcome: "approved",
+        signer_id: root.signerId,
+        account_id: account.account_id,
+        artifact: JSON.stringify(decision),
+      })
+    ).json as { redirect: string };
+    const token = (await (
+      await fetch(`${relayBase}/oauth/token`, {
+        method: "POST",
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: client.client_id,
+          code: new URL(redirect.redirect).searchParams.get("code") ?? "",
+          code_verifier: verifier,
+          redirect_uri: redirectUri,
+        }),
+      })
+    ).json()) as {
+      authorization_details: {
+        permission_request: unknown;
+        enable: Parameters<typeof materializeKernelPermission>[0]["approval"];
+      }[];
+    };
+    const [detail] = token.authorization_details;
+    if (!detail) throw new Error("no grant");
+
+    // The dapp's first covered call installs its permission.
+    const request = parsePermissionRequest(detail.permission_request);
+    const owner = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({
+        key: kernelKey({ credential: rootProfile, validator: ECDSA_VALIDATOR }),
+      }),
+      reads,
+    });
+    const session = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: kernelKey({
+          account: {
+            address: sessionAccount.address,
+            sign: ({ hash }) => sessionAccount.sign({ hash }),
+          },
+          validator: ECDSA_VALIDATOR,
+        }),
+        policies: deriveSessionPolicyProfiles(request.policy),
+      }),
+      reads,
+    });
+    await local.chain.rpc("anvil_setBalance", [account.address, toHex(10n ** 18n)]);
+    const first = await materializeKernelPermission({
+      approval: detail.enable,
+      runtime: session,
+      grantId,
+      account: await session.bindAccount({
+        accountIndex: "0",
+        initialPackages: owner.packages,
+      }),
+      nonceKey: "0",
+      sequence: "0",
+      calls: [{ target, value: "500", data: "0x12345678" }],
+      gas: {
+        callGasLimit: "900000",
+        verificationGasLimit: "3000000",
+        preVerificationGas: "150000",
+        maxFeePerGas: "2000000000",
+        maxPriorityFeePerGas: "1000000000",
+      },
+    });
+    expect(await handleOperation(local, first.prepared, first.signature)).toBe(true);
+
+    // The root removes the dapp's signer, then signs the uninstall; the relay keeps it.
+    const members = (await relayCall(`/portal/accounts/${account.account_id}/members`, root.cookie))
+      .json as { members: { signer_id: string; grant_id: string | null }[] };
+    const dappSigner = members.members.find((member) => member.grant_id === grantId);
+    if (!dappSigner) throw new Error("no dapp signer");
+    await relayCall(
+      `/portal/accounts/${account.account_id}/members/${dappSigner.signer_id}`,
+      root.cookie,
+      undefined,
+      "DELETE",
+    );
+    const sentBefore = local.sent.length;
+    const { prepared: revocation, signed } = await rootRevokes(
+      grantId,
+      root.cookie,
+      rootProfile,
+      rootAccount,
+      account.address,
+    );
+    expect(revocation.delivery).toBe("dapp");
+    expect(signed.status).toBe("delivered");
+    expect(local.sent).toHaveLength(sentBefore);
+
+    // The dapp reads the signed operation and submits it through its own bundler.
+    const delivered = (await relayCall(`/oauth/grants/${grantId}/revocation`)).json as {
+      signed_operation: { request: { userOperation: Record<string, string> }; signature: string };
+    };
+    const op = delivered.signed_operation.request.userOperation;
+    const quantity = (value: string | undefined) => toHex(BigInt(value ?? "0"));
+    const sent = await fetch(local.bundlerUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_sendUserOperation",
+        params: [
+          {
+            sender: op.sender,
+            nonce: quantity(op.nonce),
+            callData: op.callData,
+            callGasLimit: quantity(op.callGasLimit),
+            verificationGasLimit: quantity(op.verificationGasLimit),
+            preVerificationGas: quantity(op.preVerificationGas),
+            maxFeePerGas: quantity(op.maxFeePerGas),
+            maxPriorityFeePerGas: quantity(op.maxPriorityFeePerGas),
+            signature: delivered.signed_operation.signature,
+          },
+          deployment.entryPoint.address,
+        ],
+      }),
+    });
+    expect(((await sent.json()) as { result?: string }).result).toMatch(/^0x[0-9a-f]{64}$/u);
+    expect(await finalized(local, grantId, root.cookie)).toBe("finalized");
+    expect(await permissionInstalled(local, account.address, revocation.packages)).toBe(false);
+  }, 180_000);
 });
 
 describe("importing an existing account through the portal's chain-read proxy", () => {
