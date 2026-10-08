@@ -12,6 +12,20 @@
         "vitest": "^4.1.0",
       },
     },
+    "demo": {
+      "name": "@oaath/demo",
+      "version": "0.0.0",
+      "dependencies": {
+        "@oaath/sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "22.13.0",
+        "puppeteer-core": "25.5.0",
+        "viem": "2.55.8",
+        "vite": "8.2.0",
+        "vitest": "4.1.10",
+      },
+    },
     "examples": {
       "name": "@oaath/examples",
       "version": "0.0.0",
@@ -284,6 +298,8 @@
     "@oaath/cli": ["@oaath/cli@workspace:packages/cli"],
 
     "@oaath/contracts": ["@oaath/contracts@workspace:packages/contracts"],
+
+    "@oaath/demo": ["@oaath/demo@workspace:demo"],
 
     "@oaath/examples": ["@oaath/examples@workspace:examples"],
 

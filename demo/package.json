@@ -1,0 +1,26 @@
+{
+  "name": "@oaath/demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The hosted OAAth demo dapp and its Cloudflare Worker. Never a published package.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "taek <leekt216@gmail.com>",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@oaath/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.0",
+    "puppeteer-core": "25.5.0",
+    "viem": "2.55.8",
+    "vite": "8.2.0",
+    "vitest": "4.1.10"
+  }
+}
