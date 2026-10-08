@@ -1,5 +1,44 @@
 # @oaath/testing
 
+## 0.3.5
+
+### Patch Changes
+
+- 44878a5: Pin Cetane 0.0.4, including complete Kernel inventory coverage when all installation contexts can be reconciled with confirmed state.
+- 52d36f9: Remove `@oaath/server` and the service bootstrap document; the Rust relay owns authorization state. `parseWorkspaceAccountContext` stays in `@oaath/protocol`.
+- 083cbff: Remove the phone-approved service realm (`approvals: { kind: "service" }`) and the relay authorization client with its injected `issuer` and `authorization` ports. The injected composition now takes `approve(request)`, the owner's decision for exactly the reviewed request. `@oaath/testing` local fixtures approve in-process and drop `openServiceClient`.
+- be78f87: Use the published Cetane 0.0.3 release and remove the local snapshot tarball.
+- a43611c: Reset every protocol and SDK wire, profile and record version to `v1`, and rename `service_bootstrap_invalid` to `workspace_account_context_invalid`. Records written under the old versions are rejected; recreate them.
+- Updated dependencies [44878a5]
+- Updated dependencies [e18b603]
+- Updated dependencies [5fbe1fd]
+- Updated dependencies [5cde641]
+- Updated dependencies [5f2e106]
+- Updated dependencies [5996a53]
+- Updated dependencies [52d36f9]
+- Updated dependencies [083cbff]
+- Updated dependencies [97881b8]
+- Updated dependencies [79edd1b]
+- Updated dependencies [1f41810]
+- Updated dependencies [37e3124]
+- Updated dependencies [40c002d]
+- Updated dependencies [cf3db5e]
+- Updated dependencies [3dc1c6f]
+- Updated dependencies [1d87914]
+- Updated dependencies [56a9aeb]
+- Updated dependencies [94f9195]
+- Updated dependencies [60ef4e1]
+- Updated dependencies [81001d1]
+- Updated dependencies [c407a2e]
+- Updated dependencies [be78f87]
+- Updated dependencies [f5fb6fe]
+- Updated dependencies [a43611c]
+- Updated dependencies [f0dedb6]
+- Updated dependencies [59b50c8]
+- Updated dependencies [f49022f]
+  - @oaath/protocol@0.3.5
+  - @oaath/sdk@0.3.5
+
 ## 0.3.4
 
 ### Patch Changes

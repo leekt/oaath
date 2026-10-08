@@ -1,5 +1,50 @@
 # @oaath/sdk
 
+## 0.3.5
+
+### Patch Changes
+
+- 44878a5: Pin Cetane 0.0.4, including complete Kernel inventory coverage when all installation contexts can be reconciled with confirmed state.
+- 5fbe1fd: Normalize single-case and EIP-55 account, call, module, routing and paymaster inputs through the shared protocol owner. Reject invalid mixed-case checksums before signing, with field diagnostics, while preserving operation and capability hashes.
+- 5cde641: Add `prepareDerivedAccountPermissionApproval` and export `ECDSA_VALIDATOR` from `@oaath/sdk/kernel`: prepare the same Kernel replayable-install approval for a factory-derived account from its counterfactual address, without chain reads.
+- 5f2e106: Prepare and sign Kernel permission approvals for factory-derived Kernel 0.4.0 accounts whose single root is an ECDSA (through `ECDSA_VALIDATOR`) or WebAuthn owner, as well as P-256. A non-factory route still fails with `kernel_runtime_unsupported` before signing.
+- 5996a53: Remove the owner-device signing artifact and the Kernel 0.4.0 revocation signing request. Approvals complete only through `sign(ownerKey, decidedAt)`; `prepareKernelPermissionRevocation` is Kernel 0.3.3 only, and a Kernel 0.4.0 Grant revokes through its grant handle.
+- 083cbff: Remove the phone-approved service realm (`approvals: { kind: "service" }`) and the relay authorization client with its injected `issuer` and `authorization` ports. The injected composition now takes `approve(request)`, the owner's decision for exactly the reviewed request. `@oaath/testing` local fixtures approve in-process and drop `openServiceClient`.
+- 97881b8: Owner operations accept an existing (imported) Kernel 0.4.0 account: `prepareOwnerOperation` sends from the profile's own address with no factory (the account is deployed), and `verifyOwnerOperation` binds the sender to that address and the EntryPoint to 0.9. A Kernel 0.3.3 profile, or a factory on an existing account, is refused.
+- 79edd1b: Expose Cetane's bounded Kernel v4 module inventory through the Kernel entry, including permission IDs and state-confirmed versus history-derived evidence.
+- 1f41810: Allow explicit deployment-owner reviews of additional Kernel v4 UUPS implementation addresses and exact runtime hashes. Existing-account binding proves the selected build without requiring its factory and retains the reviewed deployment profile.
+- 37e3124: `loginWithOAAth` returns `accounts`: every account the signer is an active member of, from the id_token's `oaath_accounts` claim. A malformed claim refuses the login with `oaath_client_identity_invalid`.
+- 40c002d: Add `loginWithOAAth` and `completeOAAthLogin`: Login with OAAth through the issuer's portal popup (PAR + PKCE, RFC 9207 issuer check, ES256 id_token verified against the issuer's JWKS), returning the chosen account and its proven member signer with `verified: true`.
+- cf3db5e: `createOAAth({ chains, approvals: { kind: "oauth", issuer, clientId, redirectUri } })`
+  requests Grants through the OAAth portal popup. The SDK names its own
+  non-extractable session key as the Grant signer, accepts only a returned
+  permission request that is exactly its own (signer, application, policy,
+  expiry), and applies the account root's replayable install through the existing
+  local approval path, so the first `sendCalls` installs the permission.
+- 3dc1c6f: An OAuth-approved Grant's `revoke()` now also asks the issuer once to invalidate it, authenticated by the Grant's own session key (an `OAAth-Grant-Proof` bound to the grant, method, path and time), and resolves to `{ issuer: "invalidated" | "refused" | "unavailable" | "not-attempted" }`. The local revocation never waits on or depends on the issuer, and the realm stores no access token.
+- 1d87914: `approvals.launch` on the oauth realm opens the portal without a popup (for example `chrome.identity.launchWebAuthFlow`) and resolves with the redirect URL, checked exactly like a popup's response.
+- 56a9aeb: OAuth-approved Grants may wait for the account root. When the issuer answers `authorization_pending`, `requestPermission` resolves to `{ state: "pending", requestId, expiresAt }` and journals the issued code; `connection.redeemPending()` makes one token request per call, survives a reload, and adopts the Grant once the root approves. A rejection fails with `oaath_client_permission_rejected`.
+- 60ef4e1: Add `requestOwnerOperationApproval({ issuer, clientId, redirectUri, request })`: the account root approves one owner operation in the issuer's portal popup, and the SDK returns it verified (`verifyOwnerOperation`) for the caller's own submission.
+- 81001d1: Add owner operations for factory-derived Kernel 0.4.0 accounts. `@oaath/protocol` captures `oaath.owner-operation-request/v1` and `oaath.signed-owner-operation/v1`: one exact EntryPoint 0.9 UserOperation whose hash, signed by the account root, binds chain, EntryPoint, account, nonce, calls, gas, factory and paymaster. `@oaath/sdk/kernel` adds `prepareOwnerOperation`, which builds the request offline and has an ECDSA, P-256 or WebAuthn root sign it, and `verifyOwnerOperation`, which checks the account derivation, factory deployment and root signature and returns the ERC-4337 JSON-RPC operation to submit.
+- c407a2e: Add `prepareOwnerPermissionUninstall` to `@oaath/sdk/kernel`: the root-signed owner operation that uninstalls one Kernel 0.4.0 permission (its policies, then its signer) named by the Grant's install approval, for derived and imported accounts.
+- be78f87: Use the published Cetane 0.0.3 release and remove the local snapshot tarball.
+- f5fb6fe: Coalesce identical concurrent reads and endpoint chain checks within one Cetane RPC pool. Sends, estimates and paymaster requests are never combined, sequential reads always fetch fresh evidence, and the lifetime budget counts actual wire requests.
+- a43611c: Reset every protocol and SDK wire, profile and record version to `v1`, and rename `service_bootstrap_invalid` to `workspace_account_context_invalid`. Records written under the old versions are rejected; recreate them.
+- f0dedb6: Bind existing Kernel v4 accounts with the reviewed WebAuthn validator by proving its runtime code and stored public key before signing. Use the same passkey key profile for owner operations, permission approval and revocation.
+- 59b50c8: Admit WebAuthn owner credentials on existing Kernel v4 profiles and the wallet-approved Grant path. Refuse a passkey belonging to another root before any assertion or submission.
+- f49022f: Add weighted ECDSA Kernel v4 owner and session keys for the reviewed local V09 validator and permission signer. Bind the installed guardian configuration and epoch before collecting a quorum for operations, approval and revocation.
+- Updated dependencies [44878a5]
+- Updated dependencies [e18b603]
+- Updated dependencies [5996a53]
+- Updated dependencies [52d36f9]
+- Updated dependencies [97881b8]
+- Updated dependencies [94f9195]
+- Updated dependencies [81001d1]
+- Updated dependencies [be78f87]
+- Updated dependencies [a43611c]
+- Updated dependencies [59b50c8]
+  - @oaath/protocol@0.3.5
+
 ## 0.3.4
 
 ### Patch Changes
