@@ -33,8 +33,7 @@
     {
       "binding": "BUNDLER",
       // Workers VPC service for bundle_rs: 127.0.0.1:4337 on the OCI VM's loopback.
-      // Placeholder: replace with the created service's id before deploying.
-      "service_id": "BUNDLER_VPC_SERVICE_ID"
+      "service_id": "01a11b20-f2a5-7080-96a8-aca3de4fd906"
     }
   ],
   // Server-side calls to the hosted automation service go through its Worker directly.
