@@ -1,0 +1,16 @@
+{
+	"chainId": 421614,
+	"rpcUrl": "https://sepolia-rollup.arbitrum.io/rpc",
+	"origin": "https://dca.taek.tech",
+	"sellToken": "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+	"buyToken": "0x980b62da83eff3d4576c647993b0c1d7faf17c73",
+	"router": "0x101f443b4d1b059569d643917553c771e1b9663e",
+	"swapFactory": "0x248ab79bbb9bc29bb72f7cd42f17e054fc40188e",
+	"sellFeed": "0x0153002d20b96532c639313c2d54c3da09109309",
+	"buyFeed": "0xd30e2101a97dcbaebcbc04f14c3f624e67a35165",
+	"poolFee": 3000,
+	"maxPriceAgeSeconds": 86400,
+	"maxFeePerGas": "1000000000",
+	"maxGasCost": "1000000000000000",
+	"ecdsaValidator": "0x845adb2c711129d4f3966735ed98a9f09fc4ce57"
+}

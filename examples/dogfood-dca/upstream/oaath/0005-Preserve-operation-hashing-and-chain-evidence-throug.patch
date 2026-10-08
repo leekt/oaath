@@ -1,0 +1,506 @@
+From aea6547901722a05640434efe072176b7918064a Mon Sep 17 00:00:00 2001
+From: taek <leekt216@gmail.com>
+Date: Wed, 7 Oct 2026 15:30:20 +0900
+Subject: [PATCH 5/9] Preserve operation hashing and chain evidence through
+ Cetane
+
+---
+ packages/sdk/src/kernel.ts                    |  2 +-
+ .../src/kernel/deployment/v33-operation.ts    | 16 +++----
+ .../src/kernel/permission/v4-revocation.ts    | 25 +++++------
+ packages/sdk/src/operation-execution.ts       | 34 +++++++-------
+ packages/sdk/src/prepared-user-operation.ts   | 18 ++++----
+ .../sdk/src/routing/erc4337/handle-ops.ts     | 20 +++++----
+ packages/sdk/src/viem/chain-ports.ts          | 44 ++++++++-----------
+ packages/sdk/src/viem/rpc.ts                  | 10 ++---
+ packages/sdk/test/connected-eoa-flow.test.ts  |  4 +-
+ packages/sdk/test/connected-eoa.test.ts       |  4 +-
+ packages/sdk/test/routing.test.ts             |  4 +-
+ 11 files changed, 88 insertions(+), 93 deletions(-)
+
+diff --git a/packages/sdk/src/kernel.ts b/packages/sdk/src/kernel.ts
+index b5eaa99..a9a8830 100644
+--- a/packages/sdk/src/kernel.ts
++++ b/packages/sdk/src/kernel.ts
+@@ -197,7 +197,7 @@ export type {
+   UnsignedUserOperationV07,
+ } from "./prepared-user-operation.js";
+ export {
+-  asViemUserOperation,
++  asUserOperation,
+   deriveOperationId,
+   OAATH_PREPARED_USER_OPERATION_VERSION,
+   OaathPreparedUserOperationError,
+diff --git a/packages/sdk/src/kernel/deployment/v33-operation.ts b/packages/sdk/src/kernel/deployment/v33-operation.ts
+index d526a1d..d135946 100644
+--- a/packages/sdk/src/kernel/deployment/v33-operation.ts
++++ b/packages/sdk/src/kernel/deployment/v33-operation.ts
+@@ -1,6 +1,6 @@
+ import { type CaptureContext, captureRecord, exactCapturedRecord } from "@oaath/protocol";
++import { getSigningHash } from "cetane/execution/erc4337";
+ import { keccak256, stringToHex } from "cetane/utils";
+-import { getUserOperationHash } from "viem/account-abstraction";
+ import {
+   encodeKernelV4Execution,
+   encodeKernelV4Nonce,
+@@ -9,7 +9,7 @@ import {
+   type KernelValidation,
+ } from "../../kernel-v4.js";
+ import {
+-  asViemUserOperation,
++  asUserOperation,
+   type PreparedUserOperation,
+   parsePreparedUserOperation,
+   prepareUserOperation,
+@@ -35,12 +35,12 @@ export function kernelV33OperationSigningHash(value: unknown): `0x${string}` {
+   if (mode === 0n) return prepared.userOperationHash;
+   if (mode !== 1n || ((BigInt(prepared.userOperation.nonce) >> 240n) & 0xffn) !== 2n)
+     return inputInvalid("Kernel v3.3 signing mode is unsupported");
+-  return getUserOperationHash({
+-    chainId: 0,
+-    entryPointAddress: prepared.entryPoint.address,
+-    entryPointVersion: prepared.entryPoint.version,
+-    userOperation: asViemUserOperation(prepared.userOperation),
+-  });
++  return getSigningHash(
++    asUserOperation(prepared.userOperation),
++    0,
++    prepared.entryPoint.address,
++    prepared.entryPoint.version,
++  );
+ }
+ 
+ /** v3.3 uses mode 0x01 for enable; its validation/namespace layout matches v4. */
+diff --git a/packages/sdk/src/kernel/permission/v4-revocation.ts b/packages/sdk/src/kernel/permission/v4-revocation.ts
+index eada122..155b66a 100644
+--- a/packages/sdk/src/kernel/permission/v4-revocation.ts
++++ b/packages/sdk/src/kernel/permission/v4-revocation.ts
+@@ -18,11 +18,7 @@ import {
+   parseOwnerSigningArtifact,
+   parsePermissionRequest,
+ } from "@oaath/protocol";
+-import {
+-  toPackedUserOperation,
+-  toUserOperation,
+-  type UserOperation,
+-} from "viem/account-abstraction";
++import { type Operation, toPackedUserOperation, toUserOperation } from "cetane/execution/erc4337";
+ import {
+   encodeKernelInstallNonceInvalidationCall,
+   encodeKernelPermissionUninstallCalls,
+@@ -32,7 +28,7 @@ import {
+   kernelV4ReplayableInstallTypedData,
+ } from "../../kernel-v4.js";
+ import {
+-  asViemUserOperation,
++  asUserOperation,
+   OAATH_PREPARED_USER_OPERATION_VERSION,
+   type PreparedPaymaster,
+   type PreparedUserOperation,
+@@ -180,7 +176,7 @@ export async function prepareKernelV4Revocation(
+     gas: input.gas as KernelUserOperationGas,
+     paymaster: input.paymaster as Readonly<PreparedPaymaster> | null,
+   });
+-  const packed = toPackedUserOperation(asViemUserOperation(prepared.userOperation));
++  const packed = toPackedUserOperation(asUserOperation(prepared.userOperation), "0.9");
+   const signingRequest = parseKernelRevocationSigningRequest({
+     version: OAATH_KERNEL_REVOCATION_SIGNING_REQUEST_VERSION,
+     kind: "kernel-revocation",
+@@ -242,12 +238,15 @@ export function restoreKernelV4Revocation(
+         runtimeFail("kernel_runtime_binding_mismatch", "restoration must not read the chain"),
+     },
+   });
+-  const operation = toUserOperation({
+-    ...signingRequest.operation,
+-    nonce: BigInt(signingRequest.operation.nonce),
+-    preVerificationGas: BigInt(signingRequest.operation.preVerificationGas),
+-    signature: "0x",
+-  }) as unknown as UserOperation<"0.9">;
++  const operation = toUserOperation(
++    {
++      ...signingRequest.operation,
++      nonce: BigInt(signingRequest.operation.nonce),
++      preVerificationGas: BigInt(signingRequest.operation.preVerificationGas),
++      signature: "0x",
++    },
++    "0.9",
++  );
+   const prepared = parsePreparedUserOperation({
+     version: OAATH_PREPARED_USER_OPERATION_VERSION,
+     kind: "revocation",
+diff --git a/packages/sdk/src/operation-execution.ts b/packages/sdk/src/operation-execution.ts
+index ad2f112..450d88f 100644
+--- a/packages/sdk/src/operation-execution.ts
++++ b/packages/sdk/src/operation-execution.ts
+@@ -1,16 +1,13 @@
+ import {
+   captureRecord,
++  entryPointAbi,
+   exactCapturedRecord,
+   type OperationIdentity,
+   type OperationInclusion,
+ } from "@oaath/protocol";
+-import { decodeFunctionData, type Hex } from "viem";
+-import {
+-  entryPoint07Abi,
+-  getUserOperationHash,
+-  toUserOperation,
+-  type UserOperation,
+-} from "viem/account-abstraction";
++import type { Hex } from "cetane";
++import { getSigningHash, type Operation, toUserOperation } from "cetane/execution/erc4337";
++import { decodeFunctionData } from "cetane/utils";
+ import { KERNEL_V4_ENTRY_POINT_V09 } from "./kernel/deployment/v4-artifacts.js";
+ import { KERNEL_ENTRY_POINT_V07 } from "./kernel/deployment/v33.js";
+ import { decodeKernelV4Execution, type KernelCall } from "./kernel-v4.js";
+@@ -55,7 +52,7 @@ export function verifyOperationExecutionEvidence(
+       : identity.entryPoint === KERNEL_V4_ENTRY_POINT_V09
+         ? "0.9"
+         : invalid();
+-  const decoded = decodeFunctionData({ abi: entryPoint07Abi, data: transaction.input as Hex });
++  const decoded = decodeFunctionData({ abi: entryPointAbi, data: transaction.input as Hex });
+   const operations =
+     decoded.functionName === "handleOps"
+       ? decoded.args[0]
+@@ -68,16 +65,19 @@ export function verifyOperationExecutionEvidence(
+     // paymaster and gas fields, rather than trusting a provider's claimed ID.
+     // The converter accepts packed input but its inferred return type retains
+     // that input shape; specify the actual unpacked v0.7 result explicitly.
+-    const operation = toUserOperation<Omit<UserOperation<"0.7">, "authorization">>({
+-      ...packed,
+-      signature: "0x",
+-    });
+-    const hash = getUserOperationHash({
+-      chainId: identity.chainId,
+-      entryPointAddress: identity.entryPoint,
++    const operation = toUserOperation(
++      {
++        ...packed,
++        signature: "0x",
++      },
++      entryPointVersion,
++    );
++    const hash = getSigningHash(
++      operation,
++      identity.chainId,
++      identity.entryPoint,
+       entryPointVersion,
+-      userOperation: operation,
+-    });
++    );
+     if (hash !== identity.userOperationHash) continue;
+     if (
+       calls ||
+diff --git a/packages/sdk/src/prepared-user-operation.ts b/packages/sdk/src/prepared-user-operation.ts
+index b5ad1f4..566d0af 100644
+--- a/packages/sdk/src/prepared-user-operation.ts
++++ b/packages/sdk/src/prepared-user-operation.ts
+@@ -7,8 +7,8 @@ import {
+   type OperationIdentity,
+   type OperationKind,
+ } from "@oaath/protocol";
+-import type { Hash } from "viem";
+-import { getUserOperationHash, type UserOperation } from "viem/account-abstraction";
++import type { Hash } from "cetane";
++import { getSigningHash, type Operation } from "cetane/execution/erc4337";
+ 
+ export const OAATH_PREPARED_USER_OPERATION_VERSION = "oaath.prepared-user-operation/v1" as const;
+ 
+@@ -375,7 +375,7 @@ function parseUnsignedUserOperation(
+  * Maps one prepared unsigned UserOperation into the common EntryPoint 0.7/0.9 unpacked shape with an
+  * empty signature, ready for signing and toPackedUserOperation submission.
+  */
+-export function asViemUserOperation(value: UnsignedUserOperationV07): UserOperation<"0.7"> {
++export function asUserOperation(value: UnsignedUserOperationV07): Operation {
+   return {
+     sender: value.sender,
+     nonce: BigInt(value.nonce),
+@@ -405,12 +405,12 @@ function deriveUserOperationHash(value: {
+   readonly entryPoint: Readonly<PreparedEntryPoint>;
+   readonly userOperation: Readonly<UnsignedUserOperationV07>;
+ }): `0x${string}` {
+-  return getUserOperationHash({
+-    chainId: value.chainId,
+-    entryPointAddress: value.entryPoint.address,
+-    entryPointVersion: value.entryPoint.version,
+-    userOperation: asViemUserOperation(value.userOperation),
+-  });
++  return getSigningHash(
++    asUserOperation(value.userOperation),
++    value.chainId,
++    value.entryPoint.address,
++    value.entryPoint.version,
++  );
+ }
+ 
+ function capturePreparation(
+diff --git a/packages/sdk/src/routing/erc4337/handle-ops.ts b/packages/sdk/src/routing/erc4337/handle-ops.ts
+index 74cf632..c3beafc 100644
+--- a/packages/sdk/src/routing/erc4337/handle-ops.ts
++++ b/packages/sdk/src/routing/erc4337/handle-ops.ts
+@@ -10,9 +10,10 @@
+  * @author taek <leekt216@gmail.com>
+  */
+ import type { CaptureContext } from "@oaath/protocol";
+-import { encodeFunctionData } from "viem";
+-import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
+-import { asViemUserOperation, parsePreparedUserOperation } from "../../prepared-user-operation.js";
++import { entryPointAbi } from "@oaath/protocol";
++import { toPackedUserOperation } from "cetane/execution/erc4337";
++import { encodeFunctionData } from "cetane/utils";
++import { asUserOperation, parsePreparedUserOperation } from "../../prepared-user-operation.js";
+ import { routingAddress, routingBytes, routingUint } from "../capabilities.js";
+ import {
+   exactRoutingRecord,
+@@ -163,10 +164,13 @@ export function encodeHandleOps(input: OaathHandleOpsEncodingInput): Readonly<Oa
+     );
+   }
+ 
+-  const packed = toPackedUserOperation({
+-    ...asViemUserOperation(operation.userOperation),
+-    signature,
+-  });
++  const packed = toPackedUserOperation(
++    {
++      ...asUserOperation(operation.userOperation),
++      signature,
++    },
++    operation.entryPoint.version,
++  );
+   return Object.freeze({
+     chainId: operation.chainId,
+     entryPoint: operation.entryPoint.address,
+@@ -174,7 +178,7 @@ export function encodeHandleOps(input: OaathHandleOpsEncodingInput): Readonly<Oa
+     userOperationHash: operation.userOperationHash,
+     beneficiary,
+     data: encodeFunctionData({
+-      abi: entryPoint07Abi,
++      abi: entryPointAbi,
+       functionName: "handleOps",
+       args: [[packed], beneficiary],
+     }),
+diff --git a/packages/sdk/src/viem/chain-ports.ts b/packages/sdk/src/viem/chain-ports.ts
+index 8fd2d2b..9f1beaf 100644
+--- a/packages/sdk/src/viem/chain-ports.ts
++++ b/packages/sdk/src/viem/chain-ports.ts
+@@ -1,17 +1,15 @@
++import { entryPointAbi } from "@oaath/protocol";
++import { createPublicClient, custom } from "cetane";
+ import {
+-  BaseError,
+-  createPublicClient,
+-  custom,
+   decodeAbiParameters,
+   decodeEventLog,
+   encodeFunctionData,
+-  getAbiItem,
+-  pad,
++  keccak256,
++  padHex,
+   parseAbi,
+-  toEventSelector,
++  stringToHex,
+   toHex,
+-} from "viem";
+-import { entryPoint07Abi } from "viem/account-abstraction";
++} from "cetane/utils";
+ import type {
+   OaathChainCapability,
+   OaathChainSponsorship,
+@@ -87,8 +85,8 @@ const BUNDLER_METHODS = [
+ ];
+ type Erc7677ChainSponsorship = Extract<OaathChainSponsorship, { kind: "erc7677" }>;
+ const ZERO_ADDRESS = `0x${"00".repeat(20)}`;
+-const USER_OPERATION_EVENT = toEventSelector(
+-  getAbiItem({ abi: entryPoint07Abi, name: "UserOperationEvent" }),
++const USER_OPERATION_EVENT = keccak256(
++  stringToHex("UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)"),
+ );
+ const RATE_ABI = parseAbi([
+   "function status(bytes32 id, address account) view returns (uint8)",
+@@ -211,10 +209,9 @@ async function directReceipt(
+     const event = (() => {
+       try {
+         return decodeEventLog({
+-          abi: entryPoint07Abi,
++          abi: entryPointAbi,
+           topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
+           data: hex(log.data),
+-          strict: true,
+         });
+       } catch {
+         return evidence();
+@@ -316,7 +313,7 @@ function observer(publicRpc: RpcRequest, bundler: RpcRequest) {
+             {
+               to: request.entryPoint,
+               data: encodeFunctionData({
+-                abi: entryPoint07Abi,
++                abi: entryPointAbi,
+                 functionName: "getNonce",
+                 args: [request.account, BigInt(request.nonce) >> 64n],
+               }),
+@@ -375,7 +372,7 @@ async function usage(publicRpc: RpcRequest, request: Readonly<OaathUsageRequest>
+   const windowed = request.intervalSeconds !== null;
+   const module = resolvePolicyModule(windowed ? "rate-limit" : "operation-limit");
+   if (hex(await publicRpc("eth_getCode", [module, at])) === "0x") return evidence();
+-  const id = pad(hex(request.permissionId), { size: 32, dir: "right" });
++  const id = padHex(hex(request.permissionId), { size: 32, dir: "right" });
+   const account = address(request.account);
+   const maximum = BigInt(request.maximumOperations);
+   if (maximum < 1n || maximum >= 1n << 48n) return evidence();
+@@ -481,13 +478,11 @@ export function createViemChainPorts(
+             );
+       const gasPolicy = captureKernelGasPolicy(chainId, config.gas);
+       const client = createPublicClient({
+-        transport: custom(
+-          {
+-            request: ({ method, params }) =>
+-              publicRpc(method, params as readonly unknown[] | undefined),
+-          },
+-          { retryCount: 0 },
+-        ),
++        chain: { id: chainId, name: "configured", fees: { baseFeeMultiplier: 12000 } },
++        transport: custom({
++          request: ({ method, params }) =>
++            publicRpc(method, params as readonly unknown[] | undefined),
++        }),
+       });
+       const readClient: KernelReadClient = {
+         getChainId: async () => Number(quantity(await publicRpc("eth_chainId"))),
+@@ -563,7 +558,7 @@ export function createViemChainPorts(
+             {
+               to: prepared.entryPoint.address,
+               data: encodeFunctionData({
+-                abi: entryPoint07Abi,
++                abi: entryPointAbi,
+                 functionName: "getNonce",
+                 args: [request.account, BigInt(key)],
+               }),
+@@ -575,10 +570,7 @@ export function createViemChainPorts(
+         let quoted = gas(prepared.userOperation);
+         if (request.purpose !== "revalidate") {
+           const fees = await client.estimateFeesPerGas().catch((error: unknown) => {
+-            if (error instanceof BaseError) {
+-              const cause = error.walk((value) => value instanceof OaathRpcError);
+-              if (cause instanceof OaathRpcError) throw cause;
+-            }
++            if (error instanceof OaathRpcError) throw error;
+             return evidence();
+           });
+           quoted = {
+diff --git a/packages/sdk/src/viem/rpc.ts b/packages/sdk/src/viem/rpc.ts
+index a6e3482..eb5477e 100644
+--- a/packages/sdk/src/viem/rpc.ts
++++ b/packages/sdk/src/viem/rpc.ts
+@@ -3,13 +3,13 @@ import {
+   captureRecord,
+   captureValidationGasDiagnostic,
+   classifyUserOperationError,
++  entryPointAbi,
+   type OaathUserOperationError,
+   type UserOperationFailureStage,
+   type ValidationGasDiagnostic,
+   validationGasDiagnosticMessage,
+ } from "@oaath/protocol";
+-import { decodeErrorResult, encodeErrorResult } from "viem";
+-import { entryPoint07Abi } from "viem/account-abstraction";
++import { decodeErrorResult, encodeErrorResult } from "cetane/utils";
+ 
+ export type OaathRpcErrorCode =
+   | "oaath_rpc_config_invalid"
+@@ -51,7 +51,7 @@ function validationDiagnostic(
+   if (method !== "eth_estimateUserOperationGas" && method !== "eth_sendUserOperation") return null;
+   try {
+     if (typeof data !== "string" || !/^0x(?:[0-9a-f]{2})+$/iu.test(data)) return null;
+-    const decoded = decodeErrorResult({ abi: entryPoint07Abi, data: data as `0x${string}` });
++    const decoded = decodeErrorResult({ abi: entryPointAbi, data: data as `0x${string}` });
+     if (
+       decoded.errorName !== "FailedOpWithRevert" ||
+       decoded.args[0] !== 0n ||
+@@ -78,7 +78,7 @@ export function isAccountValidationRejection(error: unknown): boolean {
+ function accountValidationReverted(data: unknown): boolean {
+   try {
+     if (typeof data !== "string" || !/^0x(?:[0-9a-f]{2})+$/iu.test(data)) return false;
+-    const decoded = decodeErrorResult({ abi: entryPoint07Abi, data: data as `0x${string}` });
++    const decoded = decodeErrorResult({ abi: entryPointAbi, data: data as `0x${string}` });
+     // The ABI-encoded EntryPoint error identifies account validation. Arbitrary
+     // RPC prose, other operation indices and signature placeholders do not.
+     return (
+@@ -86,7 +86,7 @@ function accountValidationReverted(data: unknown): boolean {
+       decoded.args[0] === 0n &&
+       decoded.args[1] === "AA23 reverted" &&
+       encodeErrorResult({
+-        abi: entryPoint07Abi,
++        abi: entryPointAbi,
+         errorName: decoded.errorName,
+         args: decoded.args,
+       }).toLowerCase() === data.toLowerCase()
+diff --git a/packages/sdk/test/connected-eoa-flow.test.ts b/packages/sdk/test/connected-eoa-flow.test.ts
+index 436f487..7fabfd2 100644
+--- a/packages/sdk/test/connected-eoa-flow.test.ts
++++ b/packages/sdk/test/connected-eoa-flow.test.ts
+@@ -2,7 +2,7 @@ import { createWalletClient, custom, encodeFunctionData, toHex } from "viem";
+ import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
+ import { describe, expect, it } from "vitest";
+ import type { OaathSubmissionRequest } from "../src/advanced.js";
+-import { asViemUserOperation } from "../src/kernel.js";
++import { asUserOperation } from "../src/kernel.js";
+ import { OaathRpcError } from "../src/viem.js";
+ import {
+   CHAIN_ID,
+@@ -115,7 +115,7 @@ describe("Grant connected EOA fallback", () => {
+             args: [
+               [
+                 toPackedUserOperation({
+-                  ...asViemUserOperation(submitted.prepared.userOperation),
++                  ...asUserOperation(submitted.prepared.userOperation),
+                   signature: submitted.signature,
+                 }),
+               ],
+diff --git a/packages/sdk/test/connected-eoa.test.ts b/packages/sdk/test/connected-eoa.test.ts
+index 17cd5f3..7f1fa58 100644
+--- a/packages/sdk/test/connected-eoa.test.ts
++++ b/packages/sdk/test/connected-eoa.test.ts
+@@ -2,7 +2,7 @@ import { createWalletClient, custom, decodeFunctionData } from "viem";
+ import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
+ import { describe, expect, it, vi } from "vitest";
+ import { captureConnectedEoa, withConnectedEoaFallback } from "../src/client/connected-eoa.js";
+-import { asViemUserOperation, prepareUserOperation } from "../src/kernel.js";
++import { asUserOperation, prepareUserOperation } from "../src/kernel.js";
+ import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
+ import { OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES } from "../src/routing/erc4337/bundler.js";
+ import { OaathRpcError } from "../src/viem.js";
+@@ -69,7 +69,7 @@ function fixture(
+         expect(decoded.args).toEqual([
+           [
+             toPackedUserOperation({
+-              ...asViemUserOperation(prepared.userOperation),
++              ...asUserOperation(prepared.userOperation),
+               signature: request.signature,
+             }),
+           ],
+diff --git a/packages/sdk/test/routing.test.ts b/packages/sdk/test/routing.test.ts
+index 1ce4273..81f3fb2 100644
+--- a/packages/sdk/test/routing.test.ts
++++ b/packages/sdk/test/routing.test.ts
+@@ -18,7 +18,7 @@ import {
+   type OaathSessionCoverage,
+   probeBundlerCapability,
+ } from "../src/advanced.js";
+-import { asViemUserOperation, prepareUserOperation } from "../src/kernel.js";
++import { asUserOperation, prepareUserOperation } from "../src/kernel.js";
+ import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
+ import { supportsBundlerSponsorship } from "../src/routing/decide.js";
+ 
+@@ -761,7 +761,7 @@ describe("handleOps encoding", () => {
+         abi: entryPoint07Abi,
+         functionName: "handleOps",
+         args: [
+-          [toPackedUserOperation({ ...asViemUserOperation(operation.userOperation), signature })],
++          [toPackedUserOperation({ ...asUserOperation(operation.userOperation), signature })],
+           beneficiary,
+         ],
+       }),
+-- 
+2.54.0 (Apple Git-157)
+

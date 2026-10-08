@@ -1,0 +1,5 @@
+Cargo.lock linguist-generated=true
+bun.lock linguist-generated=true
+vendor/** linguist-generated=true
+upstream/oaath/*.patch linguist-generated=true
+evidence/*.json linguist-generated=true

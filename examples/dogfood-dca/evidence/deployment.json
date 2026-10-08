@@ -1,0 +1,7 @@
+{
+  "manifestVersion": "moesi.manifest/v7",
+  "finalizedFactoryVerified": true,
+  "wrongCodeRejected": true,
+  "exhaustedBudgetRejectedBeforeDispatch": true,
+  "submissions": 0
+}

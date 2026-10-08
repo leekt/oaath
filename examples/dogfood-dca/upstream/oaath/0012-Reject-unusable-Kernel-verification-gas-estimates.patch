@@ -1,0 +1,130 @@
+From d7c38d524d9d3c8073335ef8db11c22a816d2460 Mon Sep 17 00:00:00 2001
+From: taek <leekt216@gmail.com>
+Date: Thu, 8 Oct 2026 04:38:17 +0900
+Subject: [PATCH] Reject unusable Kernel verification gas estimates before
+ publication
+
+---
+ packages/sdk/src/cetane/chain-ports.ts      |  5 +-
+ packages/sdk/test/cetane-estimation.test.ts | 79 +++++++++++++++++++++
+ 2 files changed, 83 insertions(+), 1 deletion(-)
+ create mode 100644 packages/sdk/test/cetane-estimation.test.ts
+
+diff --git a/packages/sdk/src/cetane/chain-ports.ts b/packages/sdk/src/cetane/chain-ports.ts
+index 5409d4f..70cac69 100644
+--- a/packages/sdk/src/cetane/chain-ports.ts
++++ b/packages/sdk/src/cetane/chain-ports.ts
+@@ -35,6 +35,7 @@ import {
+ import type { Erc7677EstimationUserOperationV07 } from "../provider/erc7677.js";
+ import type { OaathBundlerProbeRequest } from "../routing/erc4337/bundler.js";
+ import {
++  type CetaneChainPortOptions,
+   evidence,
+   integer,
+   invalid,
+@@ -46,7 +47,6 @@ import {
+   rpcOwner,
+   url,
+   urls,
+-  type CetaneChainPortOptions,
+ } from "./rpc.js";
+ 
+ export interface CetaneChainPortConfiguration {
+@@ -596,6 +596,9 @@ export function createCetaneChainPorts(
+                 ? result.verificationGasLimit
+                 : quoted.verificationGasLimit,
+           };
++          // Kernel must execute account validation. A zero estimate without an
++          // explicit runtime floor cannot authorize signing or publication.
++          if (BigInt(quoted.verificationGasLimit) === 0n) return evidence();
+         }
+         return Object.freeze({
+           nonceKey,
+diff --git a/packages/sdk/test/cetane-estimation.test.ts b/packages/sdk/test/cetane-estimation.test.ts
+new file mode 100644
+index 0000000..5289a5c
+--- /dev/null
++++ b/packages/sdk/test/cetane-estimation.test.ts
+@@ -0,0 +1,79 @@
++import { describe, expect, it } from "vitest";
++import { createCetaneChainPorts } from "../src/cetane.js";
++import { prepareUserOperation } from "../src/kernel.js";
++import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
++
++const account = `0x${"11".repeat(20)}` as const;
++const prepared = prepareUserOperation({
++  kind: "execution",
++  grantId: "owner-estimate",
++  chainId: 421614,
++  entryPoint: { version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 },
++  userOperation: {
++    sender: account,
++    nonce: "0",
++    callData: "0x",
++    factory: null,
++    paymaster: null,
++    callGasLimit: "0",
++    verificationGasLimit: "0",
++    preVerificationGas: "0",
++    maxFeePerGas: "0",
++    maxPriorityFeePerGas: "0",
++  },
++});
++
++describe("Kernel estimation evidence", () => {
++  it.each(["0x0", "0x1d84f"])(
++    "handles verification gas %s before signing or submission",
++    async (verificationGasLimit) => {
++      const methods: string[] = [];
++      const [chain] = createCetaneChainPorts(
++        {
++          421614: {
++            publicRpcUrls: ["https://chain.test"],
++            bundlerUrl: "https://bundler.test",
++          },
++        },
++        {
++          retry: { attempts: 1 },
++          fetch: async (request) => {
++            const { id, method } = await request.json();
++            methods.push(method);
++            let result: unknown;
++            if (method === "eth_chainId") result = "0x66eee";
++            else if (method === "eth_call") result = `0x${"00".repeat(32)}`;
++            else if (method === "eth_getBlockByNumber") result = { baseFeePerGas: "0x64" };
++            else if (method === "eth_maxPriorityFeePerGas") result = "0x1";
++            else if (method === "eth_estimateUserOperationGas")
++              result = {
++                callGasLimit: "0x8c46",
++                verificationGasLimit,
++                preVerificationGas: "0xbbcb",
++              };
++            else throw Error("unexpected_rpc");
++            return Response.json({ jsonrpc: "2.0", id, result });
++          },
++        },
++      );
++      const quoted = chain!.quote({
++        purpose: "estimate",
++        chainId: 421614,
++        kind: "execution",
++        signer: "owner",
++        account,
++        nonceKey: "0",
++        mode: "standard",
++        validation: { kind: "root" },
++        calls: [],
++        paymaster: null,
++        simulation: { prepared, signature: "0x01" },
++      });
++      if (verificationGasLimit === "0x0")
++        await expect(quoted).rejects.toMatchObject({ code: "oaath_rpc_evidence_invalid" });
++      else await expect(quoted).resolves.toMatchObject({ gas: { verificationGasLimit: "120911" } });
++      expect(methods.filter((method) => method === "eth_estimateUserOperationGas")).toHaveLength(1);
++      expect(methods).not.toContain("eth_sendUserOperation");
++    },
++  );
++});
+-- 
+2.54.0 (Apple Git-157)
+

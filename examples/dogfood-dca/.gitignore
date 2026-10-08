@@ -1,0 +1,11 @@
+.local/
+node_modules/
+target/
+dist/
+.env
+*.log
+artifacts/
+consumer/dist/
+recipes/dca/contracts/out/
+recipes/dca/contracts/cache/
+.impeccable/review/

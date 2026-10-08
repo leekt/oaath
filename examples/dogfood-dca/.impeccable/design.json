@@ -1,0 +1,482 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-07T07:11:14.995746+00:00",
+  "title": "Design System: Automation",
+  "extensions": {
+    "colorMeta": {
+      "background": {
+        "role": "neutral",
+        "displayName": "Paper White",
+        "tonalRamp": [
+          "oklch(15.00% 0.00000 0.00)",
+          "oklch(26.43% 0.00000 0.00)",
+          "oklch(37.86% 0.00000 0.00)",
+          "oklch(49.29% 0.00000 0.00)",
+          "oklch(60.71% 0.00000 0.00)",
+          "oklch(72.14% 0.00000 0.00)",
+          "oklch(83.57% 0.00000 0.00)",
+          "oklch(95.00% 0.00000 0.00)"
+        ]
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Slate Ink",
+        "tonalRamp": [
+          "oklch(15.00% 0.04009 246.73)",
+          "oklch(26.43% 0.04009 246.73)",
+          "oklch(37.86% 0.04009 246.73)",
+          "oklch(49.29% 0.04009 246.73)",
+          "oklch(60.71% 0.04009 246.73)",
+          "oklch(72.14% 0.04009 246.73)",
+          "oklch(83.57% 0.04009 246.73)",
+          "oklch(95.00% 0.04009 246.73)"
+        ]
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "Deep Action Blue",
+        "tonalRamp": [
+          "oklch(15.00% 0.17427 262.41)",
+          "oklch(26.43% 0.17427 262.41)",
+          "oklch(37.86% 0.17427 262.41)",
+          "oklch(49.29% 0.17427 262.41)",
+          "oklch(60.71% 0.17427 262.41)",
+          "oklch(72.14% 0.17427 262.41)",
+          "oklch(83.57% 0.17427 262.41)",
+          "oklch(95.00% 0.17427 262.41)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Cool Mist",
+        "tonalRamp": [
+          "oklch(15.00% 0.00859 247.92)",
+          "oklch(26.43% 0.00859 247.92)",
+          "oklch(37.86% 0.00859 247.92)",
+          "oklch(49.29% 0.00859 247.92)",
+          "oklch(60.71% 0.00859 247.92)",
+          "oklch(72.14% 0.00859 247.92)",
+          "oklch(83.57% 0.00859 247.92)",
+          "oklch(95.00% 0.00859 247.92)"
+        ]
+      },
+      "muted-foreground": {
+        "role": "neutral",
+        "displayName": "Slate Text",
+        "tonalRamp": [
+          "oklch(15.00% 0.03821 248.60)",
+          "oklch(26.43% 0.03821 248.60)",
+          "oklch(37.86% 0.03821 248.60)",
+          "oklch(49.29% 0.03821 248.60)",
+          "oklch(60.71% 0.03821 248.60)",
+          "oklch(72.14% 0.03821 248.60)",
+          "oklch(83.57% 0.03821 248.60)",
+          "oklch(95.00% 0.03821 248.60)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Rule Gray",
+        "tonalRamp": [
+          "oklch(15.00% 0.01539 241.79)",
+          "oklch(26.43% 0.01539 241.79)",
+          "oklch(37.86% 0.01539 241.79)",
+          "oklch(49.29% 0.01539 241.79)",
+          "oklch(60.71% 0.01539 241.79)",
+          "oklch(72.14% 0.01539 241.79)",
+          "oklch(83.57% 0.01539 241.79)",
+          "oklch(95.00% 0.01539 241.79)"
+        ]
+      },
+      "input": {
+        "role": "neutral",
+        "displayName": "Control Gray",
+        "tonalRamp": [
+          "oklch(15.00% 0.02744 242.84)",
+          "oklch(26.43% 0.02744 242.84)",
+          "oklch(37.86% 0.02744 242.84)",
+          "oklch(49.29% 0.02744 242.84)",
+          "oklch(60.71% 0.02744 242.84)",
+          "oklch(72.14% 0.02744 242.84)",
+          "oklch(83.57% 0.02744 242.84)",
+          "oklch(95.00% 0.02744 242.84)"
+        ]
+      },
+      "statement-surface": {
+        "role": "neutral",
+        "displayName": "Statement Blue",
+        "tonalRamp": [
+          "oklch(15.00% 0.01138 252.09)",
+          "oklch(26.43% 0.01138 252.09)",
+          "oklch(37.86% 0.01138 252.09)",
+          "oklch(49.29% 0.01138 252.09)",
+          "oklch(60.71% 0.01138 252.09)",
+          "oklch(72.14% 0.01138 252.09)",
+          "oklch(83.57% 0.01138 252.09)",
+          "oklch(95.00% 0.01138 252.09)"
+        ]
+      },
+      "row-hover": {
+        "role": "neutral",
+        "displayName": "Row Wash",
+        "tonalRamp": [
+          "oklch(15.00% 0.00684 247.89)",
+          "oklch(26.43% 0.00684 247.89)",
+          "oklch(37.86% 0.00684 247.89)",
+          "oklch(49.29% 0.00684 247.89)",
+          "oklch(60.71% 0.00684 247.89)",
+          "oklch(72.14% 0.00684 247.89)",
+          "oklch(83.57% 0.00684 247.89)",
+          "oklch(95.00% 0.00684 247.89)"
+        ]
+      },
+      "destructive": {
+        "role": "semantic",
+        "displayName": "Destructive Red",
+        "tonalRamp": [
+          "oklch(15.00% 0.15756 25.03)",
+          "oklch(26.43% 0.15756 25.03)",
+          "oklch(37.86% 0.15756 25.03)",
+          "oklch(49.29% 0.15756 25.03)",
+          "oklch(60.71% 0.15756 25.03)",
+          "oklch(72.14% 0.15756 25.03)",
+          "oklch(83.57% 0.15756 25.03)",
+          "oklch(95.00% 0.15756 25.03)"
+        ]
+      },
+      "error": {
+        "role": "semantic",
+        "displayName": "Error Red",
+        "tonalRamp": [
+          "oklch(15.00% 0.14490 24.93)",
+          "oklch(26.43% 0.14490 24.93)",
+          "oklch(37.86% 0.14490 24.93)",
+          "oklch(49.29% 0.14490 24.93)",
+          "oklch(60.71% 0.14490 24.93)",
+          "oklch(72.14% 0.14490 24.93)",
+          "oklch(83.57% 0.14490 24.93)",
+          "oklch(95.00% 0.14490 24.93)"
+        ]
+      },
+      "error-surface": {
+        "role": "semantic",
+        "displayName": "Error Wash",
+        "tonalRamp": [
+          "oklch(15.00% 0.01632 22.08)",
+          "oklch(26.43% 0.01632 22.08)",
+          "oklch(37.86% 0.01632 22.08)",
+          "oklch(49.29% 0.01632 22.08)",
+          "oklch(60.71% 0.01632 22.08)",
+          "oklch(72.14% 0.01632 22.08)",
+          "oklch(83.57% 0.01632 22.08)",
+          "oklch(95.00% 0.01632 22.08)"
+        ]
+      },
+      "notice": {
+        "role": "semantic",
+        "displayName": "Notice Green",
+        "tonalRamp": [
+          "oklch(15.00% 0.07689 165.99)",
+          "oklch(26.43% 0.07689 165.99)",
+          "oklch(37.86% 0.07689 165.99)",
+          "oklch(49.29% 0.07689 165.99)",
+          "oklch(60.71% 0.07689 165.99)",
+          "oklch(72.14% 0.07689 165.99)",
+          "oklch(83.57% 0.07689 165.99)",
+          "oklch(95.00% 0.07689 165.99)"
+        ]
+      },
+      "notice-surface": {
+        "role": "semantic",
+        "displayName": "Notice Wash",
+        "tonalRamp": [
+          "oklch(15.00% 0.01584 166.73)",
+          "oklch(26.43% 0.01584 166.73)",
+          "oklch(37.86% 0.01584 166.73)",
+          "oklch(49.29% 0.01584 166.73)",
+          "oklch(60.71% 0.01584 166.73)",
+          "oklch(72.14% 0.01584 166.73)",
+          "oklch(83.57% 0.01584 166.73)",
+          "oklch(95.00% 0.01584 166.73)"
+        ]
+      },
+      "active": {
+        "role": "semantic",
+        "displayName": "Active Green",
+        "tonalRamp": [
+          "oklch(15.00% 0.09269 160.80)",
+          "oklch(26.43% 0.09269 160.80)",
+          "oklch(37.86% 0.09269 160.80)",
+          "oklch(49.29% 0.09269 160.80)",
+          "oklch(60.71% 0.09269 160.80)",
+          "oklch(72.14% 0.09269 160.80)",
+          "oklch(83.57% 0.09269 160.80)",
+          "oklch(95.00% 0.09269 160.80)"
+        ]
+      },
+      "pending": {
+        "role": "semantic",
+        "displayName": "Pending Amber",
+        "tonalRamp": [
+          "oklch(15.00% 0.09891 77.73)",
+          "oklch(26.43% 0.09891 77.73)",
+          "oklch(37.86% 0.09891 77.73)",
+          "oklch(49.29% 0.09891 77.73)",
+          "oklch(60.71% 0.09891 77.73)",
+          "oklch(72.14% 0.09891 77.73)",
+          "oklch(83.57% 0.09891 77.73)",
+          "oklch(95.00% 0.09891 77.73)"
+        ]
+      },
+      "selection": {
+        "role": "neutral",
+        "displayName": "Selection Blue",
+        "tonalRamp": [
+          "oklch(15.00% 0.03429 261.96)",
+          "oklch(26.43% 0.03429 261.96)",
+          "oklch(37.86% 0.03429 261.96)",
+          "oklch(49.29% 0.03429 261.96)",
+          "oklch(60.71% 0.03429 261.96)",
+          "oklch(72.14% 0.03429 261.96)",
+          "oklch(83.57% 0.03429 261.96)",
+          "oklch(95.00% 0.03429 261.96)"
+        ]
+      },
+      "selection-foreground": {
+        "role": "neutral",
+        "displayName": "Selection Ink",
+        "tonalRamp": [
+          "oklch(15.00% 0.11564 260.71)",
+          "oklch(26.43% 0.11564 260.71)",
+          "oklch(37.86% 0.11564 260.71)",
+          "oklch(49.29% 0.11564 260.71)",
+          "oklch(60.71% 0.11564 260.71)",
+          "oklch(72.14% 0.11564 260.71)",
+          "oklch(83.57% 0.11564 260.71)",
+          "oklch(95.00% 0.11564 260.71)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "page-title": {
+        "displayName": "Page Title",
+        "purpose": "Task/view heading, not a separate brand display face."
+      },
+      "section-title": {
+        "displayName": "Section Title",
+        "purpose": "Main content, statement, and activity headings."
+      },
+      "statement": {
+        "displayName": "Statement",
+        "purpose": "Readable financial instruction with selectively emphasized terms."
+      },
+      "subheading": {
+        "displayName": "Subheading",
+        "purpose": "Fees, signing, and disclosure subsection titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Explanations and supporting prose, up to 68ch."
+      },
+      "help": {
+        "displayName": "Help",
+        "purpose": "Short field guidance and constraints."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Associated form labels in sentence case."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Compact action labels."
+      },
+      "amount": {
+        "displayName": "Amount",
+        "purpose": "Right-aligned statement values."
+      },
+      "status": {
+        "displayName": "Status",
+        "purpose": "Explicit plan-state text and metadata."
+      },
+      "technical": {
+        "displayName": "Technical",
+        "purpose": "Addresses and advanced onchain data."
+      }
+    },
+    "shadows": [
+      {
+        "name": "control",
+        "value": "0 1px 3px 0 #0000001a,0 1px 2px -1px #0000001a",
+        "purpose": "Primary and outline buttons; removed from form inputs by the creator."
+      },
+      {
+        "name": "popover",
+        "value": "0 4px 6px -1px #0000001a,0 2px 4px -2px #0000001a",
+        "purpose": "Floating select content."
+      },
+      {
+        "name": "dialog",
+        "value": "0 10px 15px -3px #0000001a,0 4px 6px -4px #0000001a",
+        "purpose": "Cancellation dialog."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control-colors",
+        "value": "150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Compiled Tailwind transition-colors default on shared controls."
+      },
+      {
+        "name": "review-enter",
+        "value": "opacity 0.92 to 1; 180ms ease-out",
+        "purpose": "Selected view keyed by instruction identity and review commitment."
+      },
+      {
+        "name": "panel-background",
+        "value": "background-color 200ms ease-out",
+        "purpose": "Supporting panel color changes."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "@media (prefers-reduced-motion: reduce) { .automation * { transition: none !important; animation: none !important; } }",
+        "purpose": "Suppress descendant motion in the creator when the user requests it."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "creator-stack",
+        "value": "720px"
+      },
+      {
+        "name": "dialog-sm",
+        "value": "640px"
+      },
+      {
+        "name": "input-md",
+        "value": "768px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Shared shadcn variant with the creator’s target size and focus treatment.",
+      "html": "<button class=\"ds-button-primary\">Review automation <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-7-7 7 7-7 7\"/></svg></button>",
+      "css": ".ds-button-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:8px 16px;border-radius:var(--radius-md,6px);font:500 14px/20px ui-sans-serif,system-ui,sans-serif;white-space:nowrap;cursor:pointer;transition:background-color 150ms cubic-bezier(.4,0,.2,1),color 150ms cubic-bezier(.4,0,.2,1);background:var(--color-primary,#2255be);color:var(--color-primary-foreground,#fff);border:0;box-shadow:0 1px 3px 0 #0000001a,0 1px 2px -1px #0000001a;}.ds-button-primary:hover{background:color-mix(in srgb,var(--color-primary,#2255be) 90%,transparent);}.ds-button-primary:focus-visible{outline:2px solid var(--color-primary,#2255be);outline-offset:4px;}.ds-button-primary:disabled{opacity:.5;pointer-events:none;cursor:wait} @media(prefers-reduced-motion:reduce){.ds-button-primary{transition:none}}"
+    },
+    {
+      "name": "Outline button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Shared shadcn variant with the creator’s target size and focus treatment.",
+      "html": "<button class=\"ds-button-outline\">Pause </button>",
+      "css": ".ds-button-outline{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:8px 16px;border-radius:var(--radius-md,6px);font:500 14px/20px ui-sans-serif,system-ui,sans-serif;white-space:nowrap;cursor:pointer;transition:background-color 150ms cubic-bezier(.4,0,.2,1),color 150ms cubic-bezier(.4,0,.2,1);background:var(--color-background,#fff);color:var(--color-foreground,#192c3d);border:1px solid var(--color-input,#a9bac8);box-shadow:0 1px 3px 0 #0000001a,0 1px 2px -1px #0000001a;}.ds-button-outline:hover{background:var(--color-accent,#edf2f7);}.ds-button-outline:focus-visible{outline:2px solid var(--color-primary,#2255be);outline-offset:4px;}.ds-button-outline:disabled{opacity:.5;pointer-events:none;cursor:wait} @media(prefers-reduced-motion:reduce){.ds-button-outline{transition:none}}"
+    },
+    {
+      "name": "Ghost button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Shared shadcn variant with the creator’s target size and focus treatment.",
+      "html": "<button class=\"ds-button-ghost\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m12 19-7-7 7-7m-7 7h14\"/></svg> All automations</button>",
+      "css": ".ds-button-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:8px 16px;border-radius:var(--radius-md,6px);font:500 14px/20px ui-sans-serif,system-ui,sans-serif;white-space:nowrap;cursor:pointer;transition:background-color 150ms cubic-bezier(.4,0,.2,1),color 150ms cubic-bezier(.4,0,.2,1);background:transparent;color:var(--color-foreground,#192c3d);border:0;}.ds-button-ghost:hover{background:var(--color-accent,#edf2f7);}.ds-button-ghost:focus-visible{outline:2px solid var(--color-primary,#2255be);outline-offset:4px;}.ds-button-ghost:disabled{opacity:.5;pointer-events:none;cursor:wait} @media(prefers-reduced-motion:reduce){.ds-button-ghost{transition:none}}"
+    },
+    {
+      "name": "Amount field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labeled amount input with a fixed currency unit; the input remains the interactive control.",
+      "html": "<label class=\"ds-amount-label\" for=\"ds-amount\">Amount each day</label><div class=\"ds-amount-wrap\"><input class=\"ds-amount\" id=\"ds-amount\" value=\"25\" inputmode=\"decimal\" aria-describedby=\"ds-unit\"><span class=\"ds-amount-unit\" id=\"ds-unit\">USDC</span></div>",
+      "css": ".ds-amount-label{display:block;margin-bottom:9px;color:var(--color-foreground,#192c3d);font:500 14px/1 ui-sans-serif,system-ui,sans-serif}.ds-amount-wrap{position:relative}.ds-amount{box-sizing:border-box;width:100%;height:48px;padding:4px 72px 4px 12px;background:var(--color-background,#fff);color:var(--color-foreground,#192c3d);border:1px solid var(--color-input,#a9bac8);border-radius:var(--radius-md,6px);font:400 16px/24px ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;box-shadow:none}.ds-amount:focus-visible{outline:2px solid var(--color-primary,#2255be);outline-offset:4px;}.ds-amount:disabled{opacity:.5;cursor:not-allowed}.ds-amount-unit{position:absolute;right:16px;top:11px;color:var(--color-muted-foreground,#526578);font:400 15px/1.6 ui-sans-serif,system-ui,sans-serif;pointer-events:none}@media(min-width:768px){.ds-amount{line-height:20px}}"
+    },
+    {
+      "name": "Example navigation",
+      "kind": "nav",
+      "description": "Quiet text brand link and environment context from the DCA shell.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Example\"><a class=\"ds-brand\" href=\"#automation\">oaath <span class=\"ds-brand-product\">/ automation</span></a><span class=\"ds-environment\">Local demonstration</span></nav>",
+      "css": ".ds-nav{height:100px;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:0 36px;border-bottom:1px solid var(--color-border,#d6e0e8);font-family:ui-sans-serif,system-ui,sans-serif}.ds-brand{font-size:21px;font-weight:650;letter-spacing:-.025em;color:var(--color-foreground,#192c3d);text-decoration:none}.ds-brand-product{font-weight:400;color:var(--color-muted-foreground,#526578)}.ds-brand:focus-visible{outline:2px solid var(--color-primary,#2255be);outline-offset:5px}.ds-environment{font-size:13px;color:var(--color-muted-foreground,#526578)}@media(max-width:720px){.ds-nav{height:78px;padding:0 22px}.ds-brand{font-size:18px}.ds-environment{max-width:80px;text-align:right;font-size:11px}}"
+    },
+    {
+      "name": "Purchase statement panel",
+      "kind": "card",
+      "refersTo": "statement-panel",
+      "description": "Pale summary surface with a larger statement sentence and an aligned financial row.",
+      "html": "<aside class=\"ds-statement-panel\"><h2 class=\"ds-statement-title\">Your purchase statement</h2><p class=\"ds-statement-copy\">Buy <strong class=\"ds-statement-emphasis\">WETH</strong><br>with <strong class=\"ds-statement-emphasis\">25 USDC</strong> every day.</p><dl class=\"ds-totals\"><div class=\"ds-total-row\"><dt class=\"ds-total-label\">Maximum input spend</dt><dd class=\"ds-total-value\">750 USDC</dd></div></dl></aside>",
+      "css": ".ds-statement-panel{padding:28px;background:#edf3fa;border-radius:12px;color:var(--color-foreground,#192c3d);font:400 16px/1.6 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums}.ds-statement-title{margin:0 0 16px;font-size:21px;font-weight:600;line-height:1.2;letter-spacing:-.015em}.ds-statement-copy{margin:24px 0;font-size:25px;line-height:1.4;letter-spacing:-.015em}.ds-statement-emphasis{font-weight:600}.ds-totals{margin:26px 0}.ds-total-row{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--color-border,#d6e0e8);padding:12px 0}.ds-total-label{color:var(--color-muted-foreground,#526578);font-size:14px}.ds-total-value{margin:0;text-align:right;font-size:15px;font-weight:600}@media(max-width:720px){.ds-statement-panel{padding:24px}.ds-total-value{max-width:56%}}"
+    },
+    {
+      "name": "Technical disclosure",
+      "kind": "custom",
+      "refersTo": "disclosure",
+      "description": "Native expandable details for advanced account and onchain terms.",
+      "html": "<details class=\"ds-details\"><summary class=\"ds-details-summary\">Account, price source &amp; onchain terms <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></summary><dl class=\"ds-details-list\"><dt class=\"ds-details-term\">Chain ID</dt><dd class=\"ds-details-value\">31337</dd></dl></details>",
+      "css": ".ds-details{margin-top:28px;color:var(--color-foreground,#192c3d);font-family:ui-sans-serif,system-ui,sans-serif}.ds-details-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer;font-size:14px;font-weight:600;line-height:1.6;padding:16px 0;border-block:1px solid var(--color-border,#d6e0e8)}.ds-details-summary:focus-visible{outline:2px solid var(--color-primary,#2255be);outline-offset:4px;}.ds-details-list{margin:16px 0;font-size:13px;line-height:1.6}.ds-details-term{color:var(--color-muted-foreground,#526578)}.ds-details-value{margin:0;font-family:ui-monospace,monospace;overflow-wrap:anywhere}"
+    },
+    {
+      "name": "Error message",
+      "kind": "custom",
+      "refersTo": "notice-error",
+      "description": "Announced recovery guidance in a tinted message strip.",
+      "html": "<p class=\"ds-error\" role=\"alert\">Check the amount and schedule. Use a positive amount with at most six decimal places and 1–365 opportunities, then review again.</p>",
+      "css": ".ds-error{color:#982b2b;background:#fff0ef;padding:16px 20px;margin:0 0 24px;border-radius:8px;max-width:68ch;font:400 16px/1.6 ui-sans-serif,system-ui,sans-serif}"
+    },
+    {
+      "name": "Activity row",
+      "kind": "custom",
+      "refersTo": "activity-row",
+      "description": "Saved instruction as a full-width button with explicit textual state.",
+      "html": "<button class=\"ds-activity-row\"><span class=\"ds-activity-description\">Daily WETH purchase<small class=\"ds-activity-meta\">25 USDC every day</small></span><span class=\"ds-activity-status\">Active</span><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-7-7 7 7-7 7\"/></svg></button>",
+      "css": ".ds-activity-row{width:100%;display:flex;align-items:center;gap:16px;text-align:left;padding:22px 4px;background:transparent;border:0;border-bottom:1px solid var(--color-border,#d6e0e8);color:var(--color-foreground,#192c3d);font:400 16px/1.6 ui-sans-serif,system-ui,sans-serif;cursor:pointer;font-variant-numeric:tabular-nums}.ds-activity-row:hover{background:#f3f7fb}.ds-activity-row:focus-visible{outline:2px solid var(--color-primary,#2255be);outline-offset:4px;}.ds-activity-description{flex:1;min-width:0}.ds-activity-meta{display:block;color:var(--color-muted-foreground,#526578);margin-top:5px;font-size:13px}.ds-activity-status{color:#176746;font-size:13px;white-space:nowrap}@media(max-width:720px){.ds-activity-row{flex-wrap:wrap}.ds-activity-description{flex-basis:65%}.ds-activity-meta{font-size:12px}}"
+    },
+    {
+      "name": "Cancellation dialog content",
+      "kind": "custom",
+      "refersTo": "dialog",
+      "description": "Static dialog preview; the application uses Radix AlertDialog for focus trapping, dismissal, and return focus.",
+      "html": "<section class=\"ds-dialog\" role=\"alertdialog\" aria-labelledby=\"ds-dialog-title\" aria-describedby=\"ds-dialog-copy\"><h2 class=\"ds-dialog-title\" id=\"ds-dialog-title\">Cancel this automation?</h2><p class=\"ds-dialog-copy\" id=\"ds-dialog-copy\">Scheduling stops immediately. Your wallet may need to confirm onchain cancellation. Purchases already submitted can still complete.</p><div class=\"ds-dialog-actions\"><button class=\"ds-dialog-keep\">Keep automation</button><button class=\"ds-dialog-stop\">Stop &amp; cancel</button></div></section>",
+      "css": ".ds-dialog{box-sizing:border-box;display:grid;gap:16px;width:100%;max-width:32rem;padding:24px;background:var(--color-background,#fff);color:var(--color-foreground,#192c3d);border:1px solid var(--color-border,#d6e0e8);box-shadow:0 10px 15px -3px #0000001a,0 4px 6px -4px #0000001a;font:400 16px/1.6 ui-sans-serif,system-ui,sans-serif}.ds-dialog-title{font-size:21px;font-weight:600;line-height:1.2;letter-spacing:-.015em;margin:0 0 16px}.ds-dialog-copy{color:var(--color-muted-foreground,#526578);font-size:14px;line-height:20px;margin:0 0 18px}.ds-dialog-actions{display:flex;flex-direction:column-reverse;gap:8px}.ds-dialog-keep,.ds-dialog-stop{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:8px 16px;border-radius:var(--radius-md,6px);font:500 14px/20px ui-sans-serif,system-ui,sans-serif;white-space:nowrap;cursor:pointer;transition:background-color 150ms cubic-bezier(.4,0,.2,1),color 150ms cubic-bezier(.4,0,.2,1);box-shadow:0 1px 3px 0 #0000001a,0 1px 2px -1px #0000001a}.ds-dialog-keep{border:1px solid var(--color-input,#a9bac8);background:var(--color-background,#fff);color:var(--color-foreground,#192c3d)}.ds-dialog-stop{border:0;background:var(--color-primary,#2255be);color:var(--color-primary-foreground,#fff)}.ds-dialog-keep:hover{background:var(--color-accent,#edf2f7)}.ds-dialog-stop:hover{background:color-mix(in srgb,var(--color-primary,#2255be) 90%,transparent)}.ds-dialog-keep:focus-visible,.ds-dialog-stop:focus-visible{outline:2px solid var(--color-primary,#2255be);outline-offset:4px;}@media(min-width:640px){.ds-dialog{border-radius:8px}.ds-dialog-actions{flex-direction:row;justify-content:flex-end}}@media(prefers-reduced-motion:reduce){.ds-dialog-keep,.ds-dialog-stop{transition:none}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Account Statement",
+    "overview": "A calm, daylight interface built from cool white, slate ink, aligned figures, and fine horizontal rules. The visual language makes instructions and their limits easy to read before an action, then gives retained activity the same orderly treatment.\n\nReact and the supplied shadcn/ui primitives provide the interaction foundation. Open regions carry the main content; pale blue panels group a summary or its next action. The character is restrained and practical: sans-serif text, legible controls, and short motion that acknowledges a change of view.",
+    "keyCharacteristics": [
+      "Slate text on white, with deep blue reserved for actions and focus.",
+      "Tabular financial figures and quiet, aligned statement rows.",
+      "Open content regions with a single tonal panel for supporting context.",
+      "Readable body copy, explicit labels, and technical detail behind disclosures."
+    ],
+    "rules": [
+      {
+        "name": "The Action Color Rule",
+        "body": "Use deep blue for primary actions, caret, and focus. Keep routine labels and values in slate; status colors accompany explicit status text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Financial Figure Rule",
+        "body": "Use tabular numerals throughout the creator and keep statement amounts aligned to the right. Reserve monospace for technical values and serialized data.",
+        "section": "typography"
+      },
+      {
+        "name": "The Quiet Surface Rule",
+        "body": "Keep page regions flat. Use fine rules and pale surfaces to separate information; retain shallow control shadows and stronger elevation only for floating UI.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use the shared React/shadcn controls and their keyboard behavior.",
+      "Do align statement labels and values, keeping units adjacent to their amounts.",
+      "Do let body copy wrap naturally and retain the mobile reading order.",
+      "Do keep addresses and serialized authorization detail inside the technical disclosure.",
+      "Do preserve the focus transfer, visible focus treatments, explicit status text, and reduced-motion override."
+    ],
+    "donts": [
+      "Don't replace financial amounts or pending states with decorative graphics.",
+      "Don't turn every content region into a bordered or elevated card.",
+      "Don't use monospace for ordinary headings, labels, or explanatory prose.",
+      "Don't present a saved instruction as approved while its authorization or chain confirmation is pending.",
+      "Don't unlock an uncertain create request for editing or issue it again under a new identity."
+    ]
+  }
+}

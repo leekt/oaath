@@ -1,0 +1,328 @@
+From 040921f28bbeae9a52b44631da74d109c99f8c3d Mon Sep 17 00:00:00 2001
+From: taek <leekt216@gmail.com>
+Date: Wed, 7 Oct 2026 13:29:16 +0900
+Subject: [PATCH 1/9] Expose durable keyed execution over existing Grant
+ publication
+
+---
+ packages/sdk/package.json          |   8 ++
+ packages/sdk/src/headless.ts       | 158 +++++++++++++++++++++++++++++
+ packages/sdk/test/headless.test.ts | 109 ++++++++++++++++++++
+ packages/sdk/tsdown.config.ts      |   1 +
+ 4 files changed, 276 insertions(+)
+ create mode 100644 packages/sdk/src/headless.ts
+ create mode 100644 packages/sdk/test/headless.test.ts
+
+diff --git a/packages/sdk/package.json b/packages/sdk/package.json
+index 5fd110b..ba4a682 100644
+--- a/packages/sdk/package.json
++++ b/packages/sdk/package.json
+@@ -69,6 +69,14 @@
+       },
+       "types": "./dist/viem.d.ts",
+       "default": "./dist/viem.js"
++    },
++    "./headless": {
++      "oaath-source": {
++        "types": "./src/headless.ts",
++        "node": "./src/headless.ts"
++      },
++      "types": "./dist/headless.d.ts",
++      "node": "./dist/headless.js"
+     }
+   },
+   "files": [
+diff --git a/packages/sdk/src/headless.ts b/packages/sdk/src/headless.ts
+new file mode 100644
+index 0000000..89f2ccc
+--- /dev/null
++++ b/packages/sdk/src/headless.ts
+@@ -0,0 +1,158 @@
++/** Headless composition over the existing Grant and Operation owners. No alternate sender. */
++import {
++  advanceGrant,
++  applyPermissionDecision,
++  createGrantFromPermissionRequest,
++  type OperationIdentity,
++  parsePermissionDecision,
++  parsePermissionRequest,
++  sameGrantIdentity,
++} from "@oaath/protocol";
++import type { OaathBindingInput } from "./client/binding.js";
++import { captureOaathBinding } from "./client/binding.js";
++import { clientFail } from "./client/errors.js";
++import {
++  type CreateGrantHandleInput,
++  createGrantHandle,
++  grantProviderPort,
++  type OaathGrantHandle,
++  type OaathProviderOperationPublication,
++} from "./client/grant-handle.js";
++import type { OaathOperationHandle } from "./client/operation-handle.js";
++import {
++  kernelGrantCapabilityHash,
++  parseKernelGrantApproval,
++} from "./kernel/permission/approval.js";
++import { WalletCallBundleStore } from "./provider/bundle-store.js";
++import { PreparedCallStore } from "./provider/prepared-call-store.js";
++import { GrantStore, type GrantStoreAdapter } from "./store.js";
++
++export interface HeadlessGrantInput
++  extends Pick<
++    CreateGrantHandleInput,
++    | "operations"
++    | "chains"
++    | "ownerKey"
++    | "sessionKey"
++    | "invalidation"
++    | "ownerRevocations"
++    | "now"
++  > {
++  readonly binding: OaathBindingInput;
++  readonly request: unknown;
++  readonly decision: unknown;
++  readonly installApproval: unknown;
++  readonly grants: GrantStoreAdapter;
++}
++const fail = (): never =>
++  clientFail("oaath_client_state_conflict", "headless authority binding disagrees");
++/** The caller persists the original verified owner artifact and signer binding, never live handles. */
++export async function openHeadlessGrant(
++  input: HeadlessGrantInput,
++): Promise<Readonly<OaathGrantHandle>> {
++  const binding = captureOaathBinding(input.binding);
++  const request = parsePermissionRequest(input.request);
++  const decision = parsePermissionDecision(input.decision);
++  const approval = parseKernelGrantApproval(input.installApproval, request.logicalAccount);
++  if (
++    decision.kind !== "approve" ||
++    kernelGrantCapabilityHash(approval) !== decision.capabilityHash ||
++    JSON.stringify(request.application) !== JSON.stringify(binding.application) ||
++    JSON.stringify(request.logicalAccount) !== JSON.stringify(binding.account) ||
++    JSON.stringify(request.operatorCredential) !== JSON.stringify(binding.operatorCredential) ||
++    JSON.stringify(request.context) !== JSON.stringify(binding.context)
++  )
++    return fail();
++  const expected = createGrantFromPermissionRequest(request);
++  const applied = applyPermissionDecision({
++    request,
++    grant: expected,
++    observation: { status: "available", decision },
++    evaluatedAt: decision.decidedAt,
++  });
++  if (applied.status !== "applied" || applied.grant.state !== "approved") return fail();
++  const grants = new GrantStore(input.grants);
++  let record = await grants.get(request.requestId);
++  if (!record) {
++    const active = advanceGrant(applied.grant, {
++      type: "activate",
++      identity: applied.grant.identity,
++      activatedAt: decision.decidedAt,
++    });
++    const result = await grants.compareAndSwap({
++      grantId: request.requestId,
++      expectedStoreRevision: null,
++      next: active,
++    });
++    record = result.status === "committed" ? result.record : await grants.get(request.requestId);
++  }
++  if (!record || !sameGrantIdentity(record.value.identity, expected.identity)) return fail();
++  // Wallet RPC preparation is deliberately unavailable from this server entry.
++  const unused = {
++    get: async () => null,
++    compareAndSwap: async () => fail(),
++    close: async () => undefined,
++  };
++  return createGrantHandle({
++    binding,
++    request,
++    approvedPolicy: decision.approvedPolicy,
++    installApproval: approval,
++    record,
++    grants,
++    operations: input.operations,
++    walletCallBundles: new WalletCallBundleStore(unused),
++    preparedCallContexts: new PreparedCallStore(unused),
++    chains: input.chains,
++    ownerKey: input.ownerKey,
++    sessionKey: input.sessionKey,
++    invalidation: input.invalidation,
++    ownerRevocations: input.ownerRevocations,
++    now: input.now,
++  });
++}
++export interface KeyedExecutionIntent {
++  readonly digest: `0x${string}`;
++  /** Must distinguish a positively fresh intent from missing/unreadable retained evidence. */
++  readonly read: () => Promise<
++    | { status: "fresh" }
++    | { status: "reserved"; identity: Readonly<OperationIdentity> }
++    | { status: "unresolved" }
++  >;
++  readonly publication: Readonly<OaathProviderOperationPublication>;
++}
++export type KeyedExecutionResult =
++  | { status: "operation"; operation: Readonly<OaathOperationHandle> }
++  | { status: "unresolved" };
++/** The durable store must atomically reject a second reservation or changed input digest. */
++export async function executeKeyed(
++  grant: Readonly<OaathGrantHandle>,
++  input: { chain: number; calls: unknown; intent: KeyedExecutionIntent },
++): Promise<KeyedExecutionResult> {
++  if (!/^0x[0-9a-f]{64}$/.test(input.intent.digest)) return fail();
++  const port = grantProviderPort(grant);
++  const retained = await input.intent.read();
++  if (retained.status === "unresolved") return { status: "unresolved" };
++  if (retained.status === "reserved") {
++    if (
++      retained.identity.requestHash !== input.intent.digest ||
++      retained.identity.chainId !== input.chain
++    )
++      return fail();
++    const recovered = await port.recoverOperation({ identity: retained.identity });
++    return recovered.status === "observable"
++      ? { status: "operation", operation: recovered.operation }
++      : { status: "unresolved" };
++  }
++  if (retained.status !== "fresh") return fail();
++  const operation = await port.startCalls(
++    {
++      chain: input.chain,
++      calls: input.calls,
++      requestHash: input.intent.digest,
++      paymaster: null,
++    },
++    input.intent.publication,
++  );
++  return { status: "operation", operation };
++}
+diff --git a/packages/sdk/test/headless.test.ts b/packages/sdk/test/headless.test.ts
+new file mode 100644
+index 0000000..b4e877f
+--- /dev/null
++++ b/packages/sdk/test/headless.test.ts
+@@ -0,0 +1,109 @@
++import type { OperationIdentity } from "@oaath/protocol";
++import { describe, expect, it } from "vitest";
++import { executeKeyed, type KeyedExecutionIntent } from "../src/headless.js";
++import { CHAIN_ID, createRealm, permissionInput, sendCallsInput } from "./support/browser.js";
++
++const digest = `0x${"ab".repeat(32)}` as const;
++async function fixture() {
++  const realm = createRealm();
++  const connection = await realm.oaath.connect();
++  const grant = await connection.requestPermission(permissionInput());
++  let identity: Readonly<OperationIdentity> | undefined;
++  const intent: KeyedExecutionIntent = {
++    digest,
++    read: async () => (identity ? { status: "reserved", identity } : { status: "fresh" }),
++    publication: {
++      reserve: async (r) => {
++        if (identity) throw new Error("duplicate reservation");
++        identity = r.operation.identity;
++      },
++      confirm: async () => {},
++      abandon: async () => {},
++    },
++  };
++  const send = (override = intent) =>
++    executeKeyed(grant, {
++      chain: CHAIN_ID,
++      calls: (sendCallsInput() as { calls: unknown }).calls,
++      intent: override,
++    });
++  return { realm, connection, grant, intent, send, identity: () => identity };
++}
++describe("durable keyed execution", () => {
++  it("recovers the same core identity without signing or submitting twice", async () => {
++    const f = await fixture();
++    const first = await f.send();
++    expect(first.status).toBe("operation");
++    const second = await f.send();
++    if (first.status !== "operation" || second.status !== "operation")
++      throw new Error("not observable");
++    expect(second.operation.id).toBe(first.operation.id);
++    expect(f.realm.chain.sends).toHaveLength(1);
++    expect(f.realm.chain.signatures).toHaveLength(1);
++    await f.connection.close();
++  });
++  it("does not reinterpret unknown or missing evidence as permission to send", async () => {
++    const f = await fixture();
++    expect(await f.send({ ...f.intent, read: async () => ({ status: "unresolved" }) })).toEqual({
++      status: "unresolved",
++    });
++    await expect(
++      f.send({ ...f.intent, read: async () => ({ status: "unknown" }) as never }),
++    ).rejects.toMatchObject({ code: "oaath_client_state_conflict" });
++    expect(f.realm.chain.sends).toHaveLength(0);
++    await f.connection.close();
++  });
++  it("rejects changed digest for a reserved slot", async () => {
++    const f = await fixture();
++    await f.send();
++    await expect(f.send({ ...f.intent, digest: `0x${"cd".repeat(32)}` })).rejects.toMatchObject({
++      code: "oaath_client_state_conflict",
++    });
++    expect(f.realm.chain.sends).toHaveLength(1);
++    await f.connection.close();
++  });
++  it("retains reservation after a crash before core publication; absence never authorizes resend", async () => {
++    const f = await fixture();
++    await expect(
++      f.send({
++        ...f.intent,
++        publication: {
++          ...f.intent.publication,
++          reserve: async (r) => {
++            await f.intent.publication.reserve(r);
++            throw new Error("process died");
++          },
++        },
++      }),
++    ).rejects.toBeDefined();
++    expect(f.identity()).toBeDefined();
++    expect(await f.send()).toEqual({ status: "unresolved" });
++    expect(f.realm.chain.sends).toHaveLength(0);
++    await f.connection.close();
++  });
++  it("retains one core record after publication acknowledgement is lost", async () => {
++    const f = await fixture();
++    await expect(
++      f.send({
++        ...f.intent,
++        publication: {
++          ...f.intent.publication,
++          confirm: async () => {
++            throw new Error("lost acknowledgement");
++          },
++        },
++      }),
++    ).rejects.toBeDefined();
++    const result = await f.send();
++    expect(result.status).toBe("unresolved");
++    expect(f.realm.chain.sends).toHaveLength(0);
++    await f.connection.close();
++  });
++  it("two concurrent calls cannot acquire a second reservation", async () => {
++    const f = await fixture();
++    const results = await Promise.allSettled([f.send(), f.send()]);
++    expect(results.some((r) => r.status === "fulfilled")).toBe(true);
++    expect(f.realm.chain.sends).toHaveLength(1);
++    await f.connection.close();
++  });
++});
+diff --git a/packages/sdk/tsdown.config.ts b/packages/sdk/tsdown.config.ts
+index 67347df..940d090 100644
+--- a/packages/sdk/tsdown.config.ts
++++ b/packages/sdk/tsdown.config.ts
+@@ -5,6 +5,7 @@ export default defineConfig({
+     index: "src/index.ts",
+     kernel: "src/kernel.ts",
+     advanced: "src/advanced.ts",
++    headless: "src/headless.ts",
+     persistence: "src/persistence.ts",
+     testing: "src/testing.ts",
+     viem: "src/viem.ts",
+-- 
+2.54.0 (Apple Git-157)
+

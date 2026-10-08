@@ -1,0 +1,657 @@
+From ddb10e4f6b13b55c926afc3638abbdd7cd440afd Mon Sep 17 00:00:00 2001
+From: taek <leekt216@gmail.com>
+Date: Wed, 7 Oct 2026 15:30:59 +0900
+Subject: [PATCH 7/9] Exercise the Cetane public adapter and operation
+ conversions
+
+---
+ packages/sdk/README.md                        | 14 ++++++-------
+ ...st.ts => cetane-chain-ports.anvil.test.ts} |  4 ++--
+ ...rts.test.ts => cetane-chain-ports.test.ts} | 20 +++++++++----------
+ ...-only.test.ts => cetane-read-only.test.ts} | 14 ++++++-------
+ packages/sdk/test/chain-port-context.test.ts  |  2 +-
+ packages/sdk/test/connected-eoa-flow.test.ts  |  2 +-
+ packages/sdk/test/connected-eoa.test.ts       |  2 +-
+ packages/sdk/test/enable-gas-floor.test.ts    |  2 +-
+ packages/sdk/test/kernel-v33.anvil.test.ts    | 12 +++++------
+ packages/sdk/test/package-boundary.test.mjs   | 16 +++++++--------
+ packages/sdk/test/package.test.ts             |  8 ++++----
+ .../sdk/test/provider-eip5792-erc7677.test.ts |  2 +-
+ .../provider-eip5792-erc7902-validity.test.ts |  2 +-
+ .../sdk/test/provider-eip5792-erc7902.test.ts |  2 +-
+ .../sdk/test/provider-eip5792.anvil.test.ts   |  2 +-
+ packages/sdk/test/provider-eip5792.test.ts    |  2 +-
+ .../sdk/test/provider-erc7836-erc7677.test.ts |  2 +-
+ .../provider-erc7836-erc7902-validity.test.ts |  2 +-
+ packages/sdk/test/provider-erc7836.test.ts    |  2 +-
+ packages/sdk/test/provider-reload.test.ts     |  2 +-
+ .../sdk/test/rpc-validation-rejection.test.ts |  2 +-
+ .../sdk/test/user-operation-error.test.ts     |  4 ++--
+ .../test/validation-gas-diagnostic.test.ts    |  4 ++--
+ packages/sdk/test/viem.test.ts                |  2 +-
+ 24 files changed, 63 insertions(+), 63 deletions(-)
+ rename packages/sdk/test/{viem-chain-ports.anvil.test.ts => cetane-chain-ports.anvil.test.ts} (99%)
+ rename packages/sdk/test/{viem-chain-ports.test.ts => cetane-chain-ports.test.ts} (95%)
+ rename packages/sdk/test/{viem-read-only.test.ts => cetane-read-only.test.ts} (95%)
+
+diff --git a/packages/sdk/README.md b/packages/sdk/README.md
+index b82c922..12dabce 100644
+--- a/packages/sdk/README.md
++++ b/packages/sdk/README.md
+@@ -75,7 +75,7 @@ enable approval:
+ ```ts
+ import { createOAAth } from "@oaath/sdk";
+ 
+-// Plain descriptors: createOAAth builds the default viem chain ports.
++// Plain descriptors: createOAAth builds the default Cetane chain ports.
+ const chains = { 143: { publicRpcUrls: [publicRpcUrl], bundlerUrl } };
+ const oaath = createOAAth({ chains, account: existingKernelAddress });
+ const account = oaath.account(existingKernelAddress);
+@@ -344,9 +344,9 @@ pass the array as `chains`; any `OaathChainCapability[]` is accepted the same
+ way as a custom override:
+ 
+ ```ts
+-import { createViemChainPorts } from "@oaath/sdk/viem";
++import { createCetaneChainPorts } from "@oaath/sdk/cetane";
+ 
+-const chains = createViemChainPorts({
++const chains = createCetaneChainPorts({
+   480: {
+     publicRpcUrls: [publicRpcUrl, backupPublicRpcUrl],
+     bundlerUrl,
+@@ -460,7 +460,7 @@ resubmit. Custom submission sessions may return
+ or `submission: { route: "erc4337-handleops", transactionHash }`; omit
+ `submission` when the route is unknown.
+ 
+-For direct acknowledgements, default viem observation reads the retained
++For direct acknowledgements, default Cetane observation reads the retained
+ transaction from the public RPC and locates the exact EntryPoint event. Recovery
+ needs neither a wallet nor a bundler index. The observer still verifies the
+ receipt, transaction, canonical blocks, and finality; a missing event or a failed
+@@ -483,9 +483,9 @@ UserOperation reference without constructing an OAAth Grant or Operation:
+ 
+ ```ts
+ import { createUserOperationObserver } from "@oaath/sdk/advanced";
+-import { createViemChainPorts } from "@oaath/sdk/viem";
++import { createCetaneChainPorts } from "@oaath/sdk/cetane";
+ 
+-const [port] = createViemChainPorts({
++const [port] = createCetaneChainPorts({
+   [chainId]: { publicRpcUrls: [rpcUrl], bundlerUrl },
+ }, { retry: { attempts: 1 }, timeoutMs: 8_000, maxRequests: 96 });
+ const observer = createUserOperationObserver(port.observation);
+@@ -550,7 +550,7 @@ session closes cannot start it either. Wallet rejection or a lost response never
+ retries the transaction. Retain the operation ID and observe it. This option
+ cannot be combined with paymaster sponsorship, which remains on the bundler
+ route. Custom direct transports must preserve `OaathRpcError` conclusive
+-rejections from `@oaath/sdk/viem`. The relay forwards their closed rejection
++rejections from `@oaath/sdk/cetane`. The relay forwards their closed rejection
+ evidence only from submission failures; service-approved clients capture it before
+ allowing the same local wallet fallback. Generic relay errors grant no fallback.
+ 
+diff --git a/packages/sdk/test/viem-chain-ports.anvil.test.ts b/packages/sdk/test/cetane-chain-ports.anvil.test.ts
+similarity index 99%
+rename from packages/sdk/test/viem-chain-ports.anvil.test.ts
+rename to packages/sdk/test/cetane-chain-ports.anvil.test.ts
+index 64db225..7ecd976 100644
+--- a/packages/sdk/test/viem-chain-ports.anvil.test.ts
++++ b/packages/sdk/test/cetane-chain-ports.anvil.test.ts
+@@ -33,7 +33,7 @@ import { createIndexedDbKeyStore } from "../src/persistence/indexeddb/key-store.
+ import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
+ import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
+ import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
+-import { createViemChainPorts } from "../src/viem.js";
++import { createCetaneChainPorts } from "../src/cetane.js";
+ import { createHarness, deployKernelStack, startAnvil } from "./support/anvil.js";
+ import {
+   bindingInput,
+@@ -269,7 +269,7 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")(
+             [url, `${url}/unavailable`, local.url].map((value) => new URL(value).href),
+           );
+           const chainPorts = () =>
+-            createViemChainPorts(
++            createCetaneChainPorts(
+               { [CHAIN_ID]: { publicRpcUrls: [`${url}/unavailable`, local.url], bundlerUrl: url } },
+               {
+                 retry: { attempts: 2, delayMs: 0 },
+diff --git a/packages/sdk/test/viem-chain-ports.test.ts b/packages/sdk/test/cetane-chain-ports.test.ts
+similarity index 95%
+rename from packages/sdk/test/viem-chain-ports.test.ts
+rename to packages/sdk/test/cetane-chain-ports.test.ts
+index b3925cf..1e0b67b 100644
+--- a/packages/sdk/test/viem-chain-ports.test.ts
++++ b/packages/sdk/test/cetane-chain-ports.test.ts
+@@ -3,7 +3,7 @@ import { entryPoint07Abi } from "viem/account-abstraction";
+ import { describe, expect, it } from "vitest";
+ import { prepareUserOperation } from "../src/kernel.js";
+ import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
+-import { createViemChainPorts } from "../src/viem.js";
++import { createCetaneChainPorts } from "../src/cetane.js";
+ 
+ const config = {
+   143: {
+@@ -14,10 +14,10 @@ const config = {
+ };
+ const rpc = (id: number, result: unknown) => Response.json({ jsonrpc: "2.0", id, result });
+ 
+-describe("default viem chain ports", () => {
++describe("default Cetane chain ports", () => {
+   it("pins plain v4 permission reads through the default RPC port", async () => {
+     const selectors: unknown[] = [];
+-    const [chain] = createViemChainPorts(config, {
++    const [chain] = createCetaneChainPorts(config, {
+       fetch: async (request) => {
+         const { id, method, params } = await request.json();
+         if (method === "eth_chainId") return rpc(id, "0x8f");
+@@ -84,7 +84,7 @@ describe("default viem chain ports", () => {
+         status: scenario === "reverted-transaction" ? "0x0" : "0x1",
+         logs: scenario === "duplicate" ? [event, event] : [event],
+       };
+-      const [chain] = createViemChainPorts(config, {
++      const [chain] = createCetaneChainPorts(config, {
+         fetch: async (request) => {
+           expect(new URL(request.url).hostname).toMatch(/^public-/u);
+           const { id, method, params } = await request.json();
+@@ -122,7 +122,7 @@ describe("default viem chain ports", () => {
+ 
+   it("bounds timeout and concurrency without a queue", async () => {
+     let started = 0;
+-    const [chain] = createViemChainPorts(config, {
++    const [chain] = createCetaneChainPorts(config, {
+       retry: { attempts: 1 },
+       timeoutMs: 20,
+       maxConcurrency: 1,
+@@ -147,7 +147,7 @@ describe("default viem chain ports", () => {
+     "sends exactly once after %s and never uses a public RPC for submission",
+     async (failure) => {
+       let sends = 0;
+-      const [chain] = createViemChainPorts(config, {
++      const [chain] = createCetaneChainPorts(config, {
+         retry: { attempts: 3, delayMs: 0 },
+         timeoutMs: 20,
+         fetch: async (request) => {
+@@ -213,7 +213,7 @@ describe("default viem chain ports", () => {
+ 
+   it("routes paymaster calls only to their registered URL and never retries them", async () => {
+     let calls = 0;
+-    const [chain] = createViemChainPorts(
++    const [chain] = createCetaneChainPorts(
+       { 143: { ...config[143], paymasterUrl: "https://paymaster.test?project=demo" } },
+       {
+         fetch: async (request) => {
+@@ -253,7 +253,7 @@ describe("default viem chain ports", () => {
+   });
+   it("fails over non-JSON public RPC failures without sending account reads to the bundler", async () => {
+     const calls: string[] = [];
+-    const [chain] = createViemChainPorts(config, {
++    const [chain] = createCetaneChainPorts(config, {
+       retry: { attempts: 3, delayMs: 0 },
+       fetch: async (request) => {
+         const { id, method } = await request.json();
+@@ -276,7 +276,7 @@ describe("default viem chain ports", () => {
+ 
+   it("bounds attempts and the lifetime request budget", async () => {
+     let calls = 0;
+-    const [chain] = createViemChainPorts(config, {
++    const [chain] = createCetaneChainPorts(config, {
+       retry: { attempts: 3, delayMs: 0 },
+       maxRequests: 2,
+       fetch: async () => {
+@@ -295,7 +295,7 @@ describe("default viem chain ports", () => {
+   });
+ 
+   it("fails over a wrong-chain endpoint and preserves nonretryable RPC refusals", async () => {
+-    const [chain] = createViemChainPorts(config, {
++    const [chain] = createCetaneChainPorts(config, {
+       retry: { attempts: 2, delayMs: 0 },
+       fetch: async (request) => {
+         const { id, method } = await request.json();
+diff --git a/packages/sdk/test/viem-read-only.test.ts b/packages/sdk/test/cetane-read-only.test.ts
+similarity index 95%
+rename from packages/sdk/test/viem-read-only.test.ts
+rename to packages/sdk/test/cetane-read-only.test.ts
+index ebc71d0..6adc4fd 100644
+--- a/packages/sdk/test/viem-read-only.test.ts
++++ b/packages/sdk/test/cetane-read-only.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, it, vi } from "vitest";
+-import { createViemChainPorts } from "../src/viem.js";
++import { createCetaneChainPorts } from "../src/cetane.js";
+ 
+ const rpc = (id: number, result: unknown) => Response.json({ jsonrpc: "2.0", id, result });
+ const entryPoint = "0x0000000071727de22e5e9d8baf0edac6f37da032";
+@@ -8,7 +8,7 @@ describe("authenticated read-only chain ports", () => {
+   it("captures headers for reads, observes finality and exposes no bundler route", async () => {
+     const headers = { authorization: "Basic fixture-only" };
+     const methods: string[] = [];
+-    const [chain] = createViemChainPorts(
++    const [chain] = createCetaneChainPorts(
+       { 143: { publicRpcUrls: ["https://private.test"], headers } },
+       {
+         fetch: async (request) => {
+@@ -53,7 +53,7 @@ describe("authenticated read-only chain ports", () => {
+ 
+   it("never forwards read credentials to a bundler or paymaster", async () => {
+     const hosts: string[] = [];
+-    const [chain] = createViemChainPorts(
++    const [chain] = createCetaneChainPorts(
+       {
+         143: {
+           publicRpcUrls: ["https://private.test"],
+@@ -96,7 +96,7 @@ describe("authenticated read-only chain ports", () => {
+     const cause = new Error("fixture-cancellation");
+     let requests = 0,
+       cancelled = false;
+-    const [chain] = createViemChainPorts(
++    const [chain] = createCetaneChainPorts(
+       { 143: { publicRpcUrls: ["https://private.test"] } },
+       {
+         signal: controller.signal,
+@@ -134,7 +134,7 @@ describe("authenticated read-only chain ports", () => {
+     try {
+       const controller = new AbortController();
+       const fetch = vi.fn(async () => new Response(null, { status: 503 }));
+-      const [chain] = createViemChainPorts(
++      const [chain] = createCetaneChainPorts(
+         { 143: { publicRpcUrls: ["https://private.test"] } },
+         { signal: controller.signal, retry: { attempts: 3, delayMs: 5000 }, fetch },
+       );
+@@ -158,13 +158,13 @@ describe("authenticated read-only chain ports", () => {
+       { authorization: 1 },
+     ]) {
+       expect(() =>
+-        createViemChainPorts({
++        createCetaneChainPorts({
+           143: { publicRpcUrls: ["https://private.test"], headers: headers as never },
+         }),
+       ).toThrow(expect.objectContaining({ code: "oaath_rpc_config_invalid" }));
+     }
+     expect(() =>
+-      createViemChainPorts(
++      createCetaneChainPorts(
+         { 143: { publicRpcUrls: ["https://private.test"] } },
+         { signal: {} as never },
+       ),
+diff --git a/packages/sdk/test/chain-port-context.test.ts b/packages/sdk/test/chain-port-context.test.ts
+index 9a039d5..f711401 100644
+--- a/packages/sdk/test/chain-port-context.test.ts
++++ b/packages/sdk/test/chain-port-context.test.ts
+@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
+ import type { OaathChainCapability, OaathQuoteRequest } from "../src/advanced.js";
+ import { parsePreparedUserOperation } from "../src/kernel.js";
+ import { encodeKernelV4NonceKey } from "../src/kernel-v4.js";
+-import { oaathProvider } from "../src/viem.js";
++import { oaathProvider } from "../src/cetane.js";
+ import {
+   ACCOUNT,
+   CALL_DATA,
+diff --git a/packages/sdk/test/connected-eoa-flow.test.ts b/packages/sdk/test/connected-eoa-flow.test.ts
+index 7fabfd2..5c627f6 100644
+--- a/packages/sdk/test/connected-eoa-flow.test.ts
++++ b/packages/sdk/test/connected-eoa-flow.test.ts
+@@ -3,7 +3,7 @@ import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction
+ import { describe, expect, it } from "vitest";
+ import type { OaathSubmissionRequest } from "../src/advanced.js";
+ import { asUserOperation } from "../src/kernel.js";
+-import { OaathRpcError } from "../src/viem.js";
++import { OaathRpcError } from "../src/cetane.js";
+ import {
+   CHAIN_ID,
+   createChainFixture,
+diff --git a/packages/sdk/test/connected-eoa.test.ts b/packages/sdk/test/connected-eoa.test.ts
+index 7f1fa58..acf99ae 100644
+--- a/packages/sdk/test/connected-eoa.test.ts
++++ b/packages/sdk/test/connected-eoa.test.ts
+@@ -5,7 +5,7 @@ import { captureConnectedEoa, withConnectedEoaFallback } from "../src/client/con
+ import { asUserOperation, prepareUserOperation } from "../src/kernel.js";
+ import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
+ import { OAATH_CONCLUSIVE_BUNDLER_REJECTION_CODES } from "../src/routing/erc4337/bundler.js";
+-import { OaathRpcError } from "../src/viem.js";
++import { OaathRpcError } from "../src/cetane.js";
+ 
+ const address = `0x${"11".repeat(20)}` as const;
+ const transactionHash = `0x${"22".repeat(32)}` as const;
+diff --git a/packages/sdk/test/enable-gas-floor.test.ts b/packages/sdk/test/enable-gas-floor.test.ts
+index def477c..8097169 100644
+--- a/packages/sdk/test/enable-gas-floor.test.ts
++++ b/packages/sdk/test/enable-gas-floor.test.ts
+@@ -8,7 +8,7 @@ import {
+   prepareUserOperation,
+   sessionOperator,
+ } from "../src/kernel.js";
+-import { oaathProvider } from "../src/viem.js";
++import { oaathProvider } from "../src/cetane.js";
+ import {
+   CALL_DATA,
+   CHAIN_ID,
+diff --git a/packages/sdk/test/kernel-v33.anvil.test.ts b/packages/sdk/test/kernel-v33.anvil.test.ts
+index 1ea96c5..4bc53ec 100644
+--- a/packages/sdk/test/kernel-v33.anvil.test.ts
++++ b/packages/sdk/test/kernel-v33.anvil.test.ts
+@@ -76,7 +76,7 @@ import {
+ } from "../src/kernel.js";
+ import { createMemoryOperationStoreAdapter } from "../src/persistence/memory/stores.js";
+ import { parsePreparedUserOperation } from "../src/prepared-user-operation.js";
+-import { createViemChainPorts } from "../src/viem.js";
++import { createCetaneChainPorts } from "../src/cetane.js";
+ import { type AnvilChain, createHarness, type ModuleFixture, startAnvil } from "./support/anvil.js";
+ import { createKernelV33Account, deployKernelV33Account } from "./support/kernel-v33.js";
+ 
+@@ -757,7 +757,7 @@ function passkeySession() {
+       await harness.deployModule(module);
+     const reads = createKernelV33Reads(harness.client);
+     // The public server verifier reads through the default port's finalized observation.
+-    const [port] = createViemChainPorts(
++    const [port] = createCetaneChainPorts(
+       { 143: { publicRpcUrls: [chain.url], bundlerUrl: "https://bundler.test" } },
+       {
+         maxRequests: 200,
+@@ -1067,7 +1067,7 @@ function passkeySession() {
+     expect(ownerSign).toHaveBeenCalledTimes(1);
+ 
+     const rpc = (failing: boolean) =>
+-      createViemChainPorts(
++      createCetaneChainPorts(
+         { 143: { publicRpcUrls: [chain.url], bundlerUrl: "https://bundler.test" } },
+         {
+           maxRequests: 50,
+@@ -1205,7 +1205,7 @@ function passkeySession() {
+       let directSends = 0;
+       // The bundler supplies a fixed estimate. Account reads, signing, execution,
+       // receipts and finality use the real contracts on the local chain.
+-      const ports = createViemChainPorts(
++      const ports = createCetaneChainPorts(
+         { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "https://bundler.test" } },
+         {
+           maxRequests: 200,
+@@ -1385,7 +1385,7 @@ function passkeySession() {
+             };
+       const direct = createOAAth({
+         stores: { kind: "memory", operations: createSqliteOperationStoreAdapter(filePath) },
+-        chains: createViemChainPorts(
++        chains: createCetaneChainPorts(
+           { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "https://rejecting-bundler.test" } },
+           {
+             fetch: async (request) => {
+@@ -1454,7 +1454,7 @@ function passkeySession() {
+       await harness.client.request({ method: "anvil_mine" as never, params: ["0x3"] as never });
+       const recreated = createOAAth({
+         stores: { kind: "memory", operations: createSqliteOperationStoreAdapter(filePath) },
+-        chains: createViemChainPorts(
++        chains: createCetaneChainPorts(
+           { 143: { publicRpcUrls: [rpcUrl], bundlerUrl: "http://unused.test" } },
+           {
+             fetch: async (request) => {
+diff --git a/packages/sdk/test/package-boundary.test.mjs b/packages/sdk/test/package-boundary.test.mjs
+index c51f143..b0b50f1 100644
+--- a/packages/sdk/test/package-boundary.test.mjs
++++ b/packages/sdk/test/package-boundary.test.mjs
+@@ -19,28 +19,28 @@ describe("package boundary", () => {
+       "a cross-repository workspace dependency",
+       { ...validManifest, devDependencies: { viem: "workspace:*" } },
+     ],
+-    ["a git transport", { ...validManifest, devDependencies: { viem: "git://example/viem" } }],
++    ["a git transport", { ...validManifest, devDependencies: { viem: "git://example/cetane" } }],
+     [
+       "a disguised git tarball",
+       {
+         ...validManifest,
+-        devDependencies: { viem: "git+https://github.com/wevm/viem.tgz" },
++        devDependencies: { viem: "git+https://github.com/wevm/cetane.tgz" },
+       },
+     ],
+     [
+       "a disguised GitHub shorthand tarball",
+-      { ...validManifest, dependencies: { viem: "github:wevm/viem.tgz" } },
++      { ...validManifest, dependencies: { viem: "github:wevm/cetane.tgz" } },
+     ],
+     [
+       "a floating remote tarball",
+       {
+         ...validManifest,
+-        dependencies: { viem: "https://github.com/wevm/viem/archive/main.tgz" },
++        dependencies: { viem: "https://github.com/wevm/cetane/archive/main.tgz" },
+       },
+     ],
+-    ["a GitHub shorthand", { ...validManifest, dependencies: { viem: "wevm/viem" } }],
+-    ["a linked checkout", { ...validManifest, dependencies: { viem: "link:../viem" } }],
+-    ["a file checkout", { ...validManifest, dependencies: { viem: "file:../viem" } }],
++    ["a GitHub shorthand", { ...validManifest, dependencies: { viem: "wevm/cetane" } }],
++    ["a linked checkout", { ...validManifest, dependencies: { viem: "link:../cetane" } }],
++    ["a file checkout", { ...validManifest, dependencies: { viem: "file:../cetane" } }],
+     ["an old-repository path", { ...validManifest, repository: "leekt/deployer" }],
+   ])("rejects %s", (_label, manifest) => {
+     expect(() => validatePackageBoundary(manifest)).toThrow();
+@@ -59,7 +59,7 @@ describe("package boundary", () => {
+     expect(() =>
+       validatePackageBoundary({
+         ...validManifest,
+-        dependencies: { viem: "file:../artifacts/viem-2.55.8.tgz" },
++        dependencies: { viem: "file:../artifacts/cetane-2.55.8.tgz" },
+       }),
+     ).not.toThrow();
+   });
+diff --git a/packages/sdk/test/package.test.ts b/packages/sdk/test/package.test.ts
+index 9e3e3a6..d94142a 100644
+--- a/packages/sdk/test/package.test.ts
++++ b/packages/sdk/test/package.test.ts
+@@ -12,7 +12,7 @@ import * as root from "../src/index.js";
+ import * as kernel from "../src/kernel.js";
+ import * as persistence from "../src/persistence.js";
+ import * as testing from "../src/testing.js";
+-import * as viem from "../src/viem.js";
++import * as viem from "../src/cetane.js";
+ 
+ describe("package boundary", () => {
+   it("exposes only the adopter workflow on the root entry", () => {
+@@ -52,7 +52,7 @@ describe("package boundary", () => {
+       "OaathPreparedUserOperationError",
+       "OaathWebAuthnEnrolmentError",
+       "approveKernelPermission",
+-      "asViemUserOperation",
++      "asUserOperation",
+       "bindKernelAccount",
+       "bindKernelPermissionEnable",
+       "compileKernelPermissionPolicy",
+@@ -186,12 +186,12 @@ describe("package boundary", () => {
+     ).rejects.toMatchObject({ code: "oaath_client_input_invalid" });
+   });
+ 
+-  it("exposes the provider and default chain ports on /viem", () => {
++  it("exposes the provider and default chain ports on /cetane", () => {
+     expect(Object.keys(viem).sort()).toEqual([
+       "OaathRpcError",
+       "OaathUserOperationError",
+       "classifyUserOperationError",
+-      "createViemChainPorts",
++      "createCetaneChainPorts",
+       "oaathProvider",
+       "parseUserOperationFailure",
+       "readUserOperationFailure",
+diff --git a/packages/sdk/test/provider-eip5792-erc7677.test.ts b/packages/sdk/test/provider-eip5792-erc7677.test.ts
+index 0682d77..893ed2d 100644
+--- a/packages/sdk/test/provider-eip5792-erc7677.test.ts
++++ b/packages/sdk/test/provider-eip5792-erc7677.test.ts
+@@ -16,7 +16,7 @@ import {
+   OAATH_PROVIDER_ERROR_MESSAGES,
+   type OaathProviderErrorCode,
+ } from "../src/provider/errors.js";
+-import { oaathProvider } from "../src/viem.js";
++import { oaathProvider } from "../src/cetane.js";
+ import {
+   bundlerProbe,
+   CALL_DATA,
+diff --git a/packages/sdk/test/provider-eip5792-erc7902-validity.test.ts b/packages/sdk/test/provider-eip5792-erc7902-validity.test.ts
+index eadffe2..58b581d 100644
+--- a/packages/sdk/test/provider-eip5792-erc7902-validity.test.ts
++++ b/packages/sdk/test/provider-eip5792-erc7902-validity.test.ts
+@@ -25,7 +25,7 @@ import {
+   OAATH_PROVIDER_ERROR_MESSAGES,
+   type OaathProviderErrorCode,
+ } from "../src/provider/errors.js";
+-import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
++import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
+ import {
+   CALL_DATA,
+   CHAIN_ID,
+diff --git a/packages/sdk/test/provider-eip5792-erc7902.test.ts b/packages/sdk/test/provider-eip5792-erc7902.test.ts
+index c2ed094..e64dd99 100644
+--- a/packages/sdk/test/provider-eip5792-erc7902.test.ts
++++ b/packages/sdk/test/provider-eip5792-erc7902.test.ts
+@@ -15,7 +15,7 @@ import {
+   OAATH_PROVIDER_ERROR_MESSAGES,
+   type OaathProviderErrorCode,
+ } from "../src/provider/errors.js";
+-import { oaathProvider } from "../src/viem.js";
++import { oaathProvider } from "../src/cetane.js";
+ import {
+   bundlerProbe,
+   CALL_DATA,
+diff --git a/packages/sdk/test/provider-eip5792.anvil.test.ts b/packages/sdk/test/provider-eip5792.anvil.test.ts
+index aa188ea..94201cc 100644
+--- a/packages/sdk/test/provider-eip5792.anvil.test.ts
++++ b/packages/sdk/test/provider-eip5792.anvil.test.ts
+@@ -46,7 +46,7 @@ import { createIndexedDbKeyStore } from "../src/persistence/indexeddb/key-store.
+ import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
+ import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
+ import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
+-import { oaathProvider } from "../src/viem.js";
++import { oaathProvider } from "../src/cetane.js";
+ import {
+   createHarness,
+   deployKernelStack,
+diff --git a/packages/sdk/test/provider-eip5792.test.ts b/packages/sdk/test/provider-eip5792.test.ts
+index c24ccd7..d7b1860 100644
+--- a/packages/sdk/test/provider-eip5792.test.ts
++++ b/packages/sdk/test/provider-eip5792.test.ts
+@@ -13,7 +13,7 @@ import {
+   OaathProviderRpcError,
+   UNSUPPORTED_CHAIN,
+ } from "../src/provider/errors.js";
+-import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
++import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
+ import {
+   CALL_DATA,
+   CHAIN_ID,
+diff --git a/packages/sdk/test/provider-erc7836-erc7677.test.ts b/packages/sdk/test/provider-erc7836-erc7677.test.ts
+index 1bed675..6d075f7 100644
+--- a/packages/sdk/test/provider-erc7836-erc7677.test.ts
++++ b/packages/sdk/test/provider-erc7836-erc7677.test.ts
+@@ -24,7 +24,7 @@ import { createIndexedDbKeyStore } from "../src/persistence/indexeddb/key-store.
+ import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexeddb/operation-store.js";
+ import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
+ import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
+-import { oaathProvider } from "../src/viem.js";
++import { oaathProvider } from "../src/cetane.js";
+ import {
+   bundlerProbe,
+   CALL_DATA,
+diff --git a/packages/sdk/test/provider-erc7836-erc7902-validity.test.ts b/packages/sdk/test/provider-erc7836-erc7902-validity.test.ts
+index 8063eb4..b98897f 100644
+--- a/packages/sdk/test/provider-erc7836-erc7902-validity.test.ts
++++ b/packages/sdk/test/provider-erc7836-erc7902-validity.test.ts
+@@ -27,7 +27,7 @@ import {
+   type OaathProviderErrorCode,
+ } from "../src/provider/errors.js";
+ import { OAATH_PREPARED_CALL_CONTEXT_VERSION } from "../src/provider/prepared-call-store.js";
+-import { type OaathProviderInput, oaathProvider } from "../src/viem.js";
++import { type OaathProviderInput, oaathProvider } from "../src/cetane.js";
+ import {
+   CALL_DATA,
+   CHAIN_ID,
+diff --git a/packages/sdk/test/provider-erc7836.test.ts b/packages/sdk/test/provider-erc7836.test.ts
+index 10beea5..eb4bbc3 100644
+--- a/packages/sdk/test/provider-erc7836.test.ts
++++ b/packages/sdk/test/provider-erc7836.test.ts
+@@ -24,7 +24,7 @@ import { createIndexedDbOperationStoreAdapter } from "../src/persistence/indexed
+ import { createIndexedDbPreparedCallStoreAdapter } from "../src/persistence/indexeddb/prepared-call-store.js";
+ import { createIndexedDbWalletCallBundleStoreAdapter } from "../src/persistence/indexeddb/wallet-call-bundle-store.js";
+ import { INTERNAL_ERROR } from "../src/provider/errors.js";
+-import { oaathProvider } from "../src/viem.js";
++import { oaathProvider } from "../src/cetane.js";
+ import {
+   bindingInput,
+   CALL_DATA,
+diff --git a/packages/sdk/test/provider-reload.test.ts b/packages/sdk/test/provider-reload.test.ts
+index 4065dac..18f19f9 100644
+--- a/packages/sdk/test/provider-reload.test.ts
++++ b/packages/sdk/test/provider-reload.test.ts
+@@ -19,7 +19,7 @@ import {
+   hashCapturedWalletSendCallsRequest,
+   hashWalletCallBundleProvenance,
+ } from "../src/provider/capture.js";
+-import { oaathProvider } from "../src/viem.js";
++import { oaathProvider } from "../src/cetane.js";
+ import {
+   ACCOUNT,
+   bindingInput,
+diff --git a/packages/sdk/test/rpc-validation-rejection.test.ts b/packages/sdk/test/rpc-validation-rejection.test.ts
+index 37ebcf1..6057c11 100644
+--- a/packages/sdk/test/rpc-validation-rejection.test.ts
++++ b/packages/sdk/test/rpc-validation-rejection.test.ts
+@@ -1,7 +1,7 @@
+ import { encodeErrorResult } from "viem";
+ import { entryPoint07Abi } from "viem/account-abstraction";
+ import { describe, expect, it } from "vitest";
+-import { isAccountValidationRejection, OaathRpcError, rpcOwner } from "../src/viem/rpc.js";
++import { isAccountValidationRejection, OaathRpcError, rpcOwner } from "../src/cetane/rpc.js";
+ 
+ const data = encodeErrorResult({
+   abi: entryPoint07Abi,
+diff --git a/packages/sdk/test/user-operation-error.test.ts b/packages/sdk/test/user-operation-error.test.ts
+index 0ffb9cb..511f08c 100644
+--- a/packages/sdk/test/user-operation-error.test.ts
++++ b/packages/sdk/test/user-operation-error.test.ts
+@@ -1,12 +1,12 @@
+ import { encodeErrorResult } from "viem";
+ import { entryPoint07Abi } from "viem/account-abstraction";
+ import { describe, expect, it } from "vitest";
+-import { OaathRpcError, rpcOwner } from "../src/viem/rpc.js";
++import { OaathRpcError, rpcOwner } from "../src/cetane/rpc.js";
+ import {
+   classifyUserOperationError,
+   parseUserOperationFailure,
+   serializeUserOperationFailure,
+-} from "../src/viem.js";
++} from "../src/cetane.js";
+ 
+ const stages = ["estimate", "sponsor", "send", "receipt"] as const;
+ describe("UserOperation failure classification", () => {
+diff --git a/packages/sdk/test/validation-gas-diagnostic.test.ts b/packages/sdk/test/validation-gas-diagnostic.test.ts
+index d06a2cb..2c54b51 100644
+--- a/packages/sdk/test/validation-gas-diagnostic.test.ts
++++ b/packages/sdk/test/validation-gas-diagnostic.test.ts
+@@ -2,7 +2,7 @@ import { decodeFunctionData, encodeErrorResult, toHex } from "viem";
+ import { entryPoint07Abi } from "viem/account-abstraction";
+ import { describe, expect, it } from "vitest";
+ import { OaathClientError } from "../src/index.js";
+-import { createViemChainPorts, oaathProvider } from "../src/viem.js";
++import { createCetaneChainPorts, oaathProvider } from "../src/cetane.js";
+ import {
+   CALL_DATA,
+   CHAIN_ID,
+@@ -24,7 +24,7 @@ const revert = (reason = "AA23 reverted", inner: `0x${string}` = "0x", index = 0
+ 
+ function fixture(data: unknown = revert(), onSend = false) {
+   let sent = 0;
+-  const [ports] = createViemChainPorts(
++  const [ports] = createCetaneChainPorts(
+     {
+       [CHAIN_ID]: {
+         publicRpcUrls: ["https://public.test"],
+diff --git a/packages/sdk/test/viem.test.ts b/packages/sdk/test/viem.test.ts
+index 1799639..d262b4c 100644
+--- a/packages/sdk/test/viem.test.ts
++++ b/packages/sdk/test/viem.test.ts
+@@ -6,7 +6,7 @@
+  */
+ import { createWalletClient, custom } from "viem";
+ import { describe, expect, it } from "vitest";
+-import { oaathProvider } from "../src/viem.js";
++import { oaathProvider } from "../src/cetane.js";
+ import { CALL_DATA, CHAIN_ID, createRealm, permissionInput, TARGET } from "./support/browser.js";
+ 
+ async function activeGrant() {
+-- 
+2.54.0 (Apple Git-157)
+

@@ -1,0 +1,8 @@
+{
+  "independentProcesses": true,
+  "concurrentCreateOneCredential": true,
+  "perUserDistinct": true,
+  "tenantIsolation": true,
+  "exactDigestSignature": true,
+  "missingCustodyNeverRotates": true
+}

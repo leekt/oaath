@@ -1,0 +1,29 @@
+{
+  "terms": {
+    "version": "oaath.dca-terms/v1",
+    "planId": "0xabababababababababababababababababababababababababababababababab",
+    "account": "0x1111111111111111111111111111111111111111",
+    "chainId": 31337,
+    "sellToken": "0x2222222222222222222222222222222222222222",
+    "buyToken": "0x3333333333333333333333333333333333333333",
+    "amountIn": "25000000",
+    "totalInputCap": "750000000",
+    "startAt": 1800000000,
+    "intervalSeconds": 86400,
+    "graceSeconds": 900,
+    "maxRuns": 30,
+    "endAt": 1802506500,
+    "recipient": "0x1111111111111111111111111111111111111111",
+    "router": "0x4444444444444444444444444444444444444444",
+    "poolFee": 3000,
+    "sellFeed": "0x5555555555555555555555555555555555555555",
+    "buyFeed": "0x6666666666666666666666666666666666666666",
+    "maxPriceAgeSeconds": 3600,
+    "maxSlippageBps": 50
+  },
+  "commitment": "0x21785508593afc6ee562a45dc68032a3223a5b5912afe693faadc3c2be828173",
+  "slots": [
+    "0x8626cd36f72b61c87f3a20624e24bd3a6b43576a841d6258abfa5e23848c8961",
+    "0xee687942855c3088900643be13817082c4b3d543b49159c1fbc346ceda7fe663"
+  ]
+}

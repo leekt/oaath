@@ -1,0 +1,33 @@
+{
+  "publicExports": [
+    "AutomationError",
+    "createAutomation"
+  ],
+  "cetaneVersion": "0.0.3",
+  "moesiVersion": "0.15.3",
+  "productionViemDependencies": 0,
+  "productionDependencyNames": [
+    "@noble/curves",
+    "@noble/hashes",
+    "@oaath/protocol",
+    "@oaath/sdk",
+    "@oaath/server",
+    "abitype",
+    "cetane",
+    "moesi",
+    "pg",
+    "pg-connection-string",
+    "pg-int8",
+    "pg-pool",
+    "pg-protocol",
+    "pg-types",
+    "pgpass",
+    "postgres-array",
+    "postgres-bytea",
+    "postgres-date",
+    "postgres-interval",
+    "split2",
+    "xtend",
+    "yaml"
+  ]
+}

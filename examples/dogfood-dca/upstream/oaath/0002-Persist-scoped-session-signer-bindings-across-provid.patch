@@ -1,0 +1,398 @@
+From 32ac3584fc325bc43689b4cc2c901697c2db4646 Mon Sep 17 00:00:00 2001
+From: taek <leekt216@gmail.com>
+Date: Wed, 7 Oct 2026 15:26:07 +0900
+Subject: [PATCH 2/9] Persist scoped session signer bindings across provider
+ recreation
+
+---
+ packages/server/src/index.ts                  |   7 +
+ packages/server/src/postgres.ts               |   4 +
+ .../server/src/session-signer/postgres.ts     |  32 ++++
+ packages/server/src/session-signer/scoped.ts  | 177 ++++++++++++++++++
+ packages/server/test/scoped-signer.test.ts    | 118 ++++++++++++
+ 5 files changed, 338 insertions(+)
+ create mode 100644 packages/server/src/session-signer/postgres.ts
+ create mode 100644 packages/server/src/session-signer/scoped.ts
+ create mode 100644 packages/server/test/scoped-signer.test.ts
+
+diff --git a/packages/server/src/index.ts b/packages/server/src/index.ts
+index e85ad65..1649ae7 100644
+--- a/packages/server/src/index.ts
++++ b/packages/server/src/index.ts
+@@ -83,6 +83,13 @@ export type {
+   SessionSignerSignRequest,
+ } from "./session-signer/kms-provider.js";
+ export { createKmsSessionSignerProvider } from "./session-signer/kms-provider.js";
++export {
++  createScopedSessionSigner,
++  SessionSignerError,
++  type SignerBinding,
++  type SignerBindingStore,
++  type SignerScope,
++} from "./session-signer/scoped.js";
+ export type { RelayStore, RelayTransaction } from "./store/interface.js";
+ export { createMemoryRelayStore } from "./store/memory.js";
+ export type {
+diff --git a/packages/server/src/postgres.ts b/packages/server/src/postgres.ts
+index 7c00a1c..b0397e3 100644
+--- a/packages/server/src/postgres.ts
++++ b/packages/server/src/postgres.ts
+@@ -15,6 +15,10 @@ export {
+   createPostgresOwnerDeviceCredentialSchema,
+   createPostgresOwnerDeviceCredentialStore,
+ } from "./native/authentication-postgres.js";
++export {
++  createPostgresSignerSchema,
++  createPostgresSignerStore,
++} from "./session-signer/postgres.js";
+ export {
+   createPostgresOperationSchema,
+   createPostgresOperationStoreAdapter,
+diff --git a/packages/server/src/session-signer/postgres.ts b/packages/server/src/session-signer/postgres.ts
+new file mode 100644
+index 0000000..3e20906
+--- /dev/null
++++ b/packages/server/src/session-signer/postgres.ts
+@@ -0,0 +1,32 @@
++import type { Pool } from "pg";
++import type { SignerBindingStore } from "./scoped.js";
++
++export async function createPostgresSignerSchema(db: Pick<Pool, "query">): Promise<void> {
++  await db.query(`CREATE TABLE oaath_signer_binding_v1 (
++    id text PRIMARY KEY, version text NOT NULL CHECK(version='oaath.signer-binding/v1'),
++    payload jsonb NOT NULL CHECK(payload->>'id'=id AND payload->>'version'=version)
++  )`);
++}
++/** Borrowed pool; the caller owns connections and lifecycle. No implicit DDL or key deletion. */
++export function createPostgresSignerStore({ pool }: { pool: Pool }): SignerBindingStore {
++  return {
++    async read(id) {
++      return (
++        (await pool.query("SELECT payload FROM oaath_signer_binding_v1 WHERE id=$1", [id])).rows[0]
++          ?.payload ?? null
++      );
++    },
++    async insert(row) {
++      await pool.query(
++        "INSERT INTO oaath_signer_binding_v1(id,version,payload) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
++        [row.id, row.version, row],
++      );
++      // A concurrent winner is visible in this later READ COMMITTED statement.
++      const result = await pool.query("SELECT payload FROM oaath_signer_binding_v1 WHERE id=$1", [
++        row.id,
++      ]);
++      if (!result.rows[0]) throw Error("signer_custody_missing");
++      return result.rows[0].payload;
++    },
++  };
++}
+diff --git a/packages/server/src/session-signer/scoped.ts b/packages/server/src/session-signer/scoped.ts
+new file mode 100644
+index 0000000..f5f72f5
+--- /dev/null
++++ b/packages/server/src/session-signer/scoped.ts
+@@ -0,0 +1,177 @@
++import { secp256k1 } from "@noble/curves/secp256k1.js";
++import { keccak_256 } from "@noble/hashes/sha3.js";
++import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
++import type { RelayKms } from "../security/kms.js";
++
++export type SignerScope =
++  | { readonly applicationId: string; readonly scope: "application" }
++  | { readonly applicationId: string; readonly scope: "user"; readonly userId: string };
++export interface SignerBinding {
++  readonly version: "oaath.signer-binding/v1";
++  readonly id: string;
++  readonly identity: SignerScope;
++  readonly address: `0x${string}`;
++  readonly sealed: string;
++}
++export interface SignerBindingStore {
++  read(id: string): Promise<unknown | null>;
++  /** Atomic insert-if-absent; return the retained winner, never overwrite it. */
++  insert(binding: SignerBinding): Promise<unknown>;
++}
++export class SessionSignerError extends Error {
++  constructor(readonly code: string) {
++    super(code);
++    this.name = "SessionSignerError";
++  }
++}
++function fail(code: string): never {
++  throw new SessionSignerError(code);
++}
++function record(value: unknown, keys: readonly string[]) {
++  if (
++    !value ||
++    typeof value !== "object" ||
++    Array.isArray(value) ||
++    ![Object.prototype, null].includes(Object.getPrototypeOf(value))
++  )
++    return fail("signer_identity_invalid");
++  const out: Record<string, unknown> = {};
++  for (const key of Reflect.ownKeys(value)) {
++    const d = Object.getOwnPropertyDescriptor(value, key)!;
++    if (typeof key !== "string" || !keys.includes(key) || !("value" in d))
++      return fail("signer_identity_invalid");
++    out[key] = d.value;
++  }
++  return out;
++}
++function capture(value: unknown): SignerScope {
++  const v = record(value, ["applicationId", "scope", "userId"]);
++  for (const s of [v.applicationId, ...(v.scope === "user" ? [v.userId] : [])]) {
++    if (typeof s !== "string" || !s.length || s.length > 256 || s.trim() !== s)
++      return fail("signer_identity_invalid");
++  }
++  if (v.scope === "application" && !Object.hasOwn(v, "userId"))
++    return Object.freeze({ applicationId: v.applicationId as string, scope: "application" });
++  if (v.scope === "user")
++    return Object.freeze({
++      applicationId: v.applicationId as string,
++      scope: "user",
++      userId: v.userId as string,
++    });
++  return fail("signer_identity_invalid");
++}
++function bindingId(identity: SignerScope) {
++  return `0x${bytesToHex(keccak_256(new TextEncoder().encode(JSON.stringify(["oaath.signer-scope/v1", identity.applicationId, identity.scope, identity.scope === "user" ? identity.userId : null]))))}`;
++}
++function address(key: Uint8Array): `0x${string}` {
++  return `0x${bytesToHex(keccak_256(secp256k1.getPublicKey(key, false).slice(1)).slice(12))}`;
++}
++/**
++ * Registry owns absent -> bound. Creation can race; only the durable winner is exposed.
++ * Recovery/signing never create. Expected credentials retain approval binding after reload.
++ * KMS encrypt owns an opaque ciphertext value, not a newly allocated remote key resource.
++ * A failed/uncertain insert is reconciled by reading the same identity. Callers own admission,
++ * Grant revocation and cleanup; this provider deliberately has no delete/rotate operation.
++ */
++export function createScopedSessionSigner(input: { store: SignerBindingStore; kms: RelayKms }) {
++  const { store, kms } = input;
++  async function load(
++    identity: SignerScope,
++    raw: unknown,
++  ): Promise<{ row: SignerBinding; key: Uint8Array }> {
++    if (raw === null || raw === undefined) return fail("signer_custody_missing");
++    const r = record(raw, ["version", "id", "identity", "address", "sealed"]);
++    const id = bindingId(identity);
++    if (
++      r.version !== "oaath.signer-binding/v1" ||
++      r.id !== id ||
++      bindingId(capture(r.identity)) !== id ||
++      typeof r.address !== "string" ||
++      !/^0x[0-9a-f]{40}$/.test(r.address) ||
++      typeof r.sealed !== "string" ||
++      !r.sealed.length ||
++      r.sealed.length > 65536
++    )
++      return fail("signer_binding_mismatch");
++    let key: Uint8Array | undefined;
++    try {
++      const plain = await kms.decrypt(r.sealed);
++      if (typeof plain !== "string" || !/^[0-9a-f]{64}$/.test(plain)) throw Error();
++      key = hexToBytes(plain);
++      if (address(key) !== r.address) throw Error();
++      return {
++        row: Object.freeze({
++          version: "oaath.signer-binding/v1",
++          id,
++          identity,
++          address: r.address as `0x${string}`,
++          sealed: r.sealed,
++        }),
++        key,
++      };
++    } catch {
++      key?.fill(0);
++      return fail("signer_custody_unavailable");
++    }
++  }
++  function publicCredential(row: SignerBinding) {
++    return Object.freeze({ bindingId: row.id, address: row.address, scope: row.identity.scope });
++  }
++  async function recoverKey(value: SignerScope, expected: string) {
++    const identity = capture(value);
++    const loaded = await load(identity, await store.read(bindingId(identity)));
++    if (loaded.row.address !== expected.toLowerCase()) {
++      loaded.key.fill(0);
++      return fail("signer_binding_mismatch");
++    }
++    return loaded;
++  }
++  return Object.freeze({
++    async create(value: SignerScope) {
++      const identity = capture(value),
++        id = bindingId(identity);
++      let retained = await store.read(id);
++      if (retained === null || retained === undefined) {
++        const key = secp256k1.utils.randomPrivateKey();
++        try {
++          const sealed = await kms.encrypt(bytesToHex(key));
++          if (typeof sealed !== "string" || !sealed.length || sealed.length > 65536)
++            return fail("signer_custody_unavailable");
++          retained = await store.insert(
++            Object.freeze({
++              version: "oaath.signer-binding/v1",
++              id,
++              identity,
++              address: address(key),
++              sealed,
++            }),
++          );
++        } finally {
++          key.fill(0);
++        }
++      }
++      const { row, key } = await load(identity, retained);
++      key.fill(0);
++      return publicCredential(row);
++    },
++    async recover(identity: SignerScope, expectedAddress: string) {
++      const { row, key } = await recoverKey(identity, expectedAddress);
++      key.fill(0);
++      return publicCredential(row);
++    },
++    async sign(
++      identity: SignerScope,
++      expectedAddress: string,
++      hash: string,
++    ): Promise<`0x${string}`> {
++      if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) return fail("signer_hash_invalid");
++      const { key } = await recoverKey(identity, expectedAddress);
++      try {
++        const sig = secp256k1.sign(hexToBytes(hash.slice(2)), key, { prehash: false, lowS: true });
++        return `0x${sig.toCompactHex()}${(27 + sig.recovery).toString(16)}`;
++      } finally {
++        key.fill(0);
++      }
++    },
++  });
++}
+diff --git a/packages/server/test/scoped-signer.test.ts b/packages/server/test/scoped-signer.test.ts
+new file mode 100644
+index 0000000..30fb160
+--- /dev/null
++++ b/packages/server/test/scoped-signer.test.ts
+@@ -0,0 +1,118 @@
++import { describe, expect, it } from "vitest";
++import {
++  createPostgresSignerSchema,
++  createPostgresSignerStore,
++} from "../src/session-signer/postgres.js";
++import { createScopedSessionSigner, type SignerBinding } from "../src/session-signer/scoped.js";
++import { createPostgresFixture, requirePostgres } from "./support-postgres.js";
++
++// Opaque test custody references. No key or signature is logged or used on a network.
++function custody() {
++  const secrets = new Map<string, string>();
++  return {
++    async encrypt(value: string) {
++      const ref = crypto.randomUUID();
++      secrets.set(ref, value);
++      return ref;
++    },
++    async decrypt(ref: string) {
++      if (!secrets.has(ref)) throw Error("missing");
++      return secrets.get(ref)!;
++    },
++  };
++}
++function memory() {
++  const rows = new Map<string, SignerBinding>();
++  return {
++    rows,
++    async read(id: string) {
++      return rows.get(id) ?? null;
++    },
++    async insert(row: SignerBinding) {
++      if (!rows.has(row.id)) rows.set(row.id, row);
++      return rows.get(row.id)!;
++    },
++  };
++}
++const alice = { applicationId: "app", scope: "user", userId: "alice" } as const;
++const hash = `0x${"12".repeat(32)}` as const;
++describe("scoped signer invariants", () => {
++  it("recovers one credential across concurrent creators and recreated providers", async () => {
++    const store = memory(),
++      kms = custody();
++    const a = createScopedSessionSigner({ store, kms }),
++      b = createScopedSessionSigner({ store, kms });
++    const [first, second] = await Promise.all([a.create(alice), b.create(alice)]);
++    expect(first).toEqual(second);
++    expect(await createScopedSessionSigner({ store, kms }).recover(alice, first.address)).toEqual(
++      first,
++    );
++    const bob = await a.create({ ...alice, userId: "bob" });
++    expect(bob.address).not.toEqual(first.address);
++    expect((await a.sign(alice, first.address, hash)).length).toBe(132);
++  });
++  it("shares only within an application and recovery never creates", async () => {
++    const store = memory(),
++      signer = createScopedSessionSigner({ store, kms: custody() });
++    const shared = { applicationId: "app", scope: "application" } as const;
++    const a = await signer.create(shared);
++    expect(await signer.create(shared)).toEqual(a);
++    expect((await signer.create({ ...shared, applicationId: "other" })).address).not.toBe(
++      a.address,
++    );
++    await expect(signer.recover(alice, a.address)).rejects.toMatchObject({
++      code: "signer_custody_missing",
++    });
++    await expect(signer.create({ ...shared, userId: "ignored" } as never)).rejects.toMatchObject({
++      code: "signer_identity_invalid",
++    });
++    const count = store.rows.size;
++    await expect(signer.sign(alice, a.address, hash)).rejects.toMatchObject({
++      code: "signer_custody_missing",
++    });
++    expect(store.rows.size).toBe(count);
++  });
++  it("rejects changed bindings, corrupt custody and mismatched expected credentials", async () => {
++    const store = memory(),
++      kms = custody(),
++      signer = createScopedSessionSigner({ store, kms });
++    const a = await signer.create(alice);
++    await expect(signer.recover(alice, `0x${"11".repeat(20)}`)).rejects.toMatchObject({
++      code: "signer_binding_mismatch",
++    });
++    store.rows.set(a.bindingId, { ...store.rows.get(a.bindingId)!, sealed: "missing" });
++    await expect(signer.recover(alice, a.address)).rejects.toMatchObject({
++      code: "signer_custody_unavailable",
++    });
++    expect(store.rows.size).toBe(1);
++  });
++});
++describe.skipIf(!requirePostgres)("PostgreSQL signer registry", () => {
++  it("independent connections return the winning credential and preserve absent custody", async () => {
++    const fixture = await createPostgresFixture();
++    try {
++      const p1 = fixture.createPool(),
++        p2 = fixture.createPool();
++      await createPostgresSignerSchema(p1);
++      const kms = custody();
++      const a = createScopedSessionSigner({ store: createPostgresSignerStore({ pool: p1 }), kms });
++      const b = createScopedSessionSigner({ store: createPostgresSignerStore({ pool: p2 }), kms });
++      const [one, two] = await Promise.all([a.create(alice), b.create(alice)]);
++      expect(one).toEqual(two);
++      await p1.end();
++      await p2.end();
++      const next = fixture.createPool();
++      const recreated = createScopedSessionSigner({
++        store: createPostgresSignerStore({ pool: next }),
++        kms,
++      });
++      expect(await recreated.recover(alice, one.address)).toEqual(one);
++      await next.query("DELETE FROM oaath_signer_binding_v1");
++      await expect(recreated.recover(alice, one.address)).rejects.toMatchObject({
++        code: "signer_custody_missing",
++      });
++    } finally {
++      await fixture.end();
++    }
++  });
++});
+-- 
+2.54.0 (Apple Git-157)
+
