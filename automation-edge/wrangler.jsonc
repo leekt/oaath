@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.147.0/config-schema.json",
+  "name": "oaath-automation",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-05",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "oaath-automation.taek.tech", "custom_domain": true }],
+  "vpc_services": [
+    {
+      "binding": "SERVICE",
+      // Workers VPC service `oaath-automation`: 127.0.0.1:4321 on the OCI VM's loopback.
+      "service_id": "01a11a47-e424-7ae1-9c45-420ca9717465"
+    }
+  ],
+  // Per-IP budget for every request to the hosted automation service.
+  "ratelimits": [{ "name": "LIMIT", "namespace_id": "4216160", "simple": { "limit": 120, "period": 60 } }],
+  "observability": { "enabled": true }
+}
