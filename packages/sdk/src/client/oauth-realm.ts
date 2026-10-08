@@ -66,6 +66,7 @@ import {
   OaathClientError,
 } from "./errors.js";
 import {
+  aliasGrantHandle,
   captureChainCapability,
   type OaathChainCapability,
   type OaathGrantHandle,
@@ -92,13 +93,19 @@ const PENDING_DOMAIN = "@oaath/sdk:oauth-pending-grant" as const;
 /** One bounded attempt at the issuer's off-chain invalidation. */
 const ISSUER_INVALIDATION_TIMEOUT_MS = 10_000;
 
-/** The exact text the Grant's session key signs; the relay rebuilds it. */
-export function issuerInvalidationMessage(
+/**
+ * The exact text the Grant's session key signs for one grant-scoped issuer
+ * request, bound to its method and path; the relay rebuilds it. Sent as
+ * `Authorization: OAAth-Grant-Proof <issuedAt>.<signature>`, so the realm
+ * never stores an access token.
+ */
+export function grantRequestMessage(
   grantId: string,
-  capabilityHash: string,
+  method: string,
+  path: string,
   issuedAt: number,
 ): string {
-  return `OAAth grant invalidation v1\ngrant: ${grantId}\ncapability: ${capabilityHash}\nissued: ${issuedAt}`;
+  return `OAAth grant request v1\ngrant: ${grantId}\nmethod: ${method}\npath: ${path}\nissued: ${issuedAt}`;
 }
 
 /** A requested Grant the account root has not decided yet. */
@@ -522,24 +529,22 @@ export function createOAuthRealm(
       const capabilityHash = grant?.approval?.capabilityHash;
       if (!grant || (grant.state !== "revoking" && grant.state !== "revoked") || !capabilityHash)
         return "not-attempted";
+      const path = `/oauth/grants/${encodeURIComponent(grantId)}/invalidate`;
       const issuedAt = now();
       const signature = await (await session()).signMessage(
-        issuerInvalidationMessage(grantId, capabilityHash, issuedAt),
+        grantRequestMessage(grantId, "POST", path, issuedAt),
       );
-      const response = await fetch(
-        `${popupOptions.issuer}/oauth/grants/${encodeURIComponent(grantId)}/invalidate`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            capability_hash: capabilityHash,
-            operator_proof: { issued_at: issuedAt, signature },
-          }),
-          credentials: "omit",
-          cache: "no-store",
-          signal: AbortSignal.timeout(ISSUER_INVALIDATION_TIMEOUT_MS),
+      const response = await fetch(`${popupOptions.issuer}${path}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `OAAth-Grant-Proof ${issuedAt}.${signature}`,
         },
-      );
+        body: JSON.stringify({ capability_hash: capabilityHash }),
+        credentials: "omit",
+        cache: "no-store",
+        signal: AbortSignal.timeout(ISSUER_INVALIDATION_TIMEOUT_MS),
+      });
       if (response.ok) return "invalidated";
       return response.status >= 500 ? "unavailable" : "refused";
     } catch {
@@ -553,7 +558,7 @@ export function createOAuthRealm(
     handle: Readonly<OaathGrantHandle>,
   ): Readonly<OaathOAuthGrantHandle> {
     const descriptors = Object.getOwnPropertyDescriptors(handle);
-    return Object.freeze(
+    const wrapped = Object.freeze(
       Object.defineProperties({} as OaathOAuthGrantHandle, {
         ...descriptors,
         revoke: {
@@ -571,6 +576,8 @@ export function createOAuthRealm(
         },
       }),
     );
+    aliasGrantHandle(handle, wrapped);
+    return wrapped;
   }
 
   /** Verifies a released Grant and adopts it through the account's connection. */

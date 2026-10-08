@@ -399,6 +399,8 @@ impl Relay {
             ["oauth", "grants", id, "revocation"] => {
                 require_method(method, &Method::GET)?;
                 let id = canonical_str(id, INVALID)?;
+                let path = format!("/oauth/grants/{id}/revocation");
+                grant::grant_client(store, clock, headers, "GET", &path, id).await?;
                 let view = revocation::dapp_revocation(store, self.kms.as_ref(), id).await?;
                 Ok(reply(200, &view)?)
             }

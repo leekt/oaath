@@ -282,13 +282,19 @@ async fn an_opted_in_dapp_receives_the_signed_uninstall_and_the_relay_never_subm
         grant_id: grant_id.clone(),
     };
     let dapp_path = format!("/oauth/grants/{grant_id}/revocation");
-    let before = h.send(get(&dapp_path, None)).await.ok(200).clone();
+    let read = || {
+        let proof = grant_proof(&operator_key(), &grant_id, "GET", &dapp_path, CLOCK_SECONDS);
+        h.send(proved("GET", &dapp_path, &proof, None))
+    };
+    // The dapp's revocation is the grant's own: nothing else reads it.
+    assert_eq!(h.send(get(&dapp_path, None)).await.status, 401);
+    let before = read().await.ok(200).clone();
     assert_eq!(before["signed_operation"], Value::Null);
     let request = prepare(&h, &granted).await.ok(200)["request"].clone();
     let signed = sign(&h, &granted, &request).await.ok(200).clone();
     assert_eq!(signed["status"], "delivered");
     assert_eq!(calls(&shared, "eth_sendUserOperation"), 0);
-    let delivered = h.send(get(&dapp_path, None)).await.ok(200).clone();
+    let delivered = read().await.ok(200).clone();
     assert_eq!(delivered["status"], "delivered");
     assert_eq!(delivered["signed_operation"]["request"], request);
     assert_eq!(
@@ -313,7 +319,7 @@ async fn dapp_grant(
     cookie: &str,
 ) -> String {
     let challenge = code_challenge();
-    let details = json!([detail()]).to_string();
+    let details = json!([operator_detail(&operator_key())]).to_string();
     let body = url::form_urlencoded::Serializer::new(String::new())
         .extend_pairs([
             ("client_id", client_id),
@@ -465,8 +471,10 @@ async fn the_root_may_submit_an_opted_in_dapps_revocation_from_oaath() {
     assert_eq!(signed["relay_submits"], true);
     assert_eq!(calls(&shared, "eth_sendUserOperation"), 1);
     // The dapp still reads the signed operation; the relay never sends it again.
+    let path = format!("/oauth/grants/{grant_id}/revocation");
+    let proof = grant_proof(&operator_key(), &grant_id, "GET", &path, CLOCK_SECONDS);
     let delivered = h
-        .send(get(&format!("/oauth/grants/{grant_id}/revocation"), None))
+        .send(proved("GET", &path, &proof, None))
         .await
         .ok(200)
         .clone();

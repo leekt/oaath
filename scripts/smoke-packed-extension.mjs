@@ -330,9 +330,12 @@ try {
       for await (const chunk of incoming) chunks.push(chunk);
       const upstream = await fetch(relay.base + url.pathname + url.search, {
         method: incoming.method,
-        headers: incoming.headers["content-type"]
-          ? { "content-type": incoming.headers["content-type"] }
-          : {},
+        // As the portal Worker does: content-type and authorization only.
+        headers: Object.fromEntries(
+          ["content-type", "authorization"]
+            .filter((name) => incoming.headers[name] !== undefined)
+            .map((name) => [name, incoming.headers[name]]),
+        ),
         body: chunks.length ? Buffer.concat(chunks) : undefined,
       });
       outgoing.writeHead(upstream.status, {
@@ -614,6 +617,25 @@ try {
   expect(counts.approvals === 1, "worker recovery requested owner approval again");
   expect(counts.authorizations === 1, "the extension authorized more than once");
 
+  // Revoking from the extension invalidates the grant at the relay, proven by
+  // the grant's own session key: the extension never held an access token.
+  const control = await browser.newPage();
+  await bounded(
+    control.goto("chrome-extension://" + extensionId + "/popup.html", {
+      waitUntil: "domcontentloaded",
+    }),
+    "extension page navigation",
+  );
+  const revoked = await control.evaluate(
+    (origin) => chrome.runtime.sendMessage({ type: "popup", command: "revoke", origin }),
+    dappOrigin,
+  );
+  expect(
+    revoked?.ok === true && revoked.result?.issuer === "invalidated",
+    "the relay did not invalidate the revoked grant: " + JSON.stringify(revoked),
+  );
+  const issuerInvalidated = revoked.result.issuer === "invalidated";
+
   process.stdout.write(
     "\n" +
       JSON.stringify({
@@ -625,6 +647,7 @@ try {
         duplicateCode: duplicate.code,
         validityAdvertised,
         rangePresented,
+        issuerInvalidated,
       }),
   );
 } finally {
@@ -679,6 +702,7 @@ try {
   assert(report.duplicateCode === 5720, "Chromium duplicate ID did not return 5720");
   assert(report.validityAdvertised === true, "Chromium did not advertise validity ranges");
   assert(report.rangePresented === true, "Chromium did not present the exact validity range");
+  assert(report.issuerInvalidated === true, "the relay did not invalidate the revoked grant");
   console.log("packed Chromium MV3 extension smoke: ok");
   console.log(`  bundle           ${report.id}, status ${report.status}`);
   console.log("  validity         advertised and presented with inclusive UTC bounds");
@@ -688,6 +712,7 @@ try {
   console.log(
     `  submission       ${report.submissions}; duplicate refused with ${report.duplicateCode}`,
   );
+  console.log("  revocation       the relay invalidated the grant by session-key proof");
 } catch (error) {
   console.error("packed Chromium MV3 extension smoke: FAILED");
   console.error(error instanceof Error ? error.message : "unknown failure");

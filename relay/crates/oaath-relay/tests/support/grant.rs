@@ -271,3 +271,52 @@ pub async fn link_member(
     .await
     .ok(200);
 }
+
+/// The dapp's session key: the operator of grants built from `operator_detail`.
+pub fn operator_key() -> SigningKey {
+    SigningKey::from_slice(&[0x55; 32]).unwrap()
+}
+
+/// An `oaath_grant` detail whose operator is `operator`'s address.
+pub fn operator_detail(operator: &SigningKey) -> Value {
+    let mut detail = detail();
+    detail["signer"]["address"] = json!(address_of(operator));
+    detail
+}
+
+/// `operator`'s grant request proof for `method path` on `grant_id`, as the
+/// `Authorization` header value.
+pub fn grant_proof(
+    operator: &SigningKey,
+    grant_id: &str,
+    method: &str,
+    path: &str,
+    issued_at: u64,
+) -> String {
+    use oaath_relay::oauth::grant::{GRANT_PROOF_SCHEME, grant_request_message};
+    let message = grant_request_message(grant_id, method, path, issued_at);
+    let digest = alloy_primitives::eip191_hash_message(message.as_bytes());
+    let (signature, recovery) = operator.sign_prehash_recoverable(&digest.0).unwrap();
+    let bytes = [signature.to_bytes().to_vec(), vec![27 + recovery.to_byte()]].concat();
+    format!("{GRANT_PROOF_SCHEME} {issued_at}.0x{}", hex::encode(bytes))
+}
+
+/// A request carrying a grant proof header.
+pub fn proved(
+    method: &str,
+    path: &str,
+    proof: &str,
+    body: Option<Value>,
+) -> axum::http::Request<axum::body::Body> {
+    let builder = axum::http::Request::builder()
+        .method(method)
+        .uri(path)
+        .header("authorization", proof);
+    match body {
+        Some(body) => builder
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap(),
+        None => builder.body(axum::body::Body::empty()).unwrap(),
+    }
+}
