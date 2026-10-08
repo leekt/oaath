@@ -98,8 +98,8 @@ afterEach(() => {
 describe("demo worker pages", () => {
   it("serves the SPA and the callback with a strict CSP naming the issuer", async () => {
     for (const [path, asset] of [
-      ["/", "/"],
-      ["/?invite=0xabc", "/"],
+      ["/", "/index.html"],
+      ["/?invite=0xabc", "/index.html"],
       ["/callback?code=a&state=b", "/callback.html"],
     ] as const) {
       const response = await worker.fetch(new Request(`${ORIGIN}${path}`), environment());
