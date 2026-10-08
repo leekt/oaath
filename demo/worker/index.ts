@@ -102,7 +102,7 @@ export default {
       );
 
     const page = url.pathname === "/" || url.pathname === "/callback";
-    const asset = /^\/assets\/[A-Za-z0-9][\w.-]*\.(?:js|css)$/u.test(url.pathname);
+    const asset = /^\/assets\/[A-Za-z0-9][\w.-]*\.(?:js|css|woff2)$/u.test(url.pathname);
     if (!reading || (!page && !asset)) return failure(404, "Not found");
     const served = await env.ASSETS.fetch(
       new Request(

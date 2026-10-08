@@ -26,7 +26,9 @@ interface DemoConfig {
   readonly sponsored: boolean;
 }
 
-const config = (await (await fetch("/config.json")).json()) as DemoConfig;
+const configuration = await fetch("/config.json");
+if (!configuration.ok) throw new Error("Demo configuration unavailable");
+const config = (await configuration.json()) as DemoConfig;
 const { issuer, clientId, chainId, target, selector } = config;
 const redirectUri = `${location.origin}/callback`;
 const paymasterUrl = `${location.origin}/paymaster/${chainId}`;
@@ -43,22 +45,64 @@ const call = { target, value: "0", data: selector } as const;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const button = (id: string) => $<HTMLButtonElement>(id);
 
+let feedbackHost = $("s-login");
+
+function busy(source: HTMLButtonElement, active: boolean, label: string) {
+  if (active) {
+    source.dataset.idleLabel = source.textContent ?? "";
+    feedbackHost = source.closest<HTMLElement>("section") ?? feedbackHost;
+    $("feedback").hidden = true;
+  }
+  source.disabled = active;
+  source.setAttribute("aria-busy", String(active));
+  source.textContent = active ? label : (source.dataset.idleLabel ?? label);
+}
+
+function step(name: "login" | "grant" | "send", state: string, label: string) {
+  if (state === "current") {
+    for (const current of document.querySelectorAll<HTMLElement>(
+      ".journey [data-state='current']",
+    )) {
+      current.dataset.state = "";
+      current.querySelector("a")?.removeAttribute("aria-current");
+    }
+  }
+  $(`progress-${name}`).dataset.state = state;
+  $(`progress-${name}-label`).textContent = label;
+  $(`${name}-badge`).textContent = label;
+  $(`${name}-badge`).dataset.state = state;
+  const link = $(`progress-${name}`).querySelector("a");
+  if (state === "current") link?.setAttribute("aria-current", "step");
+  else link?.removeAttribute("aria-current");
+}
+
 function log(line: string) {
   $("log").textContent = `${new Date().toLocaleTimeString()} ${line}\n${$("log").textContent}`;
 }
 
 function show(outcome: string, text: string) {
+  feedbackHost.append($("feedback"));
+  $("feedback").hidden = false;
+  $("feedback").dataset.tone = ["signed-in", "granted", "finalized", "owner-included"].includes(
+    outcome,
+  )
+    ? "success"
+    : "info";
   $("result").dataset.outcome = outcome;
   $("result").textContent = text;
   log(text);
 }
 
 function failed(error: unknown) {
-  const { code = "error", message = String(error) } = (error ?? {}) as {
-    code?: string;
-    message?: string;
-  };
-  show(code, `${code}: ${message}`);
+  const code = (error as { code?: string } | null)?.code ?? "error";
+  const message =
+    code === "access_denied"
+      ? "The request was declined. You can start a new request when you're ready."
+      : code === "uncertain"
+        ? "The submission has no confirmed answer yet. Reload to observe it; do not send it again."
+        : "The action couldn't complete. No automatic retry was made. Check your connection and the account portal before continuing.";
+  show(code, message);
+  $("feedback").dataset.tone = "error";
 }
 
 function storage(key: string, value?: string | null): string | null {
@@ -105,6 +149,7 @@ $<HTMLAnchorElement>("accounts-link").href = `${issuer}/accounts`;
 $<HTMLAnchorElement>("revoke-link").href = `${issuer}/accounts`;
 $("target").textContent = target;
 $("selector").textContent = selector;
+$("gas-context").textContent = config.sponsored ? "Test-call gas sponsored" : "Account pays gas";
 $("status").textContent =
   `Issuer ${issuer} · client ${clientId} · chain ${chainId} · ` +
   (config.sponsored ? "gas sponsored" : "no sponsorship: accounts pay their own gas");
@@ -131,6 +176,16 @@ function showIdentity(summary: Pick<OaathLogin, "account" | "signer" | "accounts
     2,
   );
   $("identity").dataset.role = current;
+  $("identity-summary").hidden = false;
+  $("identity-details").hidden = false;
+  $("identity-title").textContent = login
+    ? `${current === "root" ? "Owner" : "Member"} · signed in`
+    : "Saved account · sign in again";
+  $("identity-account").textContent = `${summary.account.slice(0, 8)}…${summary.account.slice(-6)}`;
+  if (login) {
+    step("login", "done", "Signed in");
+    step("grant", "current", "Review permission");
+  }
   $("s-invite").hidden = current !== "root";
   $("invite-url").textContent = `${location.origin}/?invite=${summary.account}`;
   $("s-owner").hidden = current !== "root" || login === null;
@@ -146,23 +201,40 @@ if (remembered) {
 }
 
 async function signIn(source: HTMLButtonElement) {
-  source.disabled = true;
+  busy(source, true, "Waiting for sign-in…");
   try {
     // Called inside the click: the popup opens before anything is awaited.
     login = await loginWithOAAth({ issuer, clientId, redirectUri });
     const { account, signer, accounts, verified } = login;
     storage(STORAGE.login, JSON.stringify({ account, signer, accounts, verified }));
     showIdentity(login);
-    show("signed-in", `Signed in as ${account} (${role(login)})`);
+    show("signed-in", "You're signed in. Review a permission when you're ready.");
   } catch (error) {
     failed(error);
   }
-  source.disabled = false;
+  busy(source, false, "Sign in with OAAth");
+  if (login && source.id === "login") source.textContent = "Sign in again";
 }
 
 button("login").addEventListener("click", () => signIn(button("login")));
+async function copy(source: HTMLButtonElement, value: string) {
+  feedbackHost = source.closest<HTMLElement>("section") ?? feedbackHost;
+  try {
+    await navigator.clipboard.writeText(value);
+    const label = source.textContent ?? "Copy";
+    source.textContent = "Copied";
+    setTimeout(() => {
+      source.textContent = label;
+    }, 2_000);
+  } catch {
+    show(
+      "copy-unavailable",
+      "Copy isn't available. Open the details and copy the address or link manually.",
+    );
+  }
+}
 button("copy-invite").addEventListener("click", () =>
-  navigator.clipboard?.writeText($("invite-url").textContent ?? ""),
+  copy(button("copy-invite"), $("invite-url").textContent ?? ""),
 );
 
 const invited = new URLSearchParams(location.search).get("invite");
@@ -171,7 +243,7 @@ if (invited && /^0x[0-9a-fA-F]{40}$/u.test(invited)) {
   $("join-account").textContent = invited.toLowerCase();
   button("join").addEventListener("click", () => signIn(button("join")));
   button("copy-join").addEventListener("click", () =>
-    navigator.clipboard?.writeText(invited.toLowerCase()),
+    copy(button("copy-join"), invited.toLowerCase()),
   );
 }
 
@@ -206,6 +278,9 @@ async function showAccount() {
   const account = await grant.account(chainId);
   $("account").textContent = account;
   $("s-send").hidden = false;
+  $("call-empty").hidden = true;
+  step("grant", "done", `Permission ${grant.state}`);
+  step("send", "current", "Ready to send");
   $("sponsored").hidden = !config.sponsored;
   $("funding").hidden = config.sponsored;
   if (config.sponsored) return;
@@ -220,6 +295,9 @@ async function showAccount() {
 }
 
 async function observe(operation: Operation) {
+  feedbackHost = $("step-send");
+  step("send", "current", "Observing call");
+  button("send").textContent = "Call submitted";
   $("operation").textContent = `UserOperation ${operation.id}\nwaiting for inclusion…`;
   for (let poll = 0; poll < MAX_POLLS; poll += 1) {
     const outcome = await operation.wait({ attempts: 1 });
@@ -229,19 +307,26 @@ async function observe(operation: Operation) {
         ? `\ntransaction ${outcome.transactionHash}${explorer(outcome.transactionHash)}`
         : "");
     if (["finalized", "dropped", "superseded", "abandoned"].includes(outcome.status)) {
+      step("send", outcome.status === "finalized" ? "done" : "", `Call ${outcome.status}`);
       show(outcome.status, `Test call ${outcome.status}`);
       return;
     }
     await sleep(POLL_MS);
   }
+  step("send", "current", "Awaiting confirmation");
   show("observation-paused", "Still not final. Reload later to keep observing; nothing is resent.");
 }
 
 /** A Grant, or a request still waiting for the account root. */
 async function settle(result: Awaited<ReturnType<typeof connection.requestPermission>> | null) {
   if (result === null) return;
+  feedbackHost = $("s-grant");
   if ("state" in result && result.state === "pending") {
     button("redeem").hidden = false;
+    step("grant", "current", "Waiting for owner");
+    const review = $<HTMLAnchorElement>("owner-review-link");
+    review.href = `${issuer}/requests/${result.requestId}`;
+    review.hidden = false;
     $("grant-state").textContent =
       `Waiting for the account owner.\nThe owner approves at ${issuer}/requests/${result.requestId}\n` +
       `(or under ${issuer}/accounts). Then click "Check approval".`;
@@ -249,6 +334,7 @@ async function settle(result: Awaited<ReturnType<typeof connection.requestPermis
     return;
   }
   button("redeem").hidden = true;
+  $("owner-review-link").hidden = true;
   grant = result as Grant;
   $("grant-state").textContent = `Grant ${grant.state}`;
   await showAccount();
@@ -278,11 +364,12 @@ try {
   failed(error);
 }
 
+$("startup-message").hidden = true;
 button("login").disabled = false;
 button("join").disabled = false;
 button("grant").disabled = false;
 button("grant").addEventListener("click", async () => {
-  button("grant").disabled = true;
+  busy(button("grant"), true, "Waiting for review…");
   try {
     await settle(
       await connection.requestPermission({
@@ -295,21 +382,22 @@ button("grant").addEventListener("click", async () => {
   } catch (error) {
     failed(error);
   }
-  button("grant").disabled = false;
+  busy(button("grant"), false, "Request permission");
 });
 
 button("redeem").addEventListener("click", async () => {
-  button("redeem").disabled = true;
+  busy(button("redeem"), true, "Checking approval…");
   try {
     // Exactly one token request per click.
     await settle(await connection.redeemPending());
   } catch (error) {
     failed(error);
   }
-  button("redeem").disabled = false;
+  busy(button("redeem"), false, "Check approval");
 });
 
 button("balance").addEventListener("click", async () => {
+  feedbackHost = $("step-send");
   try {
     const wei = (await rpc("chain", "eth_getBalance", [
       $("account").textContent,
@@ -323,7 +411,11 @@ button("balance").addEventListener("click", async () => {
 
 button("send").addEventListener("click", async () => {
   if (!grant) return;
+  feedbackHost = $("step-send");
+  $("feedback").hidden = true;
   button("send").disabled = true;
+  button("send").textContent = "Sending test call…";
+  step("send", "current", "Sending call");
   try {
     const operation = await grant.sendCalls({
       chain: chainId,
@@ -337,6 +429,8 @@ button("send").addEventListener("click", async () => {
   } catch (error) {
     failed(error);
     button("send").disabled = false;
+    button("send").textContent = "Send test call";
+    step("send", "current", "Check activity");
   }
 });
 
@@ -350,7 +444,7 @@ function word(value: string | bigint) {
 
 button("owner-prepare").addEventListener("click", async () => {
   if (!login) return failed(new Error("log in as the account owner first"));
-  button("owner-prepare").disabled = true;
+  busy(button("owner-prepare"), true, "Preparing operation…");
   try {
     const account = login.accountProfile as Parameters<typeof prepareOwnerOperation>[0]["account"];
     const existing = "address" in account;
@@ -391,10 +485,11 @@ button("owner-prepare").addEventListener("click", async () => {
   } catch (error) {
     failed(error);
   }
-  button("owner-prepare").disabled = false;
+  busy(button("owner-prepare"), false, "Prepare operation");
 });
 
 async function observeOwner(hash: string) {
+  feedbackHost = $("s-owner");
   for (let poll = 0; poll < MAX_POLLS; poll += 1) {
     const receipt = (await rpc("bundler", "eth_getUserOperationReceipt", [hash])) as {
       success: boolean;
@@ -417,7 +512,7 @@ async function observeOwner(hash: string) {
 button("owner-approve").addEventListener("click", async () => {
   if (!prepared) return;
   const request = prepared.request;
-  button("owner-approve").disabled = true;
+  busy(button("owner-approve"), true, "Waiting for approval…");
   try {
     // Inside the click: the popup opens before anything is awaited.
     const verified = await requestOwnerOperationApproval({
@@ -440,7 +535,7 @@ button("owner-approve").addEventListener("click", async () => {
   } catch (error) {
     failed(error);
   }
-  button("owner-approve").disabled = false;
+  busy(button("owner-approve"), false, "Approve in OAAth");
 });
 
 const pendingOwner = storage(STORAGE.owner);

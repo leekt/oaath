@@ -109,14 +109,20 @@ describe("demo worker pages", () => {
       expect(policy).toContain("script-src 'self';");
       expect(policy).toContain("frame-ancestors 'none'");
     }
-    const asset = await worker.fetch(new Request(`${ORIGIN}/assets/index-abc.js`), environment());
-    expect(asset.headers.get("cache-control")).toContain("immutable");
+    for (const name of ["index-abc.js", "style-abc.css", "geist-latin-abc.woff2"]) {
+      const asset = await worker.fetch(new Request(`${ORIGIN}/assets/${name}`), environment());
+      expect(asset.status).toBe(200);
+      expect(asset.headers.get("cache-control")).toContain("immutable");
+    }
   });
 
   it("refuses unknown paths, writes to pages, and other hosts", async () => {
     const env = environment();
     expect((await worker.fetch(new Request(`${ORIGIN}/callback.html`), env)).status).toBe(404);
     expect((await worker.fetch(new Request(`${ORIGIN}/assets/../x`), env)).status).toBe(404);
+    expect((await worker.fetch(new Request(`${ORIGIN}/assets/private.json`), env)).status).toBe(
+      404,
+    );
     expect((await worker.fetch(new Request(`${ORIGIN}/`, { method: "POST" }), env)).status).toBe(
       404,
     );
