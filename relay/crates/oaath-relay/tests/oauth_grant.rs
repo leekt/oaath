@@ -12,6 +12,7 @@ use oaath_protocol::permission::parse_permission_request;
 use oaath_relay::error::RelayErrorCode as E;
 use oaath_relay::grant::approval::{capability_hash, verify_grant_approval};
 use oaath_relay::grant::signature::RelyingParty;
+use oaath_relay::oauth::grant::operator_invalidation_message;
 use serde_json::{Value, json};
 use support::grant::*;
 use support::*;
@@ -387,8 +388,16 @@ fn bearer_post(path: &str, token: &str, body: Value) -> Request<Body> {
 /// One approved grant through the whole flow: PAR, prepare, root signature,
 /// decision, token.
 async fn approved_grant(h: &Harness, root: &Root) -> (String, String, Value, Value, Value) {
+    approved_grant_for(h, root, detail()).await
+}
+
+async fn approved_grant_for(
+    h: &Harness,
+    root: &Root,
+    detail: Value,
+) -> (String, String, Value, Value, Value) {
     let client_id = client(h).await;
-    let id = transaction_id(&par(h, &client_id, Some(&json!([detail()]))).await);
+    let id = transaction_id(&par(h, &client_id, Some(&json!([detail]))).await);
     let (signer_id, account, cookie) = register_root(h, root).await;
     let prepared = prepare(
         h,
@@ -615,6 +624,102 @@ async fn invalidates_off_chain_and_revokes_the_access_token() {
         .send(bearer_get(&format!("/oauth/grants/{other_id}"), &access))
         .await;
     assert_eq!(foreign.status, 401);
+}
+
+/// An `oaath_grant` detail whose operator is `operator`'s address.
+fn detail_for(operator: &SigningKey) -> Value {
+    let mut detail = detail();
+    detail["signer"]["address"] = json!(address_of(operator));
+    detail
+}
+
+/// The operator's `personal_sign` proof for one grant's invalidation.
+fn operator_proof(operator: &SigningKey, id: &str, hash: &Value, issued_at: u64) -> Value {
+    let message = operator_invalidation_message(id, hash.as_str().unwrap(), issued_at);
+    let digest = alloy_primitives::eip191_hash_message(message.as_bytes());
+    let (signature, recovery) = operator.sign_prehash_recoverable(&digest.0).unwrap();
+    let bytes = [signature.to_bytes().to_vec(), vec![27 + recovery.to_byte()]].concat();
+    json!({ "issued_at": issued_at, "signature": format!("0x{}", hex::encode(bytes)) })
+}
+
+#[tokio::test]
+async fn the_grant_operator_invalidates_without_a_bearer_token() {
+    let h = harness();
+    let operator = SigningKey::from_slice(&[0x55; 32]).unwrap();
+    let (id, _, _, artifact, tokens) =
+        approved_grant_for(&h, &Root::Ecdsa(root_key()), detail_for(&operator)).await;
+    let hash = artifact["capabilityHash"].clone();
+    let invalidate = |grant: &str, proof: Value| {
+        h.send(post(
+            &format!("/oauth/grants/{grant}/invalidate"),
+            None,
+            Some(json!({ "capability_hash": hash, "operator_proof": proof })),
+        ))
+    };
+    let refused = |reply: Reply| {
+        assert_eq!(
+            (reply.status, reply.body["error"].clone()),
+            (401, json!("invalid_token"))
+        )
+    };
+    // Another key, a stale or future proof, and another grant's proof are refused.
+    let stranger = SigningKey::from_slice(&[0x66; 32]).unwrap();
+    refused(invalidate(&id, operator_proof(&stranger, &id, &hash, CLOCK_SECONDS)).await);
+    refused(
+        invalidate(
+            &id,
+            operator_proof(&operator, &id, &hash, CLOCK_SECONDS - 301),
+        )
+        .await,
+    );
+    refused(
+        invalidate(
+            &id,
+            operator_proof(&operator, &id, &hash, CLOCK_SECONDS + 301),
+        )
+        .await,
+    );
+    let (other_id, _, _, _, other_tokens) =
+        approved_grant_for(&h, &Root::Ecdsa(root_key()), detail_for(&operator)).await;
+    refused(
+        invalidate(
+            &id,
+            operator_proof(&operator, &other_id, &hash, CLOCK_SECONDS),
+        )
+        .await,
+    );
+    // A proof for the wrong capability hash proves nothing either.
+    let wrong = json!(format!("0x{}", "ab".repeat(32)));
+    refused(invalidate(&id, operator_proof(&operator, &id, &wrong, CLOCK_SECONDS)).await);
+    let access = text(&tokens, "access_token").to_owned();
+    let view = || h.send(bearer_get(&format!("/oauth/grants/{id}"), &access));
+    assert_eq!(view().await.ok(200)["status"], json!("approved"));
+
+    // The grant's own operator, within the window: invalidated, idempotently.
+    let evidence = invalidate(
+        &id,
+        operator_proof(&operator, &id, &hash, CLOCK_SECONDS - 60),
+    )
+    .await
+    .ok(200)
+    .clone();
+    assert!(evidence["evidenceHash"].is_string());
+    assert_eq!(view().await.ok(200)["status"], json!("invalidated"));
+    assert_eq!(
+        *invalidate(&id, operator_proof(&operator, &id, &hash, CLOCK_SECONDS))
+            .await
+            .ok(200),
+        evidence
+    );
+    // The other grant is untouched.
+    let other_access = text(&other_tokens, "access_token").to_owned();
+    let other = h
+        .send(bearer_get(
+            &format!("/oauth/grants/{other_id}"),
+            &other_access,
+        ))
+        .await;
+    assert_eq!(other.ok(200)["status"], json!("approved"));
 }
 
 #[tokio::test]

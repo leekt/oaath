@@ -41,7 +41,7 @@ use crate::authorization::invalidation::{InvalidationEvidence, record_capability
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::approval::verify_grant_approval;
-use crate::grant::signature::RelyingParty;
+use crate::grant::signature::{RelyingParty, verify_ecdsa_message};
 use crate::kms::{RelayKms, open_artifact, seal_artifact};
 use crate::portal::{register, signer_record};
 use crate::records::{
@@ -420,8 +420,66 @@ pub async fn grant_view(
     finish(transaction, result).await
 }
 
-/// `POST /oauth/grants/{id}/invalidate {capability_hash}`: off-chain, through
-/// the existing capability-invalidation owner. The hash must be the grant's.
+/// How long an operator invalidation proof stays acceptable, either side of now.
+pub const OPERATOR_PROOF_WINDOW_SECONDS: u64 = 300;
+
+/// The exact text a grant's operator key signs (EIP-191 `personal_sign`) to
+/// invalidate that one grant without its bearer token.
+pub fn operator_invalidation_message(
+    grant_id: &str,
+    capability_hash: &str,
+    issued_at: u64,
+) -> String {
+    format!(
+        "OAAth grant invalidation v1\ngrant: {grant_id}\ncapability: {capability_hash}\nissued: {issued_at}"
+    )
+}
+
+/// Whether `proof` (`{issued_at, signature}`) is the grant's own ECDSA
+/// operator's signature over this grant's invalidation, issued within the
+/// window. Any other operator kind cannot prove it.
+fn operator_proves(
+    permission_request: &Value,
+    proof: &Value,
+    grant_id: &str,
+    capability_hash: &str,
+    now_ms: u64,
+) -> bool {
+    let Some(proof) = proof.as_object().filter(|proof| proof.len() == 2) else {
+        return false;
+    };
+    let (Some(issued_at), Some(signature)) = (
+        proof.get("issued_at").and_then(Value::as_u64),
+        proof.get("signature").and_then(Value::as_str),
+    ) else {
+        return false;
+    };
+    let now = now_ms / 1_000;
+    if issued_at.abs_diff(now) > OPERATOR_PROOF_WINDOW_SECONDS {
+        return false;
+    }
+    let operator = &permission_request["operatorCredential"];
+    let Some(address) = operator["address"]
+        .as_str()
+        .filter(|_| operator["kind"] == "ecdsa")
+    else {
+        return false;
+    };
+    let Some(signature) = signature
+        .strip_prefix("0x")
+        .and_then(|hex_text| hex::decode(hex_text).ok())
+    else {
+        return false;
+    };
+    let message = operator_invalidation_message(grant_id, capability_hash, issued_at);
+    verify_ecdsa_message(address, message.as_bytes(), &signature)
+}
+
+/// `POST /oauth/grants/{id}/invalidate {capability_hash, operator_proof?}`:
+/// off-chain, through the existing capability-invalidation owner. The hash
+/// must be the grant's. The caller is the grant's bearer token or, without
+/// one, the grant's own operator key (`operator_proof`); either way the
+/// invalidation is recorded for the grant's client.
 pub async fn invalidate_grant(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
@@ -430,15 +488,44 @@ pub async fn invalidate_grant(
     grant_id: &str,
     body: &Map<String, Value>,
 ) -> OAuthResult<InvalidationEvidence> {
-    let capability_hash = match (body.len(), body.get("capability_hash")) {
-        (1, Some(Value::String(hash))) => hash.clone(),
+    let (capability_hash, proof) = match (
+        body.len(),
+        body.get("capability_hash"),
+        body.get("operator_proof"),
+    ) {
+        (1, Some(Value::String(hash)), None) => (hash.clone(), None),
+        (2, Some(Value::String(hash)), Some(proof)) => (hash.clone(), Some(proof.clone())),
         _ => return Err(INVALID.into()),
     };
     let now = relay_now(clock)?;
     let mut transaction = store.begin().await?;
     let result = async {
-        let token = bearer(&mut *transaction, headers, grant_id, now).await?;
+        let client_id = match &proof {
+            None => {
+                bearer(&mut *transaction, headers, grant_id, now)
+                    .await?
+                    .client_id
+            }
+            Some(_) => {
+                transaction
+                    .lock_authorization_request(grant_id)
+                    .await?
+                    .ok_or_else(invalid_token)?
+                    .client_id
+            }
+        };
         let view = read_grant(&mut *transaction, kms, grant_id).await?;
+        if let Some(proof) = &proof
+            && !operator_proves(
+                &view.permission_request,
+                proof,
+                grant_id,
+                &capability_hash,
+                now,
+            )
+        {
+            return Err(invalid_token());
+        }
         let granted = view
             .decision
             .as_ref()
@@ -447,7 +534,7 @@ pub async fn invalidate_grant(
         if granted != Some(capability_hash.as_str()) {
             return Err(INVALID.into());
         }
-        Ok(token.client_id)
+        Ok(client_id)
     }
     .await;
     let client_id = finish(transaction, result).await?;

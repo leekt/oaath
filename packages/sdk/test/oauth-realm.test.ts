@@ -5,8 +5,10 @@
  * that is exactly the application's own is stored and applied.
  */
 import { IDBFactory } from "fake-indexeddb";
+import { getAddress, recoverMessageAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { issuerInvalidationMessage } from "../src/client/oauth-realm.js";
 import { createOAAth } from "../src/index.js";
 import { createChainFixture, permissionInput } from "./support/browser.js";
 import { installOAuthPortal, ORIGIN, type PortalBehaviour } from "./support/oauth-portal.js";
@@ -126,5 +128,58 @@ describe("OAuth-approved Grants", () => {
     ).rejects.toMatchObject({ code: "oaath_client_access_denied" });
     expect(popups[0]?.closed).toBe(true);
     await realm.close();
+  });
+});
+
+describe("revoking an OAuth-approved Grant", () => {
+  async function granted(invalidation?: number | "down") {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const portal = await installOAuthPortal({
+      account: ACCOUNT,
+      ...(invalidation === undefined ? {} : { invalidation }),
+    });
+    const chain = createChainFixture({ chainId: 31337 });
+    const realm = createOAAth({
+      chains: [chain.capability],
+      approvals: portal.approvals,
+      origin: ORIGIN,
+    });
+    const grant = await (await realm.connect()).requestPermission(permissionInput());
+    if (grant.state === "pending") throw new Error("the root approves at once");
+    return { ...portal, realm, grant };
+  }
+
+  it("asks the issuer once, proven by the Grant's own session key", async () => {
+    const { realm, grant, invalidations, pars } = await granted();
+    const result = await grant.revoke();
+    expect(result).toEqual({ issuer: "invalidated" });
+    expect(grant.state === "revoking" || grant.state === "revoked").toBe(true);
+    expect(invalidations).toHaveLength(1);
+    const [sent] = invalidations;
+    const [detail] = JSON.parse([...pars.values()][0]!.get("authorization_details")!);
+    const proof = sent!.body.operator_proof as { issued_at: number; signature: `0x${string}` };
+    const message = issuerInvalidationMessage(
+      sent!.grantId,
+      sent!.body.capability_hash as string,
+      proof.issued_at,
+    );
+    expect(await recoverMessageAddress({ message, signature: proof.signature })).toBe(
+      getAddress(detail.signer.address),
+    );
+    await realm.close();
+  });
+
+  it("still revokes locally when the issuer is unreachable or refuses", async () => {
+    for (const [answer, issuer] of [
+      ["down", "unavailable"],
+      [401, "refused"],
+    ] as const) {
+      const { realm, grant, invalidations } = await granted(answer);
+      expect(await grant.revoke()).toEqual({ issuer });
+      expect(grant.state === "revoking" || grant.state === "revoked").toBe(true);
+      expect(invalidations).toHaveLength(1);
+      await realm.close();
+      vi.unstubAllGlobals();
+    }
   });
 });
