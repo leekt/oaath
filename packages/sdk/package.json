@@ -1,6 +1,6 @@
 {
   "name": "@oaath/sdk",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "OAAth browser client and Kernel/ZeroDev runtime.",
   "type": "module",
   "sideEffects": false,

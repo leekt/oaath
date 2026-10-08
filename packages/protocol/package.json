@@ -1,6 +1,6 @@
 {
   "name": "@oaath/protocol",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "IO-free OAAth wire, durable contracts, and Kernel v4 signing profiles.",
   "type": "module",
   "sideEffects": false,

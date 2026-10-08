@@ -1,5 +1,20 @@
 # @oaath/protocol
 
+## 0.3.5
+
+### Patch Changes
+
+- 44878a5: Pin Cetane 0.0.4, including complete Kernel inventory coverage when all installation contexts can be reconciled with confirmed state.
+- e18b603: Accept single-case and EIP-55 address inputs through one shared capture owner. Reject incorrect mixed-case checksums with field diagnostics while preserving canonical lowercase artifacts and hashes.
+- 5996a53: Remove the owner-device signing artifact and the Kernel 0.4.0 revocation signing request. Approvals complete only through `sign(ownerKey, decidedAt)`; `prepareKernelPermissionRevocation` is Kernel 0.3.3 only, and a Kernel 0.4.0 Grant revokes through its grant handle.
+- 52d36f9: Remove `@oaath/server` and the service bootstrap document; the Rust relay owns authorization state. `parseWorkspaceAccountContext` stays in `@oaath/protocol`.
+- 97881b8: Owner operations accept an existing (imported) Kernel 0.4.0 account: `prepareOwnerOperation` sends from the profile's own address with no factory (the account is deployed), and `verifyOwnerOperation` binds the sender to that address and the EntryPoint to 0.9. A Kernel 0.3.3 profile, or a factory on an existing account, is refused.
+- 94f9195: Export `hashOwnerCredentialProfile`, the owner-credential identity hash the relay binds into an OAAth membership approval, so a portal can check what an account root signs.
+- 81001d1: Add owner operations for factory-derived Kernel 0.4.0 accounts. `@oaath/protocol` captures `oaath.owner-operation-request/v1` and `oaath.signed-owner-operation/v1`: one exact EntryPoint 0.9 UserOperation whose hash, signed by the account root, binds chain, EntryPoint, account, nonce, calls, gas, factory and paymaster. `@oaath/sdk/kernel` adds `prepareOwnerOperation`, which builds the request offline and has an ECDSA, P-256 or WebAuthn root sign it, and `verifyOwnerOperation`, which checks the account derivation, factory deployment and root signature and returns the ERC-4337 JSON-RPC operation to submit.
+- be78f87: Use the published Cetane 0.0.3 release and remove the local snapshot tarball.
+- a43611c: Reset every protocol and SDK wire, profile and record version to `v1`, and rename `service_bootstrap_invalid` to `workspace_account_context_invalid`. Records written under the old versions are rejected; recreate them.
+- 59b50c8: Admit WebAuthn owner credentials on existing Kernel v4 profiles and the wallet-approved Grant path. Refuse a passkey belonging to another root before any assertion or submission.
+
 ## 0.3.4
 
 ### Patch Changes
