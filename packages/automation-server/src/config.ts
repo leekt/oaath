@@ -39,6 +39,8 @@ export interface AutomationServiceConfig {
   readonly allowedOrigins: readonly string[];
   readonly definitions: readonly AutomationDefinition[];
   readonly chains: ReadonlyMap<number, ChainEndpoints>;
+  /** Occurrence runs of one plan that may be open at once, each on its own lane. */
+  readonly maxOpenSlots: number;
   readonly budgets: Readonly<{
     rpc: number;
     bundler: number;
@@ -173,6 +175,7 @@ export function configFromEnv(
     allowedOrigins: Object.freeze(list(env.AUTOMATION_ALLOWED_ORIGINS)),
     definitions: Object.freeze([...definitions]),
     chains,
+    maxOpenSlots: positive(env, "AUTOMATION_MAX_OPEN_SLOTS", 4),
     budgets: Object.freeze({
       rpc: positive(env, "AUTOMATION_RPC_BUDGET", 3000),
       bundler: positive(env, "AUTOMATION_BUNDLER_BUDGET", 300),

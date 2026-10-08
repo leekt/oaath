@@ -8,8 +8,9 @@
  *                      terminal: finalized | failed | skipped
  * persisted evidence   calls before send; op hash + nonce journaled before any
  *                      signature or send (see ./store.ts); transaction hash on inclusion
- * resource occupied?   one open run per plan, so one unresolved operation per
- *                      (grantId, chainId, lane)
+ * resource occupied?   one open run per (plan, lane) (unique index), so one
+ *                      unresolved operation per (grantId, chainId, lane); each run
+ *                      sends and observes only on the lane stored on it
  * retry positively     send: only while op_hash is null (never journaled) or the SDK
  *   safe?              proved the identity abandoned before submission;
  *                      observation: always, and it submits nothing
@@ -38,6 +39,8 @@ export interface RunRow {
   readonly run_key: string;
   readonly kind: "setup" | "occurrence" | "cancel";
   readonly slot: number | null;
+  /** The Kernel nonce lane the scheduler assigned; 0 is the default lane. */
+  readonly lane: number;
   readonly scheduled_at: number;
   readonly closes_at: number | null;
   readonly status: string;
@@ -60,11 +63,18 @@ export type Observation = Readonly<{
   }> | null;
 }>;
 
-/** The one boundary to OAAth for a run: start calls, or observe a journaled operation. */
+/** A run's SDK lane: absent for the default lane, else the run's own key and label. */
+export type RunLane = Readonly<{ id: string; nonceKey: bigint }> | null;
+
+export function runLane(run: Pick<RunRow, "run_key" | "lane">): RunLane {
+  return run.lane === 0 ? null : Object.freeze({ id: run.run_key, nonceKey: BigInt(run.lane) });
+}
+
+/** The one boundary to OAAth for a run: start calls, or observe a journaled operation, on the run's lane. */
 export interface OperationGateway {
-  send(calls: readonly ResolvedCall[]): Promise<`0x${string}`>;
+  send(calls: readonly ResolvedCall[], lane: RunLane): Promise<`0x${string}`>;
   /** null: the journal holds no such operation (unreadable, never "absent"). */
-  observe(id: `0x${string}`): Promise<Observation | null>;
+  observe(id: `0x${string}`, lane: RunLane): Promise<Observation | null>;
   close(): Promise<void>;
 }
 
@@ -91,17 +101,22 @@ export function grantGateway(context: ServiceContext): OpenGateway {
     const chain = plan.terms.chainId;
     const payer = paymasterPayer(context.config.chains.get(chain));
     return {
-      async send(calls) {
+      async send(calls, lane) {
         const operation = await opened.grant.sendCalls({
           chain,
           calls: calls.map((call) => ({ target: call.target, value: call.value, data: call.data })),
           ...(payer === null ? {} : { payer }),
+          ...(lane === null ? {} : { lane }),
         });
         await operation.close().catch(() => undefined);
         return operation.id;
       },
-      async observe(id) {
-        const operation = await opened.grant.getOperation({ chain, id });
+      async observe(id, lane) {
+        const operation = await opened.grant.getOperation({
+          chain,
+          id,
+          ...(lane === null ? {} : { lane }),
+        });
         if (operation === null) return null;
         try {
           const outcome = await operation.observe();
@@ -209,7 +224,7 @@ async function observe(
   gateway: OperationGateway,
 ): Promise<void> {
   const now = context.now();
-  const seen = await gateway.observe(run.op_hash);
+  const seen = await gateway.observe(run.op_hash, runLane(run));
   if (seen === null || seen.status === "pending" || seen.status === "unreadable") {
     await update(
       context.pool,
@@ -314,7 +329,7 @@ export async function processRun(
         return;
       }
       try {
-        await gateway.send(current.calls as readonly ResolvedCall[]);
+        await gateway.send(current.calls as readonly ResolvedCall[], runLane(current));
       } catch (error) {
         // Whatever failed, the journal decides: a linked hash means it may have been sent.
         const linked = await readRun(context.pool, current);

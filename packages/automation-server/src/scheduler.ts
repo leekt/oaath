@@ -6,11 +6,18 @@
  * plan     draft -> awaiting_consent -> authorized -> active <-> paused
  *          active|paused -> completed | expired;  any open plan -> cancelling -> cancelled
  *          authorized --setup failed--> failed
- * run      inserted due (or skipped when its window already closed)
- * occupied one open run per plan: a new occurrence waits while one is open,
- *          and is skipped once its own window closes
- * forbidden admitting an occurrence for a plan that is not active; a cancel run
- *          while another run of the plan is open
+ * run      inserted due (or skipped when its window already closed), with its lane
+ * lane     derived here once and stored on the run: setup and cancel use the
+ *          default lane 0, occurrence slot N uses lane N (Kernel nonce key N),
+ *          so slot 0 shares the default lane that alone may enable the permission
+ * occupied one unresolved operation per (plan, lane), enforced by a unique index.
+ *          Occurrences may be open together, up to `maxOpenSlots`, once one of
+ *          the plan's operations is included (the permission install is on
+ *          chain); before that, one at a time. A slot that cannot open waits and
+ *          is skipped once its own window closes.
+ * forbidden admitting an occurrence for a plan that is not active (so never
+ *          before setup finalized); a cancel run while another run of the plan
+ *          is open; two open runs on one lane
  * ```
  *
  * Every admission happens in one transaction holding the plan row, so
@@ -26,12 +33,33 @@ import { redeemPendingConsent } from "./oauth.js";
 const OPEN_RUN = "status IN ('due','claimed','prepared','submitted','observed')";
 const BATCH = 32;
 
-async function hasOpenRun(client: Client, planId: string): Promise<boolean> {
+async function openRuns(client: Client, planId: string): Promise<number> {
   const result = await client.query(
-    `SELECT 1 FROM automation_runs WHERE plan_id=$1 AND ${OPEN_RUN} LIMIT 1`,
+    `SELECT count(*)::integer AS n FROM automation_runs WHERE plan_id=$1 AND ${OPEN_RUN}`,
+    [planId],
+  );
+  return result.rows[0].n as number;
+}
+
+async function hasOpenRun(client: Client, planId: string): Promise<boolean> {
+  return (await openRuns(client, planId)) > 0;
+}
+
+/**
+ * Whether an operation of the plan is already on chain, so its permission is
+ * installed or included and explicit lanes may run beside one another.
+ */
+async function installIncluded(client: Client, planId: string): Promise<boolean> {
+  const result = await client.query(
+    "SELECT 1 FROM automation_runs WHERE plan_id=$1 AND status IN ('observed','finalized') LIMIT 1",
     [planId],
   );
   return result.rowCount !== 0;
+}
+
+/** The run's Kernel nonce lane: the default lane 0 for setup and cancel, the slot for an occurrence. */
+function runLane(kind: "setup" | "occurrence" | "cancel", slot: number | null): number {
+  return kind === "occurrence" ? (slot as number) : 0;
 }
 
 async function insertRun(
@@ -48,13 +76,14 @@ async function insertRun(
   }>,
 ): Promise<void> {
   await client.query(
-    `INSERT INTO automation_runs(plan_id,run_key,kind,slot,scheduled_at,closes_at,status,reason,next_attempt_at)
-     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$5) ON CONFLICT DO NOTHING`,
+    `INSERT INTO automation_runs(plan_id,run_key,kind,slot,lane,scheduled_at,closes_at,status,reason,next_attempt_at)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$6) ON CONFLICT (plan_id, run_key) DO NOTHING`,
     [
       run.planId,
       run.key,
       run.kind,
       run.slot,
+      runLane(run.kind, run.slot),
       run.scheduledAt,
       run.closesAt,
       run.status,
@@ -64,7 +93,7 @@ async function insertRun(
 }
 
 /** Occurrences whose time has come, for active and paused plans. */
-async function admitOccurrences(client: Client, now: number): Promise<void> {
+async function admitOccurrences(client: Client, now: number, maxOpenSlots: number): Promise<void> {
   const plans = (
     await client.query(
       `SELECT * FROM automation_plans WHERE status IN ('active','paused') AND next_at<=$1
@@ -76,12 +105,14 @@ async function admitOccurrences(client: Client, now: number): Promise<void> {
     const { schedule } = plan.terms;
     const active = plan.status === "active";
     let slot = plan.next_slot;
+    let open = await openRuns(client, plan.id);
+    const limit = (await installIncluded(client, plan.id)) ? maxOpenSlots : 1;
     while (slot < schedule.occurrences) {
       const at = slotTime(plan.terms, slot);
       const closes = at + schedule.grace;
       if (now < at) break;
       const missed = now >= closes;
-      if (!missed && (!active || (await hasOpenRun(client, plan.id)))) break;
+      if (!missed && (!active || open >= limit)) break;
       await insertRun(client, {
         planId: plan.id,
         key: `occurrence:${slot}`,
@@ -93,17 +124,16 @@ async function admitOccurrences(client: Client, now: number): Promise<void> {
         reason: missed ? "window_missed" : null,
       });
       slot += 1;
-      if (!missed) break;
+      if (!missed) open += 1;
     }
     const done = slot >= schedule.occurrences;
-    const open = await hasOpenRun(client, plan.id);
     const nextAt = done
       ? now + 5
       : Math.max(slotTime(plan.terms, slot) + (active ? 0 : schedule.grace), now + 5);
     const status =
-      done && !open && active
+      done && open === 0 && active
         ? "completed"
-        : now >= schedule.endAt && !open
+        : now >= schedule.endAt && open === 0
           ? "expired"
           : plan.status;
     await client.query(
@@ -198,7 +228,7 @@ export async function tick(context: ServiceContext): Promise<void> {
       [now],
     );
     await admitSetup(client, now);
-    await admitOccurrences(client, now);
+    await admitOccurrences(client, now, context.config.maxOpenSlots);
     await admitCancellation(client, now);
   });
   const consent = await context.pool.query(
