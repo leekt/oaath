@@ -24,6 +24,7 @@ import {
 } from "./signers.js";
 
 export function message(error: unknown): string {
+  console.error("[oaath-portal]", error);
   const code = error instanceof PortalApiError ? error.code : (error as { code?: string })?.code;
   switch (code) {
     case "network_unavailable":
