@@ -30,6 +30,12 @@ Grant therefore allows the token's `approve` and the executor's
 another spender or open another plan. The plan's frozen arguments, and so its
 budget, are kept only by the automation service and the executor's own checks.
 
+## End to end
+
+`bun run --filter @oaath/automation-server test:e2e` deploys these contracts
+with a Uniswap v3 pool on Anvil, approves a `dca.v1` plan through a local relay,
+and lets two automation service replicas run its setup and first purchase.
+
 ## Build and test
 
 ```sh

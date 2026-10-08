@@ -37,12 +37,13 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsdown src/index.ts src/cli.ts --platform node",
+    "build": "tsdown src/index.ts src/cli.ts --platform node --tsconfig tsconfig.build.json",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "release:publish": "bun publish --access public --tolerate-republish",
-    "release:check": "bun pm pack --dry-run"
+    "release:check": "bun pm pack --dry-run",
+    "test:e2e": "OAATH_AUTOMATION_E2E=1 vitest run test/dca.e2e.test.ts"
   },
   "dependencies": {
     "@oaath/automation": "workspace:*",
@@ -53,7 +54,8 @@
   },
   "devDependencies": {
     "@types/node": "22.13.0",
-    "@types/pg": "8.15.5"
+    "@types/pg": "8.15.5",
+    "viem": "2.55.8"
   },
   "publishConfig": {
     "access": "public"

@@ -60,3 +60,18 @@ root approves it in the portal; the first operation installs the permission in
 enable mode. Cancellation stops admission and runs the definition's cancel
 calls; uninstalling the permission on chain remains the account root's action
 in the portal.
+
+## Test
+
+```sh
+bun run --filter @oaath/automation-server test       # unit and PostgreSQL suites
+bun run --filter @oaath/automation-server test:e2e   # relay + two replicas + Anvil
+```
+
+The PostgreSQL suites start a throwaway local cluster (or use
+`OAATH_TEST_POSTGRES_URL`) and skip without PostgreSQL binaries unless
+`OAATH_REQUIRE_POSTGRES=1`. The end-to-end run builds the relay with cargo,
+approves a [DCA plan](../../examples/dca) through the portal API as its account
+root, and checks that the setup and one due occurrence each send exactly once,
+including while a held operation is observed repeatedly. Its bundler is a
+loopback fixture over `EntryPoint.handleOps`; no public network is contacted.
