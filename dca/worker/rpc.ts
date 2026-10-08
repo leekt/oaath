@@ -21,7 +21,9 @@
  * executor pays chain gas), reached through the `BUNDLER` Workers VPC binding.
  * The automation service sends every plan operation through its own bundler.
  *
- * Only `content-type` reaches a provider. Upstream URLs are never logged or
+ * Only `content-type` reaches a provider, plus the bundler's own `x-api-key`
+ * from the `BUNDLER_API_KEY` secret: a client's headers and any body field
+ * outside JSON-RPC (such as `apiKey`) are dropped. Upstream URLs are never logged or
  * returned; provider answers pass through unchanged only when they are JSON-RPC.
  *
  * @author taek <leekt216@gmail.com>
@@ -42,6 +44,8 @@ export interface ProxyEnv {
   readonly TUSD_TOKEN?: string;
   /** Workers VPC service: bundle_rs on the VM's loopback. Unset: the bundler route answers 503. */
   readonly BUNDLER?: { fetch(request: Request): Promise<Response> };
+  /** Secret: bundle_rs client key, sent only to the bundler. Unset: forwarded without one. */
+  readonly BUNDLER_API_KEY?: string;
 }
 
 export type Role = "chain" | "bundler";
@@ -232,7 +236,10 @@ export async function proxy(role: Role, request: Request, env: ProxyEnv): Promis
     role === "chain" ? env.CHAIN_RPC_URL : "http://bundler.internal/",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers:
+        role === "bundler" && env.BUNDLER_API_KEY
+          ? { "content-type": "application/json", "x-api-key": env.BUNDLER_API_KEY }
+          : { "content-type": "application/json" },
       body: JSON.stringify(batch ? captured : captured[0]),
       // Workers accepts only "follow" or "manual"; a 3xx is not ok and is refused below.
       redirect: "manual",

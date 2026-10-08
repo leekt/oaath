@@ -45,6 +45,11 @@ The OAuth client is registered once with `POST https://oaath.taek.tech/oauth/cli
 `OAATH_CLIENT_ID` in `wrangler.jsonc`. Register again whenever the relay's
 database is recreated.
 
+When bundle_rs requires client authentication, put its key with
+`wrangler secret put BUNDLER_API_KEY`. The Worker sends it to the bundler only,
+as `x-api-key`, and never forwards a client's key. Without it, sends and
+estimates are refused with RPC `-32001`.
+
 Automation runs on the service at `AUTOMATION_URL`, configured with
 [`automation/demo-ping.automation.json`](automation/demo-ping.automation.json)
 in its `AUTOMATION_DEFINITIONS` and `https://oaath-demo.taek.tech` in its

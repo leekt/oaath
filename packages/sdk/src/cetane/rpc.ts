@@ -372,7 +372,13 @@ export function rpcOwner(input: CetaneChainPortOptions) {
       headerInput?: Readonly<Record<string, string>>,
     ): RpcRequest {
       const captured = headerInput === undefined ? {} : record(headerInput);
-      if (Object.values(captured).some((value) => typeof value !== "string")) return invalid();
+      // Values may be credentials: refuse CR/LF/NUL instead of normalizing them.
+      if (
+        Object.values(captured).some(
+          (value) => typeof value !== "string" || /[\r\n\0]/u.test(value),
+        )
+      )
+        return invalid();
       let headers: Headers;
       try {
         headers = new Headers(captured as Record<string, string>);

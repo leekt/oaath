@@ -335,6 +335,42 @@ describe("demo relay", () => {
     );
     expect(publicFetches).toHaveLength(0);
   });
+
+  it("sends only the BUNDLER_API_KEY secret to the bundler, never a client's key", async () => {
+    const requests: Request[] = [];
+    const chain = upstream((request) => {
+      requests.push(request.clone());
+      return Response.json({ jsonrpc: "2.0", id: 1, result: "0x01" });
+    });
+    const env = environment({
+      BUNDLER_API_KEY: "server-key",
+      BUNDLER: {
+        fetch: async (request: Request) => {
+          requests.push(request.clone());
+          return Response.json({ jsonrpc: "2.0", id: 1, result: "0x01" });
+        },
+      },
+    });
+    const client = { "x-api-key": "client-key" };
+    await post("/rpc/bundler", { ...relayed(DEMO_CALL), apiKey: "client-key" }, env, client);
+    await post("/rpc/chain", { ...rpc("eth_chainId"), apiKey: "client-key" }, env, client);
+    expect(requests).toHaveLength(2);
+    expect(requests[0]!.headers.get("x-api-key")).toBe("server-key");
+    expect(requests[1]!.headers.get("x-api-key")).toBeNull();
+    for (const request of requests) expect(await request.text()).not.toContain("apiKey");
+    expect(chain).toHaveLength(1);
+
+    // Without the secret the bundler still gets the request, with no key at all.
+    requests.length = 0;
+    await post(
+      "/rpc/bundler",
+      relayed(DEMO_CALL),
+      environment({ BUNDLER: env.BUNDLER, BUNDLER_API_KEY: undefined }),
+      client,
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.headers.get("x-api-key")).toBeNull();
+  });
 });
 
 describe("demo automation session", () => {

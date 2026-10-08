@@ -54,6 +54,11 @@ export interface CetaneChainPortConfiguration {
   readonly headers?: Readonly<Record<string, string>>;
   /** Omit for public-chain reads and direct-receipt observation without a submission route. */
   readonly bundlerUrl?: string;
+  /**
+   * Bundler endpoint headers only (for example `x-api-key`); never sent to read
+   * or paymaster URLs. Captured at construction; values never appear in errors.
+   */
+  readonly bundlerHeaders?: Readonly<Record<string, string>>;
   readonly paymasterUrl?: string;
   /**
    * The bundler pays chain gas itself (a relay such as bundle_rs in fast mode):
@@ -459,6 +464,7 @@ export function createCetaneChainPorts(
         "publicRpcUrls",
         "headers",
         "bundlerUrl",
+        "bundlerHeaders",
         "paymasterUrl",
         "relayPaysGas",
         "gas",
@@ -469,6 +475,7 @@ export function createCetaneChainPorts(
       // A relay-paid chain has exactly one payer: the bundler.
       if (relayPaysGas && (config.paymasterUrl !== undefined || config.bundlerUrl === undefined))
         return invalid();
+      if (config.bundlerHeaders !== undefined && config.bundlerUrl === undefined) return invalid();
       const publicRpc = owner.pool(
         urls(config.publicRpcUrls),
         chainId,
@@ -479,7 +486,13 @@ export function createCetaneChainPorts(
       const bundlerRpc =
         config.bundlerUrl === undefined
           ? null
-          : owner.pool([url(config.bundlerUrl)], chainId, BUNDLER_METHODS);
+          : owner.pool(
+              [url(config.bundlerUrl)],
+              chainId,
+              BUNDLER_METHODS,
+              true,
+              config.bundlerHeaders as Readonly<Record<string, string>> | undefined,
+            );
       function requireBundler(): RpcRequest {
         if (!bundlerRpc) throw new OaathRpcError("oaath_rpc_bundler_unavailable");
         return bundlerRpc;

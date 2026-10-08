@@ -433,3 +433,82 @@ describe("relay-paid chain ports", () => {
       ).toThrow(expect.objectContaining({ code: "oaath_rpc_config_invalid" }));
   });
 });
+
+describe("bundler headers", () => {
+  const secret = "bundler-secret-key";
+  function fixture(rejectBundler = false) {
+    const seen: { host: string; method: string; key: string | null; read: string | null }[] = [];
+    const [chain] = createCetaneChainPorts(
+      {
+        143: {
+          ...config[143],
+          headers: { "x-read": "read" },
+          bundlerHeaders: { "x-api-key": secret },
+        },
+      },
+      {
+        fetch: async (request) => {
+          const { id, method } = await request.json();
+          const host = new URL(request.url).hostname;
+          seen.push({
+            host,
+            method,
+            key: request.headers.get("x-api-key"),
+            read: request.headers.get("x-read"),
+          });
+          if (method === "eth_chainId") return rpc(id, "0x8f");
+          if (rejectBundler && host === "bundler.test")
+            return Response.json({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32001, message: "invalid api key" },
+            });
+          if (method === "eth_supportedEntryPoints") return rpc(id, [KERNEL_V4_ENTRY_POINT_V09]);
+          return rpc(id, { paymaster: zeroAddress });
+        },
+      },
+    );
+    const route = chain!.routes?.[0];
+    if (route?.kind !== "erc4337-bundler") throw new Error("expected a bundler route");
+    const probe = () => route.bundler.probe({ chainId: 143 } as never);
+    return { chain: chain!, seen, probe };
+  }
+
+  it("sends bundler headers only to the bundler and read headers only to reads", async () => {
+    const { chain, seen, probe } = fixture();
+    await chain.observation.read({ type: "chain_id" } as never);
+    await probe();
+    const sponsorship = chain.sponsorship;
+    if (sponsorship?.kind !== "erc7677") throw new Error("expected ERC-7677 sponsorship");
+    await sponsorship.request({ method: "pm_getPaymasterStubData", params: [] } as never);
+    const hosts = new Set(seen.map(({ host }) => host));
+    expect(hosts).toEqual(new Set(["public-a.test", "bundler.test", "paymaster.test"]));
+    for (const { host, key, read } of seen) {
+      expect(key).toBe(host === "bundler.test" ? secret : null);
+      expect(read).toBe(host === "public-a.test" ? "read" : null);
+    }
+    expect(seen.find(({ method }) => method === "eth_supportedEntryPoints")?.key).toBe(secret);
+  });
+
+  it("keeps the key out of a bundler refusal", async () => {
+    const { probe } = fixture(true);
+    const error = await probe().catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "oaath_rpc_rejected", rpcCode: -32001 });
+    expect(`${String(error)} ${JSON.stringify(error)}`).not.toContain(secret);
+  });
+
+  it("refuses non-string or CR/LF header values and headers without a bundler", () => {
+    const publicRpcUrls = ["https://public.test"];
+    const bundlerUrl = "https://bundler.test";
+    for (const chain of [
+      { publicRpcUrls, bundlerUrl, bundlerHeaders: { "x-api-key": 1 } },
+      { publicRpcUrls, bundlerUrl, bundlerHeaders: { "x-api-key": "a\r\nx-other: b" } },
+      { publicRpcUrls, bundlerUrl, bundlerHeaders: { "x-api-key": "key\n" } },
+      { publicRpcUrls, bundlerUrl, bundlerHeaders: "x-api-key" },
+      { publicRpcUrls, bundlerHeaders: { "x-api-key": secret } },
+    ])
+      expect(() => createCetaneChainPorts({ 143: chain as never })).toThrow(
+        expect.objectContaining({ code: "oaath_rpc_config_invalid" }),
+      );
+  });
+});
