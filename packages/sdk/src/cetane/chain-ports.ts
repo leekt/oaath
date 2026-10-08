@@ -61,7 +61,8 @@ export interface CetaneChainPortConfiguration {
   readonly bundlerHeaders?: Readonly<Record<string, string>>;
   readonly paymasterUrl?: string;
   /**
-   * The bundler pays chain gas itself (a relay such as bundle_rs in fast mode):
+   * The bundler pays chain gas itself (a relay such as bundle_rs in fast mode).
+   * Fees come from Cetane's relay-paid policy (`chain.fees.relayPaysGas`):
    * every quoted operation carries `maxFeePerGas = 0` and
    * `maxPriorityFeePerGas = 0`, so the account needs no funds and no paymaster.
    * Gas limits still come from the bundler's `eth_estimateUserOperationGas`.
@@ -510,8 +511,14 @@ export function createCetaneChainPorts(
             );
       const gasPolicy = captureKernelGasPolicy(chainId, config.gas);
       const client = createPublicClient({
-        // Fees come from Cetane's default policy (2x base fee plus the priority fee).
-        chain: { id: chainId, name: `Chain ${chainId}`, nativeAA: false },
+        // Cetane owns fee selection: its relay-paid policy returns zero fees
+        // without fee reads; otherwise its default (2x base fee plus the tip).
+        chain: {
+          id: chainId,
+          name: `Chain ${chainId}`,
+          nativeAA: false,
+          ...(relayPaysGas ? { fees: { relayPaysGas: true } } : {}),
+        },
         transport: custom({
           request: ({ method, params }) =>
             publicRpc(method, params as readonly unknown[] | undefined),
@@ -601,9 +608,7 @@ export function createCetaneChainPorts(
         );
         if (nonce >> 64n !== BigInt(key)) return evidence();
         let quoted = gas(prepared.userOperation);
-        if (request.purpose !== "revalidate" && relayPaysGas) {
-          quoted = { ...quoted, maxFeePerGas: "0", maxPriorityFeePerGas: "0" };
-        } else if (request.purpose !== "revalidate") {
+        if (request.purpose !== "revalidate") {
           const fees = await client.estimateFeesPerGas().catch((error: unknown) => {
             if (error instanceof OaathRpcError) throw error;
             return evidence();

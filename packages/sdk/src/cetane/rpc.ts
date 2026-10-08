@@ -98,7 +98,10 @@ function accountValidationReverted(data: unknown): boolean {
 
 // Marks only a well-formed JSON-RPC error answer to eth_sendUserOperation,
 // captured from the wire by this owner. Transport failures, timeouts,
-// malformed bodies and caller-created errors never carry it.
+// malformed bodies and caller-created errors never carry it. Cetane 0.0.7's
+// conclusive SubmissionRejectedError is produced only inside its own ERC-4337
+// execution `submit` (its marker is not exported); OAAth signs and sends a
+// Kernel-prepared operation through this owner, so it keeps this adapter.
 const submissionRejections = new WeakSet<OaathRpcError>();
 /** True only when the bundler conclusively answered the one send with a JSON-RPC error. */
 export function isSubmissionRejection(error: unknown): error is OaathRpcError {
