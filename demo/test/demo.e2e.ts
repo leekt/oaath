@@ -468,8 +468,10 @@ async function withCredential(page: Page, credentials: readonly Protocol.WebAuth
 }
 
 async function click(page: Page, selector: string) {
-  const element = await page.waitForSelector(selector);
-  await element?.click();
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== "running"),
+  );
+  await page.locator(selector).click();
 }
 
 /** Each demo page's PARs wait until its popup is instrumented; delayed, never altered. */
@@ -579,7 +581,8 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     const root = await openDemo(`${demo}/`);
     let popup = await popupFrom(root, "#login");
     await click(popup, "::-p-text(Add signer)");
-    await click(popup, "::-p-text(E2E Wallet)");
+    await click(popup, "#add-wallet-method");
+    await click(popup, "[aria-label='Available wallets'] button::-p-text(E2E Wallet)");
     await click(popup, "::-p-text(Create account)");
     const owned = await popup.waitForSelector("button[aria-label^='Smart account 0x']");
     const address = /0x[0-9a-f]{40}/u.exec(
@@ -600,6 +603,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
 
     // 3. The root's Grant: one signature in the popup.
     popup = await popupFrom(root, "#grant");
+    await click(popup, "#wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
     await click(popup, `button[aria-label^='Smart account ${address}']`);
     await popup.waitForSelector("::-p-text(Approve and sign):not([disabled])");
@@ -635,6 +639,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await click(root, "#owner-prepare");
     await outcome(root, "owner-prepared");
     popup = await popupFrom(root, "#owner-approve:not([hidden])");
+    await click(popup, "#wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
     await click(popup, `button[aria-label='Smart account ${address}, Owner']`);
     await popup.waitForSelector("#operation-heading");
@@ -667,6 +672,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await rootPortal.setViewport({ width: 390, height: 844 });
     await installWallet(rootPortal);
     await rootPortal.goto(linkUrl ?? "");
+    await click(rootPortal, "#wallet-method");
     await click(rootPortal, "::-p-text(E2E Wallet)");
     await click(rootPortal, "::-p-text(Approve and sign)");
     await rootPortal.waitForSelector("::-p-text(Signer added)");
@@ -681,7 +687,8 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     // The member's Grant waits for the root.
     popup = await popupFrom(member, "#grant");
     await withCredential(popup, credentials);
-    await click(popup, "::-p-text(Passkey)");
+    await click(popup, "#passkey-method");
+    await click(popup, "[data-signer-kind=passkey]");
     await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
     await popup.waitForSelector("#ask-heading");
     await click(popup, "::-p-text(Send request to the owner)");
@@ -691,6 +698,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
 
     // The root approves from its accounts view with one signature.
     await rootPortal.goto(`${portal}/accounts`);
+    await click(rootPortal, "#wallet-method");
     await click(rootPortal, "::-p-text(E2E Wallet)");
     await click(rootPortal, `button[aria-label='Smart account ${address}']`);
     await rootPortal.waitForSelector("#requests-heading");
