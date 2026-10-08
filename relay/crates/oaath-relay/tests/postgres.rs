@@ -1433,3 +1433,98 @@ async fn a_submitted_revocation_is_observed_after_a_restart_and_never_resubmitte
     assert_eq!(calls(&shared, "eth_sendUserOperation"), 1);
     shutdown(h).await;
 }
+
+#[tokio::test]
+async fn keeps_a_clients_write_budget_across_restarts() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let request = || {
+        let mut request = post(
+            "/oauth/clients",
+            None,
+            Some(json!({ "client_name": "Dapp", "redirect_uris": [REDIRECT_URI] })),
+        );
+        request
+            .headers_mut()
+            .insert("x-oaath-client-ip", "203.0.113.9".parse().unwrap());
+        request
+    };
+    let process = |clock: Arc<TestClock>, pool| {
+        harness_on(
+            Arc::new(PostgresRelayStore::owning(pool)),
+            clock,
+            |options| options.writes_per_minute = Some(2),
+        )
+    };
+    let h = process(clock.clone(), fixture.pool().await);
+    h.send(request()).await.ok(201);
+    h.send(request()).await.ok(201);
+    shutdown(h).await;
+
+    let h = process(clock.clone(), fixture.pool().await);
+    assert_eq!(h.send(request()).await.status, 429);
+    clock.advance(60_000);
+    h.send(request()).await.ok(201);
+    shutdown(h).await;
+}
+
+#[tokio::test]
+async fn client_ownership_and_edits_survive_process_recreation() {
+    use support::grant::{Root, root_key, sign_in};
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let root = Root::Ecdsa(root_key());
+    let h = fixture.process(clock.clone()).await;
+    let (_, cookie) = sign_in(&h, &root).await;
+    let app = h
+        .send(portal_call(
+            "POST",
+            "/portal/clients",
+            Some(&cookie),
+            Some(json!({"client_name": "Durable app", "redirect_uris": [REDIRECT_URI]})),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    let id = text(&app, "client_id").to_owned();
+    shutdown(h).await;
+
+    let h = fixture.process(clock.clone()).await;
+    let (_, cookie) = sign_in(&h, &root).await;
+    assert_eq!(
+        *h.send(portal_call("GET", "/portal/clients", Some(&cookie), None))
+            .await
+            .ok(200),
+        json!({"clients": [app]})
+    );
+    let updated = h.send(portal_call("PUT", &format!("/portal/clients/{id}"), Some(&cookie), Some(json!({"client_name": "Updated app", "redirect_uris": ["https://new.example/cb"], "revocation_delivery": "dapp"})))).await.ok(200).clone();
+    shutdown(h).await;
+
+    let h = fixture.process(clock).await;
+    let (_, cookie) = sign_in(&h, &root).await;
+    assert_eq!(
+        *h.send(portal_call("GET", "/portal/clients", Some(&cookie), None))
+            .await
+            .ok(200),
+        json!({"clients": [updated]})
+    );
+    let stranger = Root::Ecdsa(k256::ecdsa::SigningKey::from_slice(&[0x66; 32]).unwrap());
+    let (_, other) = sign_in(&h, &stranger).await;
+    assert_eq!(
+        *h.send(portal_call("GET", "/portal/clients", Some(&other), None))
+            .await
+            .ok(200),
+        json!({"clients": []})
+    );
+    h.send(portal_call(
+        "PUT",
+        &format!("/portal/clients/{id}"),
+        Some(&other),
+        Some(json!({"client_name": "Wrong owner", "redirect_uris": [REDIRECT_URI]})),
+    ))
+    .await
+    .failure(E::NotFound);
+    shutdown(h).await;
+}

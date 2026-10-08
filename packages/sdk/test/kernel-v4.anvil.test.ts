@@ -105,7 +105,7 @@ afterAll(() => {
   it("deploys through the canonical factory and executes the exact prepared operation", async () => {
     const fixture = await readFixture();
     expect(fixture).toMatchObject({
-      version: "oaath.kernel-v4-runtime-artifacts/v3",
+      version: "oaath.kernel-v4-runtime-artifacts/v1",
       entryPoint: { version: "0.9" },
       ecdsaValidator: {
         repository: "https://github.com/zerodevapp/kernel",

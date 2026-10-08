@@ -78,6 +78,10 @@ pub enum RelayErrorCode {
     #[error("relay_chain_unavailable")]
     #[serde(rename = "relay_chain_unavailable")]
     ChainUnavailable,
+    /// An undeployed account cannot fund the estimated revocation operation.
+    #[error("relay_insufficient_funds")]
+    #[serde(rename = "relay_insufficient_funds")]
+    InsufficientFunds,
     /// The Grant's capability is durably invalidated.
     #[error("relay_capability_invalidated")]
     #[serde(rename = "relay_capability_invalidated")]
@@ -102,6 +106,10 @@ pub enum RelayErrorCode {
     #[error("relay_request_budget_exhausted")]
     #[serde(rename = "relay_request_budget_exhausted")]
     RequestBudgetExhausted,
+    /// This client's write budget for the route is spent for this window.
+    #[error("relay_rate_limited")]
+    #[serde(rename = "relay_rate_limited")]
+    RateLimited,
     /// An invariant the relay owns was violated.
     #[error("relay_internal")]
     #[serde(rename = "relay_internal")]
@@ -130,12 +138,14 @@ impl RelayErrorCode {
             Self::ApnsPayloadTooLarge => 500,
             Self::ApnsCredentialsInvalid => 500,
             Self::ChainUnavailable => 503,
+            Self::InsufficientFunds => 409,
             Self::CapabilityInvalidated => 409,
             Self::MembershipSuspended => 403,
             Self::AuthorizationPending => 400,
             Self::AccessDenied => 403,
             Self::CredentialRegistered => 409,
             Self::RequestBudgetExhausted => 429,
+            Self::RateLimited => 429,
             Self::Internal => 500,
         }
     }

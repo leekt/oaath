@@ -157,6 +157,7 @@ pub fn options(
         }),
         chain: None,
         bundler: None,
+        writes_per_minute: None,
     }
 }
 

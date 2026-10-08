@@ -53,7 +53,7 @@ it from the account's pending requests in the portal.
 | `GET /authorize?client_id&request_uri` | The portal page where the user chooses a signer and account, and the root reviews. |
 | `POST /oauth/token` | The code exchange. The id_token carries `sub` (the account), `oaath_account`, `oaath_accounts`, `signer` and `verified`; `authorization_details` carries the approved Grant or the signed operation. A member's Grant answers `400 authorization_pending` until the root decides, then the Grant or `access_denied`. |
 | `POST /oauth/revoke` | RFC 7009 revocation of the client's own access token. |
-| `GET /oauth/grants/{id}`, `POST /oauth/grants/{id}/invalidate` | A Grant's view and its off-chain capability invalidation, with the Grant's bearer token. |
+| `GET /oauth/grants/{id}`, `GET /oauth/grants/{id}/revocation`, `POST /oauth/grants/{id}/invalidate` | A Grant's view, its dapp-delivered revocation, and its off-chain capability invalidation. Each takes the Grant's bearer token or `Authorization: OAAth-Grant-Proof <issuedAt>.<signature>`: its own operator key's `personal_sign` over `OAAth grant request v1` with the grant, method, path and issue time (within 5 minutes). |
 
 The [relay README](relay/README.md) lists the portal API.
 

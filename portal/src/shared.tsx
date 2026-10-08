@@ -4,14 +4,17 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { ArrowLeft, Fingerprint, KeyRound, Plus, Trash2, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { encode } from "uqr";
 import { PortalApiError, portalApi } from "./api.js";
+import { Button } from "./components/ui/button.js";
 import { signInPasskey, signInUnknownPasskey, signInWallet } from "./session.js";
 import {
   type AnnouncedWallet,
   connectWallet,
   createPasskey,
+  forgetSigner,
   type NewSigner,
   type RememberedSigner,
   rememberedSigners,
@@ -60,15 +63,55 @@ export function SignerStep({
   /** Present inside an app's sign-in; a portal page has no app to return to. */
   onCancel?: () => void;
 }) {
-  const [signers] = useState(rememberedSigners);
-  const [adding, setAdding] = useState(false);
+  const [signers, setSigners] = useState(rememberedSigners);
+  const [forgetting, setForgetting] = useState<string | null>(null);
+  const [panel, setPanel] = useState<"methods" | "wallets" | "passkeys" | "add">("methods");
+  const [back, setBack] = useState(false);
+  const walletButton = useRef<HTMLButtonElement>(null);
+  const passkeyButton = useRef<HTMLButtonElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<"wallets" | "passkeys" | "add" | null>(null);
+  const [discovered, setDiscovered] = useState(false);
   const [wallets, setWallets] = useState<AnnouncedWallet[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
 
-  useEffect(() => heading.current?.focus(), []);
-  useEffect(() => (adding ? watchWallets(setWallets) : undefined), [adding]);
+  useEffect(() => {
+    if (panel === "methods" && returnFocus.current) {
+      const target =
+        returnFocus.current === "wallets"
+          ? walletButton
+          : returnFocus.current === "passkeys"
+            ? passkeyButton
+            : addButton;
+      target.current?.focus();
+    } else heading.current?.focus();
+  }, [panel]);
+  useEffect(() => {
+    const stop = watchWallets(setWallets);
+    // Give asynchronously announcing extensions time before showing an empty state.
+    const timer = setTimeout(() => setDiscovered(true), 600);
+    return () => {
+      stop();
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // This navigation never signs in, registers a signer, or reads an account.
+  function open(next: Exclude<typeof panel, "methods">) {
+    returnFocus.current = panel === "add" ? "add" : next;
+    setError(null);
+    setForgetting(null);
+    setBack(false);
+    setPanel(next);
+  }
+  function goBack() {
+    setError(null);
+    setForgetting(null);
+    setBack(true);
+    setPanel("methods");
+  }
 
   /** Every path ends in a fresh session for the chosen signer. */
   async function run(choose: () => Promise<RememberedSigner | null>) {
@@ -105,86 +148,201 @@ export function SignerStep({
     return { ...fields, signer_id: signerId, lastUsedAt: Date.now() };
   }
 
+  function forget(signerId: string) {
+    try {
+      setSigners(forgetSigner(signerId));
+      setForgetting(null);
+      heading.current?.focus();
+    } catch {
+      setError(
+        "This browser couldn't forget the signer. Check your browser's storage settings and try again.",
+      );
+    }
+  }
+
+  const saved = signers.filter(
+    (signer) => signer.kind === (panel === "wallets" ? "wallet" : "passkey"),
+  );
   return (
-    <section aria-labelledby="signer-heading">
-      <h1 id="signer-heading" ref={heading} tabIndex={-1}>
-        Sign in with…
-      </h1>
-      <p className="quiet">Your passkey or wallet confirms it's you. This approves nothing.</p>
-      {signers.length === 0 ? (
-        <p className="quiet">No signers on this browser yet. Add one to continue.</p>
-      ) : (
-        <ul className="choices">
-          {signers.map((signer) => (
-            <li key={signer.signer_id}>
-              <button
-                type="button"
-                className="choice"
-                disabled={busy}
-                onClick={() => run(() => signIn(signer))}
-              >
-                <span className={`badge badge-${signer.kind}`} aria-hidden="true" />
-                <span className="choice-text">
-                  <span className="choice-title">{signer.label}</span>
-                  <span className="choice-detail mono">{signerDetail(signer.profile)}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <button
-        type="button"
-        className="secondary"
-        aria-expanded={adding}
-        aria-controls="add-signer"
-        onClick={() => setAdding(!adding)}
-      >
-        Add signer
-      </button>
-      <p>
-        <button type="button" className="link" disabled={busy} onClick={() => run(recognise)}>
-          Use a passkey from another device or browser
-        </button>
-      </p>
-      {adding && (
-        <ul id="add-signer" className="choices options" aria-label="Signer options">
-          <li>
-            <button
-              type="button"
-              className="choice"
-              disabled={busy}
-              onClick={() => run(() => add(() => createPasskey(signers)))}
-            >
-              <span className="badge badge-passkey" aria-hidden="true" />
-              <span className="choice-text">
-                <span className="choice-title">New passkey</span>
-                <span className="choice-detail">Face, fingerprint or device PIN</span>
-              </span>
-            </button>
-          </li>
-          {wallets.length === 0 ? (
-            <li className="quiet">No browser wallet found.</li>
-          ) : (
-            wallets.map((wallet) => (
-              <li key={wallet.info.uuid}>
-                <button
-                  type="button"
-                  className="choice"
+    <section className="signer-step" aria-labelledby="signer-heading" aria-busy={busy}>
+      <div className="method-panel" key={panel} data-direction={back ? "back" : "forward"}>
+        {panel !== "methods" && (
+          <Button variant="ghost" className="back" disabled={busy} onClick={goBack}>
+            <ArrowLeft size={16} aria-hidden="true" /> Back
+          </Button>
+        )}
+        <h1 id="signer-heading" ref={heading} tabIndex={-1}>
+          {panel === "wallets"
+            ? "Choose your wallet"
+            : panel === "passkeys"
+              ? "Use a passkey"
+              : panel === "add"
+                ? "Add a signer"
+                : "How would you like to sign in?"}
+        </h1>
+        <p className="quiet">Your passkey or wallet confirms it's you. This approves nothing.</p>
+        {panel === "methods" && (
+          <>
+            <ul className="choices method-choices" aria-label="Sign-in methods">
+              <li>
+                <Button
+                  id="passkey-method"
+                  ref={passkeyButton}
+                  variant="choice"
                   disabled={busy}
-                  onClick={() => run(() => add(() => connectWallet(wallet), wallet))}
+                  onClick={() => open("passkeys")}
                 >
-                  <span className="badge badge-wallet" aria-hidden="true" />
+                  <Fingerprint size={24} aria-hidden="true" />
                   <span className="choice-text">
-                    <span className="choice-title">{wallet.info.name}</span>
-                    <span className="choice-detail">Sign in with your wallet</span>
+                    <span className="choice-title">Passkey</span>
+                    <span className="choice-detail">Your face, fingerprint or device PIN</span>
                   </span>
-                </button>
+                </Button>
               </li>
-            ))
-          )}
-        </ul>
-      )}
+              <li>
+                <Button
+                  id="wallet-method"
+                  ref={walletButton}
+                  variant="choice"
+                  disabled={busy}
+                  onClick={() => open("wallets")}
+                >
+                  <Wallet size={24} aria-hidden="true" />
+                  <span className="choice-text">
+                    <span className="choice-title">Wallet</span>
+                    <span className="choice-detail">Choose a browser wallet</span>
+                  </span>
+                </Button>
+              </li>
+            </ul>
+            {signers.length === 0 && (
+              <p className="quiet small">No signers on this browser yet. Add one to continue.</p>
+            )}
+            <Button ref={addButton} variant="ghost" disabled={busy} onClick={() => open("add")}>
+              <Plus size={16} aria-hidden="true" /> Add signer
+            </Button>
+          </>
+        )}
+        {(panel === "passkeys" || panel === "wallets") && saved.length > 0 && (
+          <ul className="choices" aria-label="Saved signers">
+            {saved.map((signer) => (
+              <li key={signer.signer_id} className="saved-signer">
+                <Button
+                  variant="choice"
+                  data-signer-kind={signer.kind}
+                  disabled={busy}
+                  onClick={() => run(() => signIn(signer))}
+                >
+                  <span className={`badge badge-${signer.kind}`} aria-hidden="true" />
+                  <span className="choice-text">
+                    <span className="choice-title">{signer.label}</span>
+                    <span className="choice-detail mono">{signerDetail(signer.profile)}</span>
+                  </span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="forget-signer"
+                  disabled={busy}
+                  aria-label={`Forget ${signer.label} from this browser`}
+                  onClick={() => setForgetting(signer.signer_id)}
+                >
+                  <Trash2 size={17} aria-hidden="true" />
+                </Button>
+                {forgetting === signer.signer_id && (
+                  <div className="forget-confirm">
+                    <p>
+                      Forget {signer.label} from this browser? This removes its saved entry only.
+                      Its account access and the passkey or wallet itself stay unchanged.
+                    </p>
+                    <div className="actions">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setForgetting(null);
+                          heading.current?.focus();
+                        }}
+                      >
+                        Keep signer
+                      </Button>
+                      <Button onClick={() => forget(signer.signer_id)}>Forget signer</Button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {(panel === "passkeys" || panel === "add") && (
+          <ul className="choices" aria-label="Add signer">
+            <li>
+              <Button
+                variant="choice"
+                disabled={busy}
+                onClick={() => run(() => add(() => createPasskey(signers)))}
+              >
+                <Fingerprint size={24} aria-hidden="true" />
+                <span className="choice-text">
+                  <span className="choice-title">New passkey</span>
+                  <span className="choice-detail">Save a passkey to this device</span>
+                </span>
+              </Button>
+            </li>
+            {panel === "add" && (
+              <li>
+                <Button
+                  id="add-wallet-method"
+                  variant="choice"
+                  disabled={busy}
+                  onClick={() => open("wallets")}
+                >
+                  <Wallet size={24} aria-hidden="true" />
+                  <span className="choice-text">
+                    <span className="choice-title">Wallet</span>
+                    <span className="choice-detail">Connect a browser wallet</span>
+                  </span>
+                </Button>
+              </li>
+            )}
+          </ul>
+        )}
+        {panel === "wallets" && (
+          <>
+            {saved.length > 0 && <h2 className="list-heading">Connect a wallet</h2>}
+            {wallets.length === 0 ? (
+              <p className="empty-state">
+                {discovered
+                  ? "No browser wallet found. Open your wallet's browser, or return to use a passkey."
+                  : "Looking for browser wallets…"}
+              </p>
+            ) : (
+              <ul className="choices" aria-label="Available wallets">
+                {wallets.map((wallet) => (
+                  <li key={wallet.info.uuid}>
+                    <Button
+                      variant="choice"
+                      disabled={busy}
+                      onClick={() => run(() => add(() => connectWallet(wallet), wallet))}
+                    >
+                      <Wallet size={24} aria-hidden="true" />
+                      <span className="choice-text">
+                        <span className="choice-title">{wallet.info.name}</span>
+                        <span className="choice-detail">Sign in with your wallet</span>
+                      </span>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+        {panel !== "wallets" && (
+          <p className="cross-device">
+            <Button variant="ghost" disabled={busy} onClick={() => run(recognise)}>
+              Use a passkey from another device or browser
+            </Button>
+          </p>
+        )}
+      </div>
       {busy && (
         <p className="quiet" aria-live="polite">
           Confirm the sign-in with your passkey or wallet…
@@ -208,24 +366,50 @@ export function CancelButton({ onCancel, disabled }: { onCancel: () => void; dis
   );
 }
 
-export function Frame({ children }: { children: React.ReactNode }) {
+export function Frame({
+  children,
+  variant = "auth",
+}: {
+  children: React.ReactNode;
+  variant?: "auth" | "workspace" | "landing";
+}) {
   return (
-    <>
-      <div className="masthead" aria-hidden="true">
-        <span className="mark">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle className="mark-bow" cx="7" cy="12" r="5.5" />
-            <circle className="mark-cut" cx="7" cy="12" r="2" />
-            <path
-              className="mark-blade"
-              d="M12 10.75h10v2.5h-1V16h-1.75v-2.75h-1.75v3.75h-1.75v-3.75H12z"
-            />
-          </svg>
-          OAAth
-        </span>
-      </div>
-      <main className="frame">{children}</main>
-    </>
+    <div className={`shell shell-${variant}`}>
+      <header className="masthead">
+        {variant === "auth" ? (
+          <span className="mark">
+            <KeyRound aria-hidden="true" /> OAAth
+          </span>
+        ) : (
+          <a className="mark" href="/" aria-label="OAAth home">
+            <KeyRound aria-hidden="true" /> OAAth
+          </a>
+        )}
+        {variant === "auth" ? (
+          <span className="quiet small">Account portal</span>
+        ) : (
+          <nav aria-label="Portal">
+            <a
+              href="/accounts"
+              aria-current={location.pathname === "/accounts" ? "page" : undefined}
+            >
+              Accounts
+            </a>
+            <a
+              href="/developers"
+              aria-current={location.pathname === "/developers" ? "page" : undefined}
+            >
+              Developers
+            </a>
+          </nav>
+        )}
+      </header>
+      <main className={`frame frame-${variant}`}>{children}</main>
+      <footer className="site-footer">
+        <span>OAAth · Your account, your choice.</span>
+        <span>Proof of concept</span>
+      </footer>
+    </div>
   );
 }
 

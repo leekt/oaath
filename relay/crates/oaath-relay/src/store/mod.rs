@@ -180,6 +180,10 @@ pub trait RelayTransaction: Send {
         account_id: &str,
     ) -> RelayResult<Option<AccountImportRecord>>;
 
+    /// Adds one write to `bucket`'s window starting at `window_start` and
+    /// answers the window's count; earlier windows are deleted.
+    async fn spend_write_budget(&mut self, bucket: &str, window_start: u64) -> RelayResult<u64>;
+
     async fn lock_revocation(&mut self, grant_id: &str) -> RelayResult<Option<RevocationRecord>>;
     /// Inserts revision 1, or replaces revision `n - 1` with `n`; `false`
     /// when another transition came first or the grant is unknown.
@@ -241,6 +245,10 @@ pub trait RelayTransaction: Send {
     ) -> RelayResult<Option<OAuthClientRecord>>;
     /// `false` when the client identifier already exists.
     async fn insert_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool>;
+    /// Only clients created by this signer; open registrations have no owner.
+    async fn list_oauth_clients(&mut self, signer_id: &str) -> RelayResult<Vec<OAuthClientRecord>>;
+    /// Updates metadata only when the immutable non-null owner still matches.
+    async fn update_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool>;
     async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>>;
     /// `false` when the identifier exists or the client is unknown.
     async fn insert_par(&mut self, record: &ParRecord) -> RelayResult<bool>;

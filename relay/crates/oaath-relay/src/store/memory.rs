@@ -52,6 +52,7 @@ struct Tables {
     account_imports: HashMap<String, Value>,
     pending_grants: HashMap<String, Value>,
     revocations: HashMap<String, Value>,
+    write_budgets: HashMap<(String, u64), u64>,
 }
 
 #[derive(Default)]
@@ -548,6 +549,16 @@ impl RelayTransaction for MemoryTransaction {
         )
     }
 
+    async fn spend_write_budget(&mut self, bucket: &str, window_start: u64) -> RelayResult<u64> {
+        let budgets = &mut self.staged.write_budgets;
+        budgets.retain(|(_, start), _| *start >= window_start);
+        let count = budgets
+            .entry((bucket.to_owned(), window_start))
+            .or_insert(0);
+        *count += 1;
+        Ok(*count)
+    }
+
     async fn lock_revocation(&mut self, grant_id: &str) -> RelayResult<Option<RevocationRecord>> {
         read(&self.staged.revocations, grant_id, RevocationRecord::parse)
     }
@@ -759,6 +770,36 @@ impl RelayTransaction for MemoryTransaction {
             &record.client_id,
             to_value(record),
         ))
+    }
+
+    async fn list_oauth_clients(&mut self, signer_id: &str) -> RelayResult<Vec<OAuthClientRecord>> {
+        let mut clients = Vec::new();
+        for value in self.staged.oauth_clients.values() {
+            let record = OAuthClientRecord::parse(value)?;
+            if record.owner_signer_id.as_deref() == Some(signer_id) {
+                clients.push(record);
+            }
+        }
+        clients.sort_by(|a, b| (a.created_at, &a.client_id).cmp(&(b.created_at, &b.client_id)));
+        Ok(clients)
+    }
+
+    async fn update_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool> {
+        let Some(existing) = self.lock_oauth_client(&record.client_id).await? else {
+            return Ok(false);
+        };
+        if existing.owner_signer_id.is_none() || existing.owner_signer_id != record.owner_signer_id
+        {
+            return Ok(false);
+        }
+        let mut updated = existing;
+        updated.client_name = record.client_name.clone();
+        updated.redirect_uris = record.redirect_uris.clone();
+        updated.revocation_delivery = record.revocation_delivery;
+        self.staged
+            .oauth_clients
+            .insert(record.client_id.clone(), to_value(&updated));
+        Ok(true)
     }
 
     async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>> {

@@ -374,6 +374,7 @@ ambiguous_transaction! {
     list_account_signers(id: &str) -> RelayResult<Vec<(registry::SignerRecord, registry::AccountSignerRecord)>>;
     delete_account_signers(account: &str, signer: &str) -> RelayResult<bool>;
     set_account_signer_status(account: &str, signer: &str, status: registry::MembershipStatus, at: u64) -> RelayResult<bool>;
+    spend_write_budget(bucket: &str, window: u64) -> RelayResult<u64>;
     lock_revocation(id: &str) -> RelayResult<Option<oaath_relay::revocation::RevocationRecord>>;
     save_revocation(r: &oaath_relay::revocation::RevocationRecord) -> RelayResult<bool>;
     lock_pending_grant(id: &str) -> RelayResult<Option<oauth::pending::PendingGrantRecord>>;
@@ -393,6 +394,8 @@ ambiguous_transaction! {
     remove_link_request(id: &str, at: u64) -> RelayResult<bool>;
     lock_oauth_client(id: &str) -> RelayResult<Option<oauth::records::OAuthClientRecord>>;
     insert_oauth_client(r: &oauth::records::OAuthClientRecord) -> RelayResult<bool>;
+    list_oauth_clients(id: &str) -> RelayResult<Vec<oauth::records::OAuthClientRecord>>;
+    update_oauth_client(r: &oauth::records::OAuthClientRecord) -> RelayResult<bool>;
     lock_par(id: &str) -> RelayResult<Option<oauth::records::ParRecord>>;
     insert_par(r: &oauth::records::ParRecord) -> RelayResult<bool>;
     lock_access_token(hash: &str) -> RelayResult<Option<oauth::records::AccessTokenRecord>>;

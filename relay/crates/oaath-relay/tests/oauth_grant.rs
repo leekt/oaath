@@ -387,8 +387,16 @@ fn bearer_post(path: &str, token: &str, body: Value) -> Request<Body> {
 /// One approved grant through the whole flow: PAR, prepare, root signature,
 /// decision, token.
 async fn approved_grant(h: &Harness, root: &Root) -> (String, String, Value, Value, Value) {
+    approved_grant_for(h, root, detail()).await
+}
+
+async fn approved_grant_for(
+    h: &Harness,
+    root: &Root,
+    detail: Value,
+) -> (String, String, Value, Value, Value) {
     let client_id = client(h).await;
-    let id = transaction_id(&par(h, &client_id, Some(&json!([detail()]))).await);
+    let id = transaction_id(&par(h, &client_id, Some(&json!([detail]))).await);
     let (signer_id, account, cookie) = register_root(h, root).await;
     let prepared = prepare(
         h,
@@ -615,6 +623,113 @@ async fn invalidates_off_chain_and_revokes_the_access_token() {
         .send(bearer_get(&format!("/oauth/grants/{other_id}"), &access))
         .await;
     assert_eq!(foreign.status, 401);
+}
+
+#[tokio::test]
+async fn the_grant_operator_proves_every_grant_scoped_call() {
+    let h = harness();
+    let operator = operator_key();
+    let (id, _, _, artifact, tokens) =
+        approved_grant_for(&h, &Root::Ecdsa(root_key()), operator_detail(&operator)).await;
+    let (other_id, _, _, _, other_tokens) =
+        approved_grant_for(&h, &Root::Ecdsa(root_key()), operator_detail(&operator)).await;
+    let hash = artifact["capabilityHash"].clone();
+    let read = format!("/oauth/grants/{id}");
+    let revocation = format!("/oauth/grants/{id}/revocation");
+    let invalidate = format!("/oauth/grants/{id}/invalidate");
+    let body = json!({ "capability_hash": hash });
+    let refused = |reply: Reply| {
+        assert_eq!(
+            (reply.status, reply.body["error"].clone()),
+            (401, json!("invalid_token"))
+        )
+    };
+
+    // Each route accepts the grant operator's proof for exactly that call (the
+    // revocation read itself is proven in tests/revocation.rs).
+    let proof = grant_proof(&operator, &id, "GET", &revocation, CLOCK_SECONDS - 60);
+    assert_ne!(
+        h.send(proved("GET", &revocation, &proof, None))
+            .await
+            .status,
+        401
+    );
+    let proof = grant_proof(&operator, &id, "GET", &read, CLOCK_SECONDS);
+    assert_eq!(
+        h.send(proved("GET", &revocation, &proof, None))
+            .await
+            .status,
+        401
+    );
+    let view = h
+        .send(proved(
+            "GET",
+            &read,
+            &grant_proof(&operator, &id, "GET", &read, CLOCK_SECONDS),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(view["status"], "approved");
+    assert!(view["enable"].is_object());
+
+    // Refused: no proof, another key, stale or future proofs, another grant's
+    // proof, another route's proof, another method, and a bearer token for
+    // another grant.
+    let stranger = SigningKey::from_slice(&[0x66; 32]).unwrap();
+    let post_proof = |key: &SigningKey, grant: &str, path: &str, at: u64| {
+        h.send(proved(
+            "POST",
+            &invalidate,
+            &grant_proof(key, grant, "POST", path, at),
+            Some(body.clone()),
+        ))
+    };
+    refused(h.send(post(&invalidate, None, Some(body.clone()))).await);
+    refused(post_proof(&stranger, &id, &invalidate, CLOCK_SECONDS).await);
+    refused(post_proof(&operator, &id, &invalidate, CLOCK_SECONDS - 301).await);
+    refused(post_proof(&operator, &id, &invalidate, CLOCK_SECONDS + 301).await);
+    refused(post_proof(&operator, &other_id, &invalidate, CLOCK_SECONDS).await);
+    refused(post_proof(&operator, &id, &read, CLOCK_SECONDS).await);
+    refused(
+        h.send(proved(
+            "POST",
+            &invalidate,
+            &grant_proof(&operator, &id, "GET", &invalidate, CLOCK_SECONDS),
+            Some(body.clone()),
+        ))
+        .await,
+    );
+    let other_access = text(&other_tokens, "access_token").to_owned();
+    refused(
+        h.send(bearer_post(&invalidate, &other_access, body.clone()))
+            .await,
+    );
+    assert_eq!(view_status(&h, &id, &tokens).await, "approved");
+
+    // The grant's own operator invalidates it, idempotently; the other grant stays.
+    let evidence = post_proof(&operator, &id, &invalidate, CLOCK_SECONDS)
+        .await
+        .ok(200)
+        .clone();
+    assert!(evidence["evidenceHash"].is_string());
+    assert_eq!(view_status(&h, &id, &tokens).await, "invalidated");
+    assert_eq!(
+        *post_proof(&operator, &id, &invalidate, CLOCK_SECONDS + 1)
+            .await
+            .ok(200),
+        evidence
+    );
+    assert_eq!(view_status(&h, &other_id, &other_tokens).await, "approved");
+}
+
+async fn view_status(h: &Harness, id: &str, tokens: &Value) -> Value {
+    let access = text(tokens, "access_token");
+    h.send(bearer_get(&format!("/oauth/grants/{id}"), access))
+        .await
+        .ok(200)["status"]
+        .clone()
 }
 
 #[tokio::test]

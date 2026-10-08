@@ -118,6 +118,7 @@ impl OAuthFailure {
             // RFC 8628 §3.5 polling answers, as CIBA uses them.
             RelayErrorCode::AuthorizationPending => Self::new(400, "authorization_pending", code),
             RelayErrorCode::AccessDenied => Self::new(400, "access_denied", code),
+            RelayErrorCode::RateLimited => Self::new(429, "temporarily_unavailable", code),
             RelayErrorCode::StoreUnavailable | RelayErrorCode::KmsUnavailable => {
                 Self::new(503, "temporarily_unavailable", code)
             }
@@ -223,6 +224,33 @@ pub async fn register_client(
     clock: &dyn RelayClock,
     body: &Map<String, Value>,
 ) -> OAuthResult<RegisteredClient> {
+    let record = capture_client(body, relay_now(clock)?)?;
+    let mut transaction = store.begin().await?;
+    let result = transaction
+        .insert_oauth_client(&record)
+        .await
+        .and_then(|inserted| inserted.then_some(()).ok_or(RelayErrorCode::Internal));
+    settle(transaction, result).await?;
+    Ok(record.into())
+}
+
+impl From<OAuthClientRecord> for RegisteredClient {
+    fn from(record: OAuthClientRecord) -> Self {
+        Self {
+            client_id: record.client_id,
+            client_name: record.client_name,
+            redirect_uris: record.redirect_uris,
+            token_endpoint_auth_method: "none",
+            revocation_delivery: record.revocation_delivery,
+        }
+    }
+}
+
+/// Shared metadata boundary for open registration and authenticated management.
+pub(crate) fn capture_client(
+    body: &Map<String, Value>,
+    created_at: u64,
+) -> OAuthResult<OAuthClientRecord> {
     let metadata = |code| OAuthFailure::new(400, "invalid_client_metadata", code);
     let allowed = [
         "client_name",
@@ -264,26 +292,14 @@ pub async fn register_client(
     if redirect_uris.is_empty() || redirect_uris.len() > MAX_REDIRECT_URIS {
         return Err(OAuthFailure::new(400, "invalid_redirect_uri", INVALID));
     }
-    let record = OAuthClientRecord {
+    Ok(OAuthClientRecord {
         version: OAUTH_CLIENT_RECORD_VERSION,
         client_id: client_identifier(),
         client_name: client_name.to_owned(),
         redirect_uris,
         revocation_delivery,
-        created_at: relay_now(clock)?,
-    };
-    let mut transaction = store.begin().await?;
-    let result = transaction
-        .insert_oauth_client(&record)
-        .await
-        .and_then(|inserted| inserted.then_some(()).ok_or(RelayErrorCode::Internal));
-    settle(transaction, result).await?;
-    Ok(RegisteredClient {
-        client_id: record.client_id,
-        client_name: record.client_name,
-        redirect_uris: record.redirect_uris,
-        token_endpoint_auth_method: "none",
-        revocation_delivery: record.revocation_delivery,
+        created_at,
+        owner_signer_id: None,
     })
 }
 

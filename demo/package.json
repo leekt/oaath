@@ -10,11 +10,8 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "deploy:check": "vite build && bunx wrangler@4.147.0 deploy --dry-run",
-    "test:e2e": "vite build && bun run --filter @oaath/portal build && OAATH_DEMO_E2E=1 vitest run"
+    "test": "vitest run"
   },
   "dependencies": {
     "@oaath/sdk": "workspace:*"

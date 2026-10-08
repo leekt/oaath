@@ -285,7 +285,7 @@ export function RequestPage({ requestId }: { requestId: string }) {
   return (
     <Frame>
       <header className="client">
-        <p className="eyebrow">App access request</p>
+        <p className="context-title">App access request</p>
       </header>
       {!signer && (
         <>

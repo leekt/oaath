@@ -258,10 +258,11 @@ async function handlePopup(message) {
     if (grant === null || (grant.state !== "active" && grant.state !== "revoking")) {
       return rpcError(-32000, "nothing to revoke for this origin");
     }
-    await grant.revoke();
+    // Local revocation first; then the issuer is asked once to invalidate it.
+    const { issuer } = await grant.revoke();
     realm.grant = null;
     realm.providers.clear();
-    return { ok: true, result: { state: grant.state } };
+    return { ok: true, result: { state: grant.state, issuer } };
   }
   return rpcError(-32601, "unknown popup command");
 }

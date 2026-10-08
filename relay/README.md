@@ -22,12 +22,20 @@ cargo run -p oaath-relay -- --create-schema   # with OAATH_POSTGRES_URL: create 
 | `OAATH_ID_TOKEN_KEY` | Path to the ES256 (P-256) PKCS#8 PEM id_token signing key; required with `OAATH_ISSUER`. |
 | `OAATH_ID_TOKEN_KID` | Optional `kid`; defaults to the key's RFC 7638 thumbprint. |
 | `OAATH_RPC_421614` | Optional JSON-RPC URL for chain 421614, read only to prove an imported account's root and to read a revocation's permission state; without it imports and revocations are refused. |
+| `OAATH_WRITES_PER_MINUTE` | Hard budget of public writes (client and signer registration, PAR, sign-in challenges) per route and client address per minute; default 30. The client address is the `x-oaath-client-ip` the portal Worker sets from `cf-connecting-ip`; requests without it come from inside the relay's network and are not budgeted. Over budget answers 429 `relay_rate_limited`. |
 | `OAATH_BUNDLER_421614` | Optional bundler JSON-RPC URL for chain 421614 (Pimlico: it uses `pimlico_getUserOperationGasPrice`). It estimates and submits root-signed revocations, one attempt each, within a budget of 32 bundler requests per revocation, and never resubmits. Without it no revocation is prepared. |
 
 `--create-schema` creates the current PostgreSQL schema and fails if any object
 already exists. There are no migrations: an older schema is recreated. Logs
 never include codes, artifacts, verifiers, tokens, keys, request bodies, the
 RPC URL or the bundler URL.
+
+The developer console at `/developers` uses `oaath.oauth-client-record/v1` and
+PostgreSQL schema `oaath.relay-postgres-schema/v1`. Deploy the relay and portal
+Worker together. Recreate older relay state and re-register clients (including
+Keyline); there is no in-place upgrade. Console apps belong to the signer that
+creates them. Public `/oauth/clients` registrations have no managing signer and
+cannot be claimed through the console.
 
 ## Endpoints
 
@@ -36,6 +44,7 @@ The portal API is same-origin only; a session is a cookie set by sign-in.
 
 | Route | Purpose |
 | --- | --- |
+| `GET /portal/clients`, `POST /portal/clients`, `PUT /portal/clients/{id}` | List, create and edit the authenticated signer's OAuth apps. Metadata uses the public registration shape; the owner is session-derived and immutable. |
 | `POST /portal/signers` | Register a wallet or passkey credential profile (idempotent). |
 | `GET /portal/signers/by-credential/{id}` | Identify a passkey's signer. |
 | `POST /portal/sessions/challenge`, `POST /portal/sessions`, `DELETE /portal/sessions` | Sign in with a SIWE signature or WebAuthn assertion; sign out. |

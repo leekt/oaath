@@ -2,7 +2,7 @@
  * The `oaath.taek.tech` edge: serves the portal SPA and forwards protocol and
  * portal API traffic to the relay through one Workers VPC service binding.
  *
- * - `/`, `/authorize`, `/link/{id}`, `/requests/{id}`, `/accounts`, `/assets/*`: built assets
+ * - `/`, `/authorize`, `/link/{id}`, `/requests/{id}`, `/accounts`, `/developers`, `/assets/*`: built assets
  *   (GET/HEAD only).
  * - `/oauth/*`, `/.well-known/*`: public OAuth surface; cross-site allowed with
  *   credential-free CORS, because dapps call it from their own origins.
@@ -13,7 +13,9 @@
  *   spend a per-IP `WRITE_LIMIT` budget before they reach the relay.
  *
  * Only an allow-list of request headers reaches the relay, so client-supplied
- * forwarding headers (`x-forwarded-*`, `forwarded`, `cf-*`) never do, and
+ * forwarding headers (`x-forwarded-*`, `forwarded`, `cf-*`, `x-oaath-client-ip`)
+ * never do. The Worker sets `x-oaath-client-ip` itself from `cf-connecting-ip`:
+ * the relay spends its hard per-client write budget on it. And
  * request bodies are capped before they are forwarded. The OAuth surface never
  * carries a cookie in either direction.
  *
@@ -141,6 +143,9 @@ async function forward(request: Request, url: URL, env: Env, cors: boolean): Pro
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  // Cloudflare's own client address; the client's copy was never copied above.
+  const client = request.headers.get("cf-connecting-ip");
+  if (client) headers.set("x-oaath-client-ip", client);
   let upstream: Response;
   try {
     // The binding pins the destination; this URL only sets the Host the relay sees.
@@ -201,6 +206,7 @@ export default {
       url.pathname === "/" ||
       url.pathname === "/authorize" ||
       url.pathname === "/accounts" ||
+      url.pathname === "/developers" ||
       /^\/(?:link|requests)\/[A-Za-z0-9._~-]{1,256}$/u.test(url.pathname);
     const asset = /^\/assets\/[A-Za-z0-9][\w.-]*\.(?:js|css|woff2?|svg|png|ico)$/u.test(
       url.pathname,
