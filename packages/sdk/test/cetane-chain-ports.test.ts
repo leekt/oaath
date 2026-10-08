@@ -136,7 +136,16 @@ describe("default viem chain ports", () => {
       },
     });
     const pending = chain!.reads.read({ type: "chain_id", chainId: 143 });
-    await expect(chain!.reads.read({ type: "chain_id", chainId: 143 })).rejects.toMatchObject({
+    // Duplicate chain checks share the request. A distinct pool still needs a
+    // separate wire slot and must respect the instance-wide concurrency bound.
+    const route = chain!.routes![0]!;
+    if (route.kind !== "erc4337-bundler") throw new Error("missing bundler route");
+    await expect(
+      route.bundler.probe({
+        chainId: 143,
+        entryPoint: KERNEL_V4_ENTRY_POINT_V09,
+      }),
+    ).rejects.toMatchObject({
       code: "oaath_rpc_concurrency_exceeded",
     });
     await expect(pending).rejects.toMatchObject({ code: "oaath_rpc_unavailable" });

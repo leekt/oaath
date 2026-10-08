@@ -542,8 +542,16 @@ Submissions, estimates, and paymaster stages make one attempt. A send timeout or
 ambiguous response remains uncertain and is never resubmitted. The default
 route uses the bundler, with no EOA fee payer or replacement-transaction indexer.
 
-The shared lifetime budget counts chain checks and retries across all configured
-chains; exhaustion throws `OaathRpcError` with `oaath_rpc_budget_exhausted`.
+Identical concurrent reads within one pool share a request and its bounded
+retry sequence. Concurrent endpoint chain checks also share a request. Entries
+are discarded on success or failure: sequential reads, including canonicality
+rechecks, always fetch fresh evidence. Sends, estimates, and paymaster requests
+are never combined. Pools with different chains, endpoints, or headers remain
+independent.
+
+The shared lifetime budget counts actual wire requests, including chain checks
+and retries across all configured chains; exhaustion throws `OaathRpcError` with
+`oaath_rpc_budget_exhausted`. Identical in-flight reads share one concurrency slot.
 Concurrency above the limit fails with `oaath_rpc_concurrency_exceeded` rather
 than queueing. Recreating ports explicitly starts a new budget; recover existing
 operations for observation instead of repeating sends. Errors omit URLs,

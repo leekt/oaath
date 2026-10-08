@@ -102,6 +102,16 @@ function unavailable(cause?: unknown): OaathRpcError {
   transient.add(error);
   return error;
 }
+function copyRpcError(error: OaathRpcError): OaathRpcError {
+  const copy = new OaathRpcError(error.code, error.rpcCode, error.diagnostic, {
+    cause: error.cause,
+  });
+  if (error.failure)
+    Object.defineProperty(copy, "failure", { value: error.failure, enumerable: true });
+  if (accountValidationRejections.has(error)) accountValidationRejections.add(copy);
+  if (transient.has(error)) transient.add(copy);
+  return copy;
+}
 export function invalid(): never {
   throw new OaathRpcError("oaath_rpc_config_invalid");
 }
@@ -164,7 +174,7 @@ export interface CetaneChainPortOptions {
   readonly timeoutMs?: number;
   /** Hard instance-lifetime budget across every chain, including chain checks and retries. */
   readonly maxRequests?: number;
-  /** Excess concurrent requests fail immediately; there is no unbounded queue. */
+  /** Bounds wire requests; identical in-flight reads share a slot. Excess requests fail immediately. */
   readonly maxConcurrency?: number;
   readonly fetch?: (request: Request) => Promise<Response>;
 }
@@ -174,6 +184,23 @@ export type RpcRequest = (
   params?: readonly unknown[],
   retry?: boolean,
 ) => Promise<unknown>;
+
+// Only side-effect-free reads may share a request. Estimates and sponsorship
+// can allocate provider resources, and submission belongs to its own owner.
+const COALESCED_READS = new Set([
+  "eth_chainId",
+  "eth_getCode",
+  "eth_getStorageAt",
+  "eth_call",
+  "eth_gasPrice",
+  "eth_maxPriorityFeePerGas",
+  "eth_feeHistory",
+  "eth_getBlockByNumber",
+  "eth_getTransactionByHash",
+  "eth_getTransactionReceipt",
+  "eth_supportedEntryPoints",
+  "eth_getUserOperationReceipt",
+]);
 
 /** One budget and concurrency owner shared by all pools in one configuration. */
 export function rpcOwner(input: CetaneChainPortOptions) {
@@ -343,9 +370,22 @@ export function rpcOwner(input: CetaneChainPortOptions) {
       }
       headers.set("content-type", "application/json");
       const checked = new Set<string>();
+      // Pool-local identity includes endpoints, chain binding and headers. Keep
+      // only pending work: later reads must still detect new blocks and reorgs.
+      const pendingReads = new Map<string, Promise<unknown>>();
+      const pendingChainChecks = new Map<string, Promise<unknown>>();
+      function readChain(endpoint: string): Promise<unknown> {
+        let pending = pendingChainChecks.get(endpoint);
+        if (!pending) {
+          pending = once(endpoint, "eth_chainId", [], headers).finally(() => {
+            pendingChainChecks.delete(endpoint);
+          });
+          pendingChainChecks.set(endpoint, pending);
+        }
+        return pending;
+      }
       let preferred = 0;
-      return async (method, params = [], retry = true) => {
-        if (!methods.includes(method)) return invalid();
+      async function request(method: string, params: readonly unknown[], retry: boolean) {
         const start = preferred;
         for (let attempt = 0; ; attempt += 1) {
           const index = (start + attempt) % endpoints.length;
@@ -353,11 +393,14 @@ export function rpcOwner(input: CetaneChainPortOptions) {
           if (!endpoint) return invalid();
           try {
             if (verifyChain && method !== "eth_chainId" && !checked.has(endpoint)) {
-              if (quantity(await once(endpoint, "eth_chainId", [], headers)) !== BigInt(chainId))
+              if (quantity(await readChain(endpoint)) !== BigInt(chainId))
                 throw new OaathRpcError("oaath_rpc_wrong_chain");
               checked.add(endpoint);
             }
-            const result = await once(endpoint, method, params, headers);
+            const result =
+              method === "eth_chainId" && params.length === 0
+                ? await readChain(endpoint)
+                : await once(endpoint, method, params, headers);
             if (verifyChain && method === "eth_chainId" && quantity(result) !== BigInt(chainId))
               throw new OaathRpcError("oaath_rpc_wrong_chain");
             if (verifyChain && method === "eth_chainId") checked.add(endpoint);
@@ -380,16 +423,45 @@ export function rpcOwner(input: CetaneChainPortOptions) {
                       : method === "eth_getUserOperationReceipt"
                         ? "receipt"
                         : undefined;
-              if (stage && error instanceof OaathRpcError)
-                Object.defineProperty(error, "failure", {
+              if (stage && error instanceof OaathRpcError) {
+                // A failed chain check can be shared across different stages.
+                // Give each request its own classification and retain the
+                // captured account-validation marker only when it already exists.
+                const failure = copyRpcError(error);
+                Object.defineProperty(failure, "failure", {
                   value: classifyUserOperationError({ stage, error }),
                   enumerable: true,
                 });
+                throw failure;
+              }
               throw error;
             }
             checked.delete(endpoint);
             await retryDelay();
           }
+        }
+      }
+      return async (method, params = [], retry = true) => {
+        if (!methods.includes(method)) return invalid();
+        if (signal?.aborted) throw aborted();
+        if (!COALESCED_READS.has(method)) return request(method, params, retry);
+        // Capture the exact wire parameters before a chain check can suspend.
+        // A caller mutating its input cannot change another reader's request.
+        const encoded = JSON.stringify(params);
+        const key = JSON.stringify([method, encoded, retry]);
+        let pending = pendingReads.get(key);
+        if (!pending) {
+          pending = request(method, JSON.parse(encoded), retry).finally(() => {
+            pendingReads.delete(key);
+          });
+          pendingReads.set(key, pending);
+        }
+        // JSON results previously belonged to one caller. Preserve that
+        // isolation, including nested arrays, when sharing a network response.
+        try {
+          return structuredClone(await pending);
+        } catch (error) {
+          throw error instanceof OaathRpcError ? copyRpcError(error) : error;
         }
       };
     },
