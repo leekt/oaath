@@ -17,7 +17,7 @@
     "DEMO_ORIGIN": "https://oaath-demo.taek.tech",
     "OAATH_ISSUER": "https://oaath.taek.tech",
     // Registered with POST https://oaath.taek.tech/oauth/clients; re-register when the relay DB is recreated.
-    "OAATH_CLIENT_ID": "c3793db9e777c101a8dbd27e5e51fc9f8501fbdc",
+    "OAATH_CLIENT_ID": "291d026db8aaa4ee1bf64b98241ef080ec26e5b1",
     "EXPLORER_TX_URL": "https://sepolia.arbiscan.io/tx/",
     "CHAIN_RPC_URL": "https://sepolia-rollup.arbitrum.io/rpc",
     "BUNDLER_URL": "https://public.pimlico.io/v2/421614/rpc",

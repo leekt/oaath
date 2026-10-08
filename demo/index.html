@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OAAth demo</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>OAAth demo</h1>
+      <p class="quiet">
+        A small dapp on its own origin that uses <a id="portal-link" href="https://oaath.taek.tech">OAAth</a> for
+        login and scoped permissions on Arbitrum Sepolia. Each step below is one SDK call.
+      </p>
+      <p id="status" class="quiet">Loading…</p>
+
+      <section id="s-join" hidden>
+        <h2>You're invited</h2>
+        <p>
+          You were invited to join account <code id="join-account"></code>. Click
+          <strong>Request to join</strong>. In the OAAth window: <em>Add signer</em> →
+          <em>New passkey</em>, then <em>Link to an existing account</em>, paste the address
+          above, and <em>Request access</em>. Send the link it shows to the account owner. Once
+          they approve, pick the account in the same window.
+        </p>
+        <button id="copy-join" type="button">Copy address</button>
+        <button id="join" type="button" disabled>Request to join</button>
+      </section>
+
+      <section id="s-login">
+        <h2>1. Login with OAAth</h2>
+        <p>Sign in with a passkey or wallet. Login is identity only; it grants nothing.</p>
+        <button id="login" type="button" disabled>Login with OAAth</button>
+        <pre id="identity" aria-live="polite"></pre>
+      </section>
+
+      <section id="s-invite" hidden>
+        <h2>2. Invite a member</h2>
+        <p>
+          Open this link in another browser or profile. The invitee adds a new passkey and asks to
+          join your account; you approve in OAAth at the link they send you (or under
+          <a id="accounts-link" href="https://oaath.taek.tech/accounts" target="_blank" rel="noopener">your accounts</a>).
+        </p>
+        <pre id="invite-url"></pre>
+        <button id="copy-invite" type="button">Copy invite link</button>
+      </section>
+
+      <section id="s-grant">
+        <h2>3. Grant a session key</h2>
+        <p>
+          This page asks for a session key that may make <strong>zero-value</strong> calls with
+          selector <code id="selector"></code> to <code id="target"></code>, at most twice per
+          chain, for one hour. An account owner approves it in the popup with one signature; a
+          member's request waits for the owner.
+        </p>
+        <button id="grant" type="button" disabled>Request permission</button>
+        <button id="redeem" type="button" hidden>Check approval</button>
+        <pre id="grant-state" aria-live="polite"></pre>
+      </section>
+
+      <section id="s-send" hidden>
+        <h2>4. Send a test call</h2>
+        <p>
+          Account <code id="account"></code>. The first operation deploys the account and enables
+          the permission. It is sent once; if an answer is lost the page only observes.
+        </p>
+        <p id="sponsored" hidden>Gas is sponsored by the demo's paymaster.</p>
+        <div id="funding" hidden>
+          <p id="amount"></p>
+          <button id="balance" type="button">Check balance</button>
+          <span id="balance-value"></span>
+        </div>
+        <button id="send" type="button">Send test call</button>
+        <pre id="operation" aria-live="polite"></pre>
+      </section>
+
+      <section id="s-owner" hidden>
+        <h2>5. Owner operation</h2>
+        <p>
+          The account owner approves one exact operation (the same zero-value call) in OAAth; this
+          page submits it. The account pays its own gas here.
+        </p>
+        <button id="owner-prepare" type="button">Prepare operation</button>
+        <button id="owner-approve" type="button" hidden>Approve in OAAth</button>
+        <pre id="owner-result" aria-live="polite"></pre>
+      </section>
+
+      <section id="s-revoke">
+        <h2>6. Revoke</h2>
+        <p>
+          Remove this app's access in
+          <a id="revoke-link" href="https://oaath.taek.tech/accounts" target="_blank" rel="noopener">OAAth → accounts</a>: open
+          the account, find this app's access, and revoke (or invalidate) it on chain.
+        </p>
+      </section>
+
+      <h2>Log</h2>
+      <pre id="result" aria-live="polite"></pre>
+      <pre id="log"></pre>
+    </main>
+    <script type="module" src="/src/app.ts"></script>
+  </body>
+</html>

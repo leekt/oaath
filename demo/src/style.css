@@ -1,0 +1,47 @@
+body {
+  font:
+    16px / 1.5 system-ui,
+    sans-serif;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1rem 1rem 3rem;
+  color: #1b1b1f;
+  background: #fafafa;
+}
+section {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.25rem 1rem 1rem;
+  margin: 1rem 0;
+}
+section[hidden] {
+  display: none;
+}
+code,
+pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 0.875rem;
+}
+pre {
+  background: #f2f2f4;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+pre:empty {
+  display: none;
+}
+button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  margin: 0.25rem 0.5rem 0.25rem 0;
+}
+.quiet {
+  color: #555;
+  font-size: 0.9rem;
+}
+#log {
+  max-height: 16rem;
+  overflow-y: auto;
+}
