@@ -887,7 +887,8 @@ pub async fn sign_revocation(
     )
 }
 
-/// `GET /oauth/grants/{id}/revocation`: the stored status, read without
+/// `GET /oauth/grants/{id}/revocation` (by the grant's bearer token or operator
+/// proof): the stored status, read without
 /// spending any chain or bundler budget. A dapp that registered
 /// `revocation_delivery: "dapp"` reads its root-signed uninstall here; it can
 /// only remove the grant's own permission.

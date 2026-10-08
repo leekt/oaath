@@ -89,6 +89,7 @@ function worker() {
             closed: 0,
             requests: 0,
             resume: async () => null,
+            redeemPending: async () => null,
             close: async () => {
               connection.closed++;
             },

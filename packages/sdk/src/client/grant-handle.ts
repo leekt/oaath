@@ -626,6 +626,14 @@ export function grantProviderPort(handle: unknown): Readonly<OaathGrantProviderP
   return port;
 }
 
+/**
+ * A realm's wrapper around a genuine handle (the OAuth realm's revoke) resolves
+ * to the same provider port, so it stays usable wherever the handle is.
+ */
+export function aliasGrantHandle(handle: unknown, alias: object): void {
+  GRANT_PROVIDER_PORTS.set(alias, grantProviderPort(handle));
+}
+
 export interface CreateGrantHandleInput {
   readonly binding: Readonly<OaathBinding>;
   readonly request: Readonly<PermissionRequest>;

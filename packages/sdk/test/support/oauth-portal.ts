@@ -81,7 +81,11 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
   let rootDecision: "approve" | "reject" | null = null;
   let redeemed = false;
   const tokenCalls = { count: 0 };
-  const invalidations: { grantId: string; body: Record<string, unknown> }[] = [];
+  const invalidations: {
+    grantId: string;
+    body: Record<string, unknown>;
+    authorization: string | null;
+  }[] = [];
 
   /** The portal's decision for one authorization URL, as its redirect query. */
   async function authorize(href: string): Promise<Record<string, string>> {
@@ -210,6 +214,7 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
       invalidations.push({
         grantId: decodeURIComponent(invalidating[1] ?? ""),
         body: JSON.parse(String(init?.body)),
+        authorization: new Headers(init?.headers).get("authorization"),
       });
       if (options.invalidation === "down") throw new TypeError("fetch failed");
       return json(

@@ -8,7 +8,8 @@ import { IDBFactory } from "fake-indexeddb";
 import { getAddress, recoverMessageAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { issuerInvalidationMessage } from "../src/client/oauth-realm.js";
+import { grantProviderPort } from "../src/client/grant-handle.js";
+import { grantRequestMessage } from "../src/client/oauth-realm.js";
 import { createOAAth } from "../src/index.js";
 import { createChainFixture, permissionInput } from "./support/browser.js";
 import { installOAuthPortal, ORIGIN, type PortalBehaviour } from "./support/oauth-portal.js";
@@ -151,19 +152,24 @@ describe("revoking an OAuth-approved Grant", () => {
 
   it("asks the issuer once, proven by the Grant's own session key", async () => {
     const { realm, grant, invalidations, pars } = await granted();
+    // The wrapped handle is still genuine wherever a Grant handle is required.
+    expect(grantProviderPort(grant).grantId).toBe("par-1");
     const result = await grant.revoke();
     expect(result).toEqual({ issuer: "invalidated" });
     expect(grant.state === "revoking" || grant.state === "revoked").toBe(true);
     expect(invalidations).toHaveLength(1);
     const [sent] = invalidations;
     const [detail] = JSON.parse([...pars.values()][0]!.get("authorization_details")!);
-    const proof = sent!.body.operator_proof as { issued_at: number; signature: `0x${string}` };
-    const message = issuerInvalidationMessage(
+    expect(Object.keys(sent!.body)).toEqual(["capability_hash"]);
+    const [, issuedAt, signature] =
+      /^OAAth-Grant-Proof (\d+)\.(0x[0-9a-f]+)$/u.exec(sent!.authorization ?? "") ?? [];
+    const message = grantRequestMessage(
       sent!.grantId,
-      sent!.body.capability_hash as string,
-      proof.issued_at,
+      "POST",
+      `/oauth/grants/${sent!.grantId}/invalidate`,
+      Number(issuedAt),
     );
-    expect(await recoverMessageAddress({ message, signature: proof.signature })).toBe(
+    expect(await recoverMessageAddress({ message, signature: signature as `0x${string}` })).toBe(
       getAddress(detail.signer.address),
     );
     await realm.close();
