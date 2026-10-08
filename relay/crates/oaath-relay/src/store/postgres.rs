@@ -6,7 +6,7 @@
 //! as `relay_state_ambiguous`: the caller neither assumes the transition
 //! applied nor retries it.
 //!
-//! One current schema, `oaath.relay-postgres-schema/v1`. There is no
+//! One current schema, `oaath.relay-postgres-schema/v2`. There is no
 //! migration runner: an obsolete database is dropped and recreated.
 
 use async_trait::async_trait;
@@ -31,7 +31,7 @@ use crate::revocation::{RevocationDelivery, RevocationRecord};
 use crate::session::{PortalChallengeRecord, PortalSessionRecord};
 use oaath_protocol::capture::parse_json;
 
-pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v1";
+pub const RELAY_POSTGRES_SCHEMA_VERSION: &str = "oaath.relay-postgres-schema/v2";
 
 const MAX_SAFE_INTEGER: &str = "9007199254740991";
 
@@ -193,10 +193,11 @@ pub fn schema_statements() -> Vec<String> {
     ON oaath_account_signer_v1 (account_id, signer_id, link_id) WHERE link_id IS NOT NULL"
             .to_owned(),
         format!(
-            "CREATE TABLE oauth_client_v1 (
+            "CREATE TABLE oauth_client_v2 (
     client_id text PRIMARY KEY,
     record_version text NOT NULL,
     client_name text NOT NULL,
+    owner_signer_id text REFERENCES oaath_signer_v1 (signer_id),
     redirect_uris text NOT NULL,
     revocation_delivery text NOT NULL CHECK (revocation_delivery IN ('relay', 'dapp')),
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
@@ -206,7 +207,7 @@ pub fn schema_statements() -> Vec<String> {
             "CREATE TABLE oauth_par_v1 (
     par_id text PRIMARY KEY,
     record_version text NOT NULL,
-    client_id text NOT NULL REFERENCES oauth_client_v1 (client_id),
+    client_id text NOT NULL REFERENCES oauth_client_v2 (client_id),
     redirect_uri text NOT NULL,
     code_challenge text NOT NULL,
     state text,
@@ -221,7 +222,7 @@ pub fn schema_statements() -> Vec<String> {
             "CREATE TABLE oauth_access_token_v1 (
     token_hash text PRIMARY KEY,
     record_version text NOT NULL,
-    client_id text NOT NULL REFERENCES oauth_client_v1 (client_id),
+    client_id text NOT NULL REFERENCES oauth_client_v2 (client_id),
     request_id text NOT NULL REFERENCES oaath_relay_authorization_request_v1 (request_id),
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max}),
     expires_at bigint NOT NULL CHECK (expires_at >= created_at AND expires_at <= {max}),
@@ -622,6 +623,7 @@ fn client_record(row: &PgRow) -> RelayResult<OAuthClientRecord> {
             ("version", "record_version", false),
             ("clientId", "client_id", false),
             ("clientName", "client_name", false),
+            ("ownerSignerId", "owner_signer_id", false),
             ("revocationDelivery", "revocation_delivery", false),
             ("createdAt", "created_at", true),
         ],
@@ -1544,8 +1546,8 @@ impl RelayTransaction for PostgresTransaction {
     ) -> RelayResult<Option<OAuthClientRecord>> {
         self.first(
             sqlx::query(
-                "SELECT client_id, record_version, client_name, redirect_uris, \
-                 revocation_delivery, created_at FROM oauth_client_v1 WHERE client_id = $1 FOR UPDATE",
+                "SELECT client_id, record_version, client_name, owner_signer_id, redirect_uris, \
+                 revocation_delivery, created_at FROM oauth_client_v2 WHERE client_id = $1 FOR UPDATE",
             )
             .bind(client_id),
             client_record,
@@ -1558,9 +1560,9 @@ impl RelayTransaction for PostgresTransaction {
             serde_json::to_string(&record.redirect_uris).map_err(|_| RelayErrorCode::Internal)?;
         self.applied(
             sqlx::query(
-                "INSERT INTO oauth_client_v1 (\
+                "INSERT INTO oauth_client_v2 (\
                  client_id, record_version, client_name, redirect_uris, revocation_delivery, \
-                 created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+                 created_at, owner_signer_id) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
             )
             .bind(&record.client_id)
             .bind(record.version)
@@ -1570,9 +1572,24 @@ impl RelayTransaction for PostgresTransaction {
                 RevocationDelivery::Relay => "relay",
                 RevocationDelivery::Dapp => "dapp",
             })
-            .bind(bigint(record.created_at)),
+            .bind(bigint(record.created_at))
+            .bind(&record.owner_signer_id),
         )
         .await
+    }
+
+    async fn list_oauth_clients(&mut self, signer_id: &str) -> RelayResult<Vec<OAuthClientRecord>> {
+        let rows = sqlx::query("SELECT client_id, record_version, client_name, owner_signer_id, redirect_uris, revocation_delivery, created_at FROM oauth_client_v2 WHERE owner_signer_id = $1 ORDER BY created_at, client_id")
+            .bind(signer_id).fetch_all(&mut *self.transaction).await.map_err(|_| RelayErrorCode::StoreUnavailable)?;
+        rows.iter().map(client_record).collect()
+    }
+
+    async fn update_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool> {
+        let uris =
+            serde_json::to_string(&record.redirect_uris).map_err(|_| RelayErrorCode::Internal)?;
+        self.applied(sqlx::query("UPDATE oauth_client_v2 SET client_name = $3, redirect_uris = $4, revocation_delivery = $5 WHERE client_id = $1 AND owner_signer_id = $2")
+            .bind(&record.client_id).bind(&record.owner_signer_id).bind(&record.client_name).bind(uris)
+            .bind(match record.revocation_delivery { RevocationDelivery::Relay => "relay", RevocationDelivery::Dapp => "dapp" })).await
     }
 
     async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>> {
@@ -1596,7 +1613,7 @@ impl RelayTransaction for PostgresTransaction {
                  par_id, record_version, client_id, redirect_uri, code_challenge, state, nonce, \
                  scope, authorization_details, created_at, expires_at) \
                  SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11 \
-                 WHERE EXISTS (SELECT 1 FROM oauth_client_v1 WHERE client_id = $3) \
+                 WHERE EXISTS (SELECT 1 FROM oauth_client_v2 WHERE client_id = $3) \
                  ON CONFLICT DO NOTHING",
             )
             .bind(&record.par_id)
@@ -1637,7 +1654,7 @@ impl RelayTransaction for PostgresTransaction {
                 "INSERT INTO oauth_access_token_v1 (\
                  token_hash, record_version, client_id, request_id, created_at, expires_at, \
                  revoked_at) SELECT $1, $2, $3, $4, $5, $6, NULL \
-                 WHERE EXISTS (SELECT 1 FROM oauth_client_v1 WHERE client_id = $3) \
+                 WHERE EXISTS (SELECT 1 FROM oauth_client_v2 WHERE client_id = $3) \
                  AND EXISTS (SELECT 1 FROM oaath_relay_authorization_request_v1 \
                  WHERE request_id = $4) ON CONFLICT DO NOTHING",
             )

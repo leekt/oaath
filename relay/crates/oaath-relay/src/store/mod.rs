@@ -245,6 +245,10 @@ pub trait RelayTransaction: Send {
     ) -> RelayResult<Option<OAuthClientRecord>>;
     /// `false` when the client identifier already exists.
     async fn insert_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool>;
+    /// Only clients created by this signer; open registrations have no owner.
+    async fn list_oauth_clients(&mut self, signer_id: &str) -> RelayResult<Vec<OAuthClientRecord>>;
+    /// Updates metadata only when the immutable non-null owner still matches.
+    async fn update_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool>;
     async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>>;
     /// `false` when the identifier exists or the client is unknown.
     async fn insert_par(&mut self, record: &ParRecord) -> RelayResult<bool>;

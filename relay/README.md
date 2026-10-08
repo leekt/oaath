@@ -30,6 +30,13 @@ already exists. There are no migrations: an older schema is recreated. Logs
 never include codes, artifacts, verifiers, tokens, keys, request bodies, the
 RPC URL or the bundler URL.
 
+The developer console at `/developers` uses `oaath.oauth-client-record/v2` and
+PostgreSQL schema `oaath.relay-postgres-schema/v2`. Deploy the relay and portal
+Worker together. Recreate older relay state and re-register clients (including
+Keyline); there is no in-place upgrade. Console apps belong to the signer that
+creates them. Public `/oauth/clients` registrations have no managing signer and
+cannot be claimed through the console.
+
 ## Endpoints
 
 The OAuth surface is listed in the [repository README](../README.md#dapp-api).
@@ -37,6 +44,7 @@ The portal API is same-origin only; a session is a cookie set by sign-in.
 
 | Route | Purpose |
 | --- | --- |
+| `GET /portal/clients`, `POST /portal/clients`, `PUT /portal/clients/{id}` | List, create and edit the authenticated signer's OAuth apps. Metadata uses the public registration shape; the owner is session-derived and immutable. |
 | `POST /portal/signers` | Register a wallet or passkey credential profile (idempotent). |
 | `GET /portal/signers/by-credential/{id}` | Identify a passkey's signer. |
 | `POST /portal/sessions/challenge`, `POST /portal/sessions`, `DELETE /portal/sessions` | Sign in with a SIWE signature or WebAuthn assertion; sign out. |

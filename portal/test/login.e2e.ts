@@ -2997,3 +2997,114 @@ describe("an owner operation approved by the account root and submitted by the d
     await dappPage.close();
   });
 });
+
+describe("authenticated developer console", () => {
+  it("creates and edits its own OAuth app, requires fresh sign-in after reload, and applies exact redirects", async () => {
+    const device = await browser.createBrowserContext();
+    const page = await device.newPage();
+    try {
+      await installWallet(page);
+      async function replaceText(selector: string, text: string) {
+        await page.$eval(selector, (node) => (node as HTMLInputElement).select());
+        await page.keyboard.press("Backspace");
+        await page.type(selector, text);
+      }
+      const reads: string[] = [];
+      page.on("request", (request) => {
+        if (new URL(request.url()).pathname === "/portal/clients" && request.method() === "GET")
+          reads.push(request.url());
+      });
+      await page.goto(`${portal}/developers`);
+      await page.waitForSelector("#wallet-method");
+      expect(reads).toHaveLength(0);
+      await capture(page, "console-signin");
+      await click(page, "#wallet-method");
+      await click(page, "::-p-text(E2E Wallet)");
+      await page.waitForSelector("::-p-text(Your first connection starts here)");
+      await capture(page, "console-empty");
+      await click(page, "button::-p-text(Create app)");
+      await page.type("#client-name", "Local browser test app");
+      await page.type("#client-redirects", "https://example.test/callback");
+      await capture(page, "console-create");
+      await click(page, "button[type=submit]");
+      await page.waitForSelector(".client-row");
+      await capture(page, "console-apps");
+      await click(page, ".client-row");
+      const clientId = await page.$eval("#client-id", (node) => (node as HTMLInputElement).value);
+      expect(clientId).toMatch(/^[0-9a-f]{40}$/u);
+      await device.overridePermissions(portal, [
+        "clipboard-read",
+        "clipboard-write",
+        "clipboard-sanitized-write",
+      ]);
+      await page.bringToFront();
+      await click(page, "button::-p-text(Copy client ID)");
+      await page.waitForSelector("button::-p-text(Copied)");
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(clientId);
+      await replaceText("#client-name", "Updated browser test app");
+      await replaceText("#client-redirects", "http://remote.example/callback");
+      await click(page, "button[type=submit]");
+      await page.waitForSelector("[role=alert]");
+      expect(await page.$eval("[role=alert]", (node) => node.textContent)).toContain(
+        "Use an exact HTTPS URL",
+      );
+      await capture(page, "console-error");
+      await replaceText(
+        "#client-redirects",
+        "https://example.test/new-callback\nhttp://localhost:3000/callback",
+      );
+      await click(page, "label[for=delivery-dapp]");
+      await click(page, "button[type=submit]");
+      await page.waitForSelector(".client-row");
+      expect(await page.$eval(".client-row", (node) => node.textContent)).toContain(
+        "Updated browser test app",
+      );
+      const readsBeforeReload = reads.length;
+      await page.reload();
+      await page.waitForSelector("#wallet-method");
+      expect(reads).toHaveLength(readsBeforeReload);
+      await click(page, "#wallet-method");
+      await click(page, "[data-signer-kind=wallet]");
+      await page.waitForSelector(".client-row");
+      await click(page, ".client-row");
+      expect(await page.$eval("#client-name", (node) => (node as HTMLInputElement).value)).toBe(
+        "Updated browser test app",
+      );
+      expect(
+        await page.$eval("#client-redirects", (node) => (node as HTMLTextAreaElement).value),
+      ).toBe("https://example.test/new-callback\nhttp://localhost:3000/callback");
+      expect(await page.$eval("#delivery-dapp", (node) => (node as HTMLInputElement).checked)).toBe(
+        true,
+      );
+      const statuses = await page.evaluate(async (id) => {
+        const statuses: number[] = [];
+        for (const redirect of [
+          "https://example.test/callback",
+          "https://example.test/new-callback",
+        ]) {
+          const response = await fetch("/oauth/par", {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              client_id: id,
+              redirect_uri: redirect,
+              response_type: "code",
+              scope: "openid",
+              code_challenge: "a".repeat(43),
+              code_challenge_method: "S256",
+            }),
+          });
+          statuses.push(response.status);
+        }
+        return statuses;
+      }, clientId);
+      await capture(page, "console-settings");
+      expect(statuses).toEqual([400, 201]);
+      await click(page, "button::-p-text(Sign out)");
+      await page.waitForSelector("#wallet-method");
+      expect(await page.evaluate(async () => (await fetch("/portal/clients")).status)).toBe(401);
+    } finally {
+      await device.close();
+    }
+  });
+});

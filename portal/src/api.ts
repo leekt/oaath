@@ -338,6 +338,17 @@ export interface ImportAccountRequest {
   readonly signature: `0x${string}`;
 }
 
+/** OAuth app metadata managed by its authenticated creating signer. */
+export interface OAuthClientInput {
+  readonly client_name: string;
+  readonly redirect_uris: readonly string[];
+  readonly token_endpoint_auth_method: "none";
+  readonly revocation_delivery: "relay" | "dapp";
+}
+export interface OAuthClient extends OAuthClientInput {
+  readonly client_id: string;
+}
+
 /** A failed portal call with the relay's structured code, never its prose. */
 export class PortalApiError extends Error {
   readonly status: number;
@@ -392,6 +403,11 @@ async function call<Response>(
 const segment = encodeURIComponent;
 
 export const portalApi = {
+  clients: () => call<{ readonly clients: readonly OAuthClient[] }>("/portal/clients"),
+  createClient: (body: OAuthClientInput) =>
+    call<OAuthClient>("/portal/clients", { method: "POST", body }),
+  updateClient: (id: string, body: OAuthClientInput) =>
+    call<OAuthClient>(`/portal/clients/${segment(id)}`, { method: "PUT", body }),
   transaction: (id: string) => call<PortalTransaction>(`/portal/transactions/${segment(id)}`),
   challenge: (body: ChallengeRequest) =>
     call<ChallengeResponse>("/portal/sessions/challenge", { method: "POST", body }),

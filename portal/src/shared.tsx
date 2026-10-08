@@ -395,6 +395,12 @@ export function Frame({
             >
               Accounts
             </a>
+            <a
+              href="/developers"
+              aria-current={location.pathname === "/developers" ? "page" : undefined}
+            >
+              Developers
+            </a>
           </nav>
         )}
       </header>
