@@ -225,8 +225,7 @@ export function GrantReview({
       {request && (
         <p className="notice">
           Approving asks {signer.label} for one signature. It lets {transaction.client_name}'s
-          signer act within this policy on your account, and it is the only signature OAAth ever
-          asks for.
+          signer act within this policy on your account. Signing in by itself approves nothing.
         </p>
       )}
       <div className="actions">

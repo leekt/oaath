@@ -357,8 +357,24 @@ async function installWallet(page: Page) {
 }
 
 async function click(page: Page, selector: string) {
-  const element = await page.waitForSelector(selector);
-  await element?.click();
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== "running"),
+  );
+  await page.locator(selector).click();
+}
+
+/** Optional visual evidence from the real behavioral flows, at phone and desktop widths. */
+async function capture(page: Page, name: string) {
+  const directory = process.env.OAATH_PORTAL_CAPTURES;
+  if (!directory) return;
+  const previous = page.viewport();
+  await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+  await page.evaluate(() => document.fonts.ready);
+  for (const width of [390, 1440]) {
+    await page.setViewport({ width, height: 1000 });
+    await page.screenshot({ path: join(directory, `${name}-${width}.png`), fullPage: true });
+  }
+  if (previous) await page.setViewport(previous);
 }
 
 /** Opens the example dapp, ready to log in (its client is registered on load). */
@@ -428,6 +444,7 @@ async function outcome(page: Page) {
 
 /** Chooses the remembered wallet signer and its first account. */
 async function signInWithRememberedWallet(popup: Page) {
+  await click(popup, "#wallet-method");
   await click(popup, "::-p-text(E2E Wallet)");
   await click(popup, "button[aria-label^='Smart account 0x']");
 }
@@ -465,8 +482,11 @@ describe("Login with OAAth from the SDK against the real relay", () => {
   it("logs in with a wallet signer and a new account, and returns a verifiable id_token", async () => {
     const dappPage = await openDapp();
     const popup = await startLogin(dappPage);
-    expect(await popup.$eval("#signer-heading", (node) => node.textContent)).toBe("Sign in with…");
+    expect(await popup.$eval("#signer-heading", (node) => node.textContent)).toBe(
+      "How would you like to sign in?",
+    );
     await click(popup, "::-p-text(Add signer)");
+    await click(popup, "#add-wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
     await popup.waitForSelector("::-p-text(This signer has no account yet.)");
     await click(popup, "::-p-text(Create account)");
@@ -664,6 +684,7 @@ describe("dapp grants approved by the account root against the real relay", () =
     const pushed = await pushGrant(dappPage);
     const popup = await openGrant(pushed);
     // The wallet signer and its account from the login proof are remembered.
+    await click(popup, "#wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
     const account = await popup.waitForSelector("button[aria-label^='Smart account 0x']");
     const address = /0x[0-9a-f]{40}/u.exec(
@@ -774,6 +795,7 @@ describe("dapp Grants requested with the SDK through the portal popup", () => {
   it("names the SDK's session key, the wallet root signs, and a reload resumes the Grant", async () => {
     const dappPage = await openDapp(grantDapp, "#grant:not([hidden])");
     const popup = await startLogin(dappPage, undefined, "#grant");
+    await click(popup, "#wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
     const account = await popup.waitForSelector("button[aria-label^='Smart account 0x']");
     const address = /0x[0-9a-f]{40}/u.exec(
@@ -1118,6 +1140,7 @@ describe("adding a passkey on a second device to an existing account", () => {
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
     const address = /0x[0-9a-f]{40}/u.exec(
@@ -1151,6 +1174,7 @@ describe("adding a passkey on a second device to an existing account", () => {
 
     // The root opens the link, signs in, reviews, and signs once.
     await root.goto(linkUrl);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     await root.waitForSelector("::-p-text(Add a signer to your account)");
     const review = await root.$eval("main", (node) => (node as HTMLElement).innerText);
@@ -1162,6 +1186,7 @@ describe("adding a passkey on a second device to an existing account", () => {
     await root.waitForSelector("::-p-text(Signer added)");
     expect(walletSignatures).toBe(signatures + 1);
     await root.waitForSelector("button[aria-label='Suspend Second device']");
+    await capture(root, "members");
 
     // The second device sees the approval and signs in as the account.
     const linked = await popup.waitForSelector(
@@ -1194,7 +1219,8 @@ describe("adding a passkey on a second device to an existing account", () => {
     const again = await openDapp(dapp, "#login:not([disabled])", device);
     let retry = await startLogin(again);
     await withCredential(retry, credentials);
-    await click(retry, "::-p-text(Passkey)");
+    await click(retry, "#passkey-method");
+    await click(retry, "[data-signer-kind=passkey]");
     const suspended = await retry.waitForSelector(
       `button[aria-label='Smart account ${address}, Signer, suspended']`,
     );
@@ -1232,7 +1258,8 @@ describe("adding a passkey on a second device to an existing account", () => {
     await root.waitForSelector("button[aria-label='Suspend Second device']");
     retry = await startLogin(again);
     await withCredential(retry, credentials);
-    await click(retry, "::-p-text(Passkey)");
+    await click(retry, "#passkey-method");
+    await click(retry, "[data-signer-kind=passkey]");
     await click(retry, `button[aria-label='Smart account ${address}, Signer']`);
     // The page still shows the cancelled attempt until this login lands.
     await again.page.waitForSelector("#result[data-outcome='signed-in']");
@@ -1252,6 +1279,7 @@ describe("adding a passkey on a second device to an existing account", () => {
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
     const address = /0x[0-9a-f]{40}/u.exec(
@@ -1262,9 +1290,11 @@ describe("adding a passkey on a second device to an existing account", () => {
     // The policies section renders once its templates load; locators retry.
     await root.locator("button::-p-text(New policy)").click();
     await root.type("#policy-name", "Payments");
+    await capture(root, "policy-editor");
     await root.type(".policy-target", `0x${"ab".repeat(20)}`);
     await click(root, "::-p-text(Save policy)");
     await root.waitForSelector("button[aria-label='Edit Payments']");
+    await capture(root, "policies");
     expect(
       await root.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
@@ -1286,6 +1316,7 @@ describe("adding a passkey on a second device to an existing account", () => {
 
     // The owner gives it the template and signs the member's enable once.
     await root.goto(linkUrl);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     await click(root, "::-p-text(spend within “Payments”)");
     const signatures = walletSignatures;
@@ -1351,6 +1382,7 @@ describe("a member's grant request waits for the account root", () => {
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
     const address = /0x[0-9a-f]{40}/u.exec(
@@ -1379,6 +1411,7 @@ describe("a member's grant request waits for the account root", () => {
     await click(popup, "::-p-text(Request access)");
     const shared = await popup.waitForSelector("#link-url");
     await root.goto((await shared?.evaluate((node) => node.textContent)) ?? "");
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     await click(root, "::-p-text(Approve and sign)");
     await root.waitForSelector("::-p-text(Signer added)");
@@ -1386,6 +1419,7 @@ describe("a member's grant request waits for the account root", () => {
     // The member picks the account and sends the request; the dapp gets a code at once.
     await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
     await popup.waitForSelector("#ask-heading");
+    await capture(popup, "ask-owner");
     const ask = await popup.$eval("main", (node) => (node as HTMLElement).innerText);
     expect(ask).toContain(`0x${"d1".repeat(20)}`);
     const requestId = pushed.requestUri.split(":").pop() ?? "";
@@ -1405,9 +1439,11 @@ describe("a member's grant request waits for the account root", () => {
 
     // The root approves from its members view with one signature.
     await root.goto(`${portal}/accounts`);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     await click(root, `button[aria-label='Smart account ${address}']`);
     await root.waitForSelector("#requests-heading");
+    await capture(root, "pending-requests");
     const queue = await root.$eval("main", (node) => (node as HTMLElement).innerText);
     expect(queue).toContain("E2E Grant Dapp");
     expect(queue).toContain(`0x${"d1".repeat(20)}`);
@@ -1453,6 +1489,7 @@ describe("a member's Grant requested with the SDK waits for the root, then insta
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
     const address = /0x[0-9a-f]{40}/u.exec(
@@ -1473,6 +1510,7 @@ describe("a member's Grant requested with the SDK waits for the root, then insta
     await click(popup, "::-p-text(Request access)");
     const shared = await popup.waitForSelector("#link-url");
     await root.goto((await shared?.evaluate((node) => node.textContent)) ?? "");
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     await click(root, "::-p-text(Approve and sign)");
     await root.waitForSelector("::-p-text(Signer added)");
@@ -1486,6 +1524,7 @@ describe("a member's Grant requested with the SDK waits for the root, then insta
 
     // The root approves from its members view with one signature.
     await root.goto(`${portal}/accounts`);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     await click(root, `button[aria-label='Smart account ${address}']`);
     await root.waitForSelector("#requests-heading");
@@ -2362,6 +2401,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
 
     const dappPage = await openDapp();
     const popup = await startLogin(dappPage);
+    await click(popup, "#wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
     await popup.waitForSelector("#account-heading");
     await click(popup, "::-p-text(Import an existing account)");
@@ -2401,6 +2441,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
     const importButton = () =>
       popup.$eval("::-p-text(Import and sign)", (node) => (node as HTMLButtonElement).disabled);
     expect(await importButton()).toBe(true);
+    await capture(popup, "import-modules");
     await click(popup, ".acknowledge input");
     expect(await importButton()).toBe(false);
 
@@ -2454,6 +2495,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
     // A second import of the same account is refused.
     const again = await openDapp();
     const retry = await startLogin(again);
+    await click(retry, "#wallet-method");
     await click(retry, "::-p-text(E2E Wallet)");
     await retry.waitForSelector("#account-heading");
     await click(retry, "::-p-text(Import an existing account)");
@@ -2530,6 +2572,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
     await root.setViewport({ width: 390, height: 844 });
     await installWallet(root);
     await root.goto(`${portal}/accounts`);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     await click(root, `button[aria-label='Smart account ${owner}']`);
     await root.locator("button::-p-text(New policy)").click();
@@ -2551,6 +2594,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
     const shared = await member.waitForSelector("#link-url");
     const linkUrl = (await shared?.evaluate((node) => node.textContent)) ?? "";
     await root.goto(linkUrl);
+    await click(root, "#wallet-method");
     await click(root, "::-p-text(E2E Wallet)");
     await click(root, "::-p-text(spend within “Imported payments”)");
     let before = walletSignatures;
@@ -2580,6 +2624,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
     await grantDapp.goto(`${dapp}/`);
     const pushed = await pushGrant(grantDapp);
     const review = await openGrant(pushed);
+    await click(review, "#wallet-method");
     await click(review, "::-p-text(E2E Wallet)");
     await click(review, `button[aria-label='Smart account ${owner}, Owner']`);
     await review.waitForSelector("::-p-text(Approve and sign):not([disabled])");
@@ -2627,6 +2672,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
     await operationDapp.goto(`${dapp}/`);
     const pushedOperation = await pushOperation(operationDapp, operation.request);
     const approval = await openGrant(pushedOperation);
+    await click(approval, "#wallet-method");
     await click(approval, "::-p-text(E2E Wallet)");
     await click(approval, `button[aria-label='Smart account ${owner}, Owner']`);
     await approval.waitForSelector("#operation-heading");
@@ -2760,10 +2806,12 @@ describe("an owner operation approved by the account root and submitted by the d
     await dappPage.goto(`${dapp}/`);
     const pushed = await pushOperation(dappPage, prepared.request);
     const popup = await openGrant(pushed);
+    await click(popup, "#wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
     // Only the operation's account is offered.
     await click(popup, `button[aria-label='Smart account ${sender}, Owner']`);
     await popup.waitForSelector("#operation-heading");
+    await capture(popup, "operation-review");
     const review = await popup.$eval("main", (node) => (node as HTMLElement).innerText);
     expect(review).toContain(target);
     expect(review).toContain("0.000000000000001 ETH");

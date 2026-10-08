@@ -435,9 +435,9 @@ afterAll(async () => {
  * An EIP-6963 wallet in every document of `page`, recording each method and
  * `personal_sign` request. It signs nothing real: the stub relay accepts any proof.
  */
-async function installWallet(page: Page, name = "Test Wallet", rdns = "test.wallet") {
+async function installWallet(page: Page, name = "Test Wallet", rdns = "test.wallet", delay = 0) {
   await page.evaluateOnNewDocument(
-    (wallet: { name: string; rdns: string; address: string }) => {
+    (wallet: { name: string; rdns: string; address: string; delay: number }) => {
       const methods: string[] = [];
       const signed: unknown[] = [];
       Object.assign(window, { walletMethods: methods, walletSigned: signed });
@@ -452,19 +452,24 @@ async function installWallet(page: Page, name = "Test Wallet", rdns = "test.wall
         },
       };
       window.addEventListener("eip6963:requestProvider", () =>
-        window.dispatchEvent(
-          new CustomEvent("eip6963:announceProvider", {
-            detail: Object.freeze({
-              info: { uuid: wallet.rdns, name: wallet.name, icon: "", rdns: wallet.rdns },
-              provider,
-            }),
-          }),
+        setTimeout(
+          () =>
+            window.dispatchEvent(
+              new CustomEvent("eip6963:announceProvider", {
+                detail: Object.freeze({
+                  info: { uuid: wallet.rdns, name: wallet.name, icon: "", rdns: wallet.rdns },
+                  provider,
+                }),
+              }),
+            ),
+          wallet.delay,
         ),
       );
     },
     {
       name,
       rdns,
+      delay,
       address: `0x${(rdns === "test.wallet" ? "11" : "22").repeat(20)}`,
     },
   );
@@ -493,25 +498,48 @@ async function openPortal(
 }
 
 async function clickText(page: Page, text: string) {
-  const button = await page.waitForSelector(`::-p-text(${text})`);
-  await button?.click();
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== "running"),
+  );
+  await page.locator(`::-p-text(${text})`).click();
 }
 
 async function capture(page: Page, name: string) {
-  if (CAPTURES) await page.screenshot({ path: join(CAPTURES, `${name}.png`), fullPage: true });
+  if (!CAPTURES) return;
+  const previous = page.viewport();
+  await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+  await page.evaluate(() => document.fonts.ready);
+  for (const width of [390, 1440]) {
+    await page.setViewport({ width, height: 1000 });
+    await page.screenshot({ path: join(CAPTURES, `${name}-${width}.png`), fullPage: true });
+  }
+  if (previous) await page.setViewport(previous);
 }
 
 describe("portal in Chrome", () => {
+  it("links the portal home to account management", async () => {
+    const page = await browser.newPage();
+    await page.goto(origin);
+    await page.waitForSelector(".home-action");
+    await capture(page, "home");
+    expect(await page.$eval(".home-action", (node) => node.getAttribute("href"))).toBe("/accounts");
+    await page.close();
+  });
+
   it("always shows the signer screen, then creates an account and returns to the dapp", async () => {
     const page = await openPortal([WALLET_SIGNER]);
-    expect(await page.$eval("#signer-heading", (node) => node.textContent)).toBe("Sign in with…");
-    expect(await page.$("::-p-text(Test Wallet)")).not.toBeNull();
+    expect(await page.$eval("#signer-heading", (node) => node.textContent)).toBe(
+      "How would you like to sign in?",
+    );
+    expect(await page.$("#wallet-method")).not.toBeNull();
+    expect(await page.$("::-p-text(Test Wallet)")).toBeNull();
     expect(await page.$("::-p-text(Add signer)")).not.toBeNull();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
     await capture(page, "1-signers");
 
+    await page.locator("#wallet-method").click();
     await clickText(page, "Test Wallet");
     await page.waitForSelector("::-p-text(This signer has no account yet.)");
     expect(
@@ -559,6 +587,79 @@ describe("portal in Chrome", () => {
     await page.close();
   });
 
+  it.each([true, false])(
+    "opens an account deep link only after its owner signs in (owned: %s)",
+    async (owned) => {
+      const page = await openPortal([GRANT_SIGNER]);
+      const address = owned ? ROOT_ACCOUNT.address : `0x${"cd".repeat(20)}`;
+      await page.goto(`${origin}/accounts?account=${address}`);
+      await page.waitForSelector("#signer-heading");
+      expect(await page.$("#account-members-heading")).toBeNull();
+      await page.locator("#wallet-method").click();
+      await clickText(page, "Test Wallet");
+      if (owned) await page.waitForSelector("#account-members-heading");
+      else {
+        await page.waitForSelector(`button[aria-label='Smart account ${ROOT_ACCOUNT.address}']`);
+        expect(await page.$("#account-members-heading")).toBeNull();
+      }
+      await page.close();
+    },
+  );
+
+  it("waits for delayed wallet announcements before showing an empty state", async () => {
+    const page = await browser.newPage();
+    await page.evaluateOnNewDocument(() => {
+      localStorage.clear();
+      Object.assign(window, { sawEmptyWallets: false });
+      new MutationObserver(() => {
+        if (document.body?.textContent?.includes("No browser wallet found."))
+          Object.assign(window, { sawEmptyWallets: true });
+      }).observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    await installWallet(page, "Delayed Wallet", "test.delayed", 250);
+    await page.goto(`${origin}/accounts`);
+    await page.locator("#wallet-method").click();
+    await page.waitForSelector("::-p-text(Delayed Wallet)");
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { sawEmptyWallets: boolean }).sawEmptyWallets,
+      ),
+    ).toBe(false);
+    expect(await walletMethods(page)).toEqual([]);
+    await page.close();
+  });
+
+  it("nests wallets without signing in, restores keyboard focus, and forgets only the saved entry", async () => {
+    const page = await openPortal([WALLET_SIGNER]);
+    const before = calls.length;
+    await page.locator("#wallet-method").click();
+    await page.waitForSelector("[data-signer-kind='wallet']");
+    expect(await walletMethods(page)).toEqual([]);
+    expect(calls.slice(before)).toEqual([]);
+    await capture(page, "wallets");
+    await clickText(page, "Back");
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("wallet-method");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("[data-signer-kind='wallet']");
+    await page.click("button[aria-label='Forget Test Wallet from this browser']");
+    await capture(page, "forget-signer");
+    await clickText(page, "Keep signer");
+    expect(await page.$("[data-signer-kind='wallet']")).not.toBeNull();
+    await page.click("button[aria-label='Forget Test Wallet from this browser']");
+    await clickText(page, "Forget signer");
+    expect(await page.$("[data-signer-kind='wallet']")).toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem("oaath.portal.signers/v1"))).toBe("[]");
+    expect(calls.slice(before)).toEqual([]);
+    expect(await walletMethods(page)).toEqual([]);
+    const reloaded = await browser.newPage();
+    await reloaded.goto(`${origin}/accounts`);
+    await reloaded.waitForSelector("#wallet-method");
+    await reloaded.click("#wallet-method");
+    expect(await reloaded.$("[data-signer-kind='wallet']")).toBeNull();
+    await reloaded.close();
+    await page.close();
+  });
+
   it("adds a passkey signer and signs it in with an assertion over the relay's nonce", async () => {
     calls.length = 0;
     // No wallet is announced, so the empty state is the settled list, not the
@@ -577,8 +678,12 @@ describe("portal in Chrome", () => {
     });
     expect(await page.$("::-p-text(No signers on this browser yet.)")).not.toBeNull();
     await clickText(page, "Add signer");
+    await clickText(page, "Wallet");
     await page.waitForSelector("::-p-text(No browser wallet found.)");
     expect(await page.$("::-p-text(Phone)")).toBeNull();
+    await capture(page, "4-empty-wallets");
+    await clickText(page, "Back");
+    await clickText(page, "Add signer");
     await capture(page, "4-add-signer");
     await clickText(page, "New passkey");
     await page.waitForSelector("#account-heading");
@@ -610,6 +715,7 @@ describe("portal in Chrome", () => {
       `${origin}/authorize?client_id=client-1&request_uri=urn:ietf:params:oauth:request_uri:par-1`,
     );
     await clickText(page, "Add signer");
+    await clickText(page, "Wallet");
     await clickText(page, "Fixture Wallet");
     await page.waitForSelector("#account-heading");
     expect(await walletMethods(page)).toEqual([
@@ -697,6 +803,7 @@ describe("portal in Chrome", () => {
   it("cancels from the account screen with access_denied", async () => {
     calls.length = 0;
     const page = await openPortal([WALLET_SIGNER]);
+    await page.locator("#wallet-method").click();
     await clickText(page, "Test Wallet");
     await page.waitForSelector("#account-heading");
     // The account the first test created is listed with its role as "Owner".
@@ -714,6 +821,7 @@ describe("portal in Chrome", () => {
   it("shows a grant's signer and policy, and offers member accounts for the owner to approve", async () => {
     calls.length = 0;
     const page = await openPortal([GRANT_SIGNER], "par-grant");
+    await page.locator("#wallet-method").click();
     await clickText(page, "Test Wallet");
     await page.waitForSelector("::-p-text(0xabab…abab)");
     // A member account is offered too: its grant request goes to the owner.
@@ -728,7 +836,7 @@ describe("portal in Chrome", () => {
     expect(text).toContain("0xdeadbeef");
     expect(text).toContain("Up to 3 operations per chain in total");
     expect(text).toContain("Base");
-    expect(await page.$("::-p-text(the only signature OAAth ever asks for)")).not.toBeNull();
+    expect(await page.$("::-p-text(Signing in by itself approves nothing.)")).not.toBeNull();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
@@ -744,6 +852,7 @@ describe("portal in Chrome", () => {
   it("refuses a signing request whose digest it did not derive, before any wallet prompt", async () => {
     calls.length = 0;
     const page = await openPortal([GRANT_SIGNER], "par-grant-tampered");
+    await page.locator("#wallet-method").click();
     await clickText(page, "Test Wallet");
     await clickText(page, "0xabab…abab");
     await page.waitForSelector("::-p-text(Approve and sign):not([disabled])");
@@ -767,6 +876,7 @@ describe("portal in Chrome", () => {
       JSON.stringify([GRANT_SIGNER]),
     );
     await page.goto(`${origin}/link/link-tampered`);
+    await page.locator("#wallet-method").click();
     await clickText(page, "Test Wallet");
     await page.waitForSelector("::-p-text(Add a signer to your account)");
     const review = await page.$eval("main", (node) => (node as HTMLElement).innerText);
@@ -796,6 +906,7 @@ describe("portal in Chrome", () => {
       JSON.stringify([GRANT_SIGNER]),
     );
     await page.goto(`${origin}/link/link-template`);
+    await page.locator("#wallet-method").click();
     await clickText(page, "Test Wallet");
     await clickText(page, "spend within “Payments”");
     const review = await page.$eval("main", (node) => (node as HTMLElement).innerText);
@@ -816,6 +927,7 @@ describe("portal in Chrome", () => {
 describe("importing an existing account", () => {
   it("explains each refusal at phone width without overflowing", async () => {
     const page = await openPortal([WALLET_SIGNER]);
+    await page.locator("#wallet-method").click();
     await clickText(page, "Test Wallet");
     await page.waitForSelector("#account-heading");
     await clickText(page, "Import an existing account");
