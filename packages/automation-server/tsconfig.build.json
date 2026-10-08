@@ -1,0 +1,9 @@
+{
+  // The published build sees only the sources; the tests' JavaScript and
+  // cross-package fixtures stay out of declaration emit.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false
+  },
+  "include": ["src"]
+}

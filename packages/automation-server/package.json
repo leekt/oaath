@@ -37,7 +37,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsdown src/index.ts src/cli.ts --platform node",
+    "build": "tsdown src/index.ts src/cli.ts --platform node --tsconfig tsconfig.build.json",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
