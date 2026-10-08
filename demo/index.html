@@ -3,102 +3,124 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OAAth demo</title>
+    <meta name="theme-color" content="#f2f4f7" />
+    <meta name="description" content="Try OAAth: sign in, review a scoped permission, and send a test call on Arbitrum Sepolia." />
+    <title>Try OAAth · Demo</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <main>
-      <h1>OAAth demo</h1>
-      <p class="quiet">
-        A small dapp on its own origin that uses <a id="portal-link" href="https://oaath.taek.tech">OAAth</a> for
-        login and scoped permissions on Arbitrum Sepolia. Each step below is one SDK call.
-      </p>
-      <p id="status" class="quiet">Loading…</p>
+    <a class="skip-link" href="#main">Skip to demo</a>
+    <header class="masthead wrap">
+      <a class="mark" href="/" aria-label="OAAth demo home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1h2a1 1 0 0 0 1-1v-2l1.8-1.8a6.5 6.5 0 1 0-3-3Z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+        OAAth <span class="demo-label">Demo</span>
+      </a>
+      <a id="portal-link" class="nav-link" href="https://oaath.taek.tech" target="_blank" rel="noopener">Account portal <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+    </header>
 
-      <section id="s-join" hidden>
-        <h2>You're invited</h2>
-        <p>
-          You were invited to join account <code id="join-account"></code>. Click
-          <strong>Request to join</strong>. In the OAAth window: <em>Add signer</em> →
-          <em>New passkey</em>, then <em>Link to an existing account</em>, paste the address
-          above, and <em>Request access</em>. Send the link it shows to the account owner. Once
-          they approve, pick the account in the same window.
-        </p>
-        <button id="copy-join" type="button">Copy address</button>
-        <button id="join" type="button" disabled>Request to join</button>
-      </section>
-
-      <section id="s-login">
-        <h2>1. Login with OAAth</h2>
-        <p>Sign in with a passkey or wallet. Login is identity only; it grants nothing.</p>
-        <button id="login" type="button" disabled>Login with OAAth</button>
-        <pre id="identity" aria-live="polite"></pre>
-      </section>
-
-      <section id="s-invite" hidden>
-        <h2>2. Invite a member</h2>
-        <p>
-          Open this link in another browser or profile. The invitee adds a new passkey and asks to
-          join your account; you approve in OAAth at the link they send you (or under
-          <a id="accounts-link" href="https://oaath.taek.tech/accounts" target="_blank" rel="noopener">your accounts</a>).
-        </p>
-        <pre id="invite-url"></pre>
-        <button id="copy-invite" type="button">Copy invite link</button>
-      </section>
-
-      <section id="s-grant">
-        <h2>3. Grant a session key</h2>
-        <p>
-          This page asks for a session key that may make <strong>zero-value</strong> calls with
-          selector <code id="selector"></code> to <code id="target"></code>, at most twice per
-          chain, for one hour. An account owner approves it in the popup with one signature; a
-          member's request waits for the owner.
-        </p>
-        <button id="grant" type="button" disabled>Request permission</button>
-        <button id="redeem" type="button" hidden>Check approval</button>
-        <pre id="grant-state" aria-live="polite"></pre>
-      </section>
-
-      <section id="s-send" hidden>
-        <h2>4. Send a test call</h2>
-        <p>
-          Account <code id="account"></code>. The first operation deploys the account and enables
-          the permission. It is sent once; if an answer is lost the page only observes.
-        </p>
-        <p id="sponsored" hidden>Gas is sponsored by the demo's paymaster.</p>
-        <div id="funding" hidden>
-          <p id="amount"></p>
-          <button id="balance" type="button">Check balance</button>
-          <span id="balance-value"></span>
+    <main id="main" class="wrap">
+      <div class="intro">
+        <div>
+          <h1>Your account.<br />Now, put it to work.</h1>
+          <p>Sign in, choose what this app can do, and try a call.<br class="desktop-break" /> See OAAth work, one step at a time.</p>
         </div>
-        <button id="send" type="button">Send test call</button>
-        <pre id="operation" aria-live="polite"></pre>
+        <div class="network-context">
+          <span class="network-name"><span class="network-dot" aria-hidden="true"></span> Arbitrum Sepolia</span>
+          <p>Test network</p>
+          <span id="gas-context">Checking gas sponsorship…</span>
+        </div>
+      </div>
+
+      <section id="s-join" class="invitation" aria-labelledby="join-heading" hidden>
+        <div>
+          <h2 id="join-heading">You're invited to an account</h2>
+          <p>Create or choose a signer in OAAth, then select <strong>Link to an existing account</strong> and request access. Send the approval link to the owner; once approved, choose the account in that window.</p>
+          <div class="copy-line"><code id="join-account"></code><button id="copy-join" class="button button-outline" type="button">Copy address</button></div>
+        </div>
+        <button id="join" class="button button-primary" type="button" disabled>Request to join</button>
       </section>
 
-      <section id="s-owner" hidden>
-        <h2>5. Owner operation</h2>
-        <p>
-          The account owner approves one exact operation (the same zero-value call) in OAAth; this
-          page submits it. The account pays its own gas here.
-        </p>
-        <button id="owner-prepare" type="button">Prepare operation</button>
-        <button id="owner-approve" type="button" hidden>Approve in OAAth</button>
-        <pre id="owner-result" aria-live="polite"></pre>
-      </section>
+      <p id="startup-message" role="status" class="startup-message">Connecting to the demo…</p>
+      <div class="workspace">
+        <aside class="journey" aria-label="Demo progress">
+          <p class="journey-title">Try it step by step</p>
+          <ol>
+            <li id="progress-login" data-state="current"><a href="#s-login" aria-current="step"><span class="step-index">1</span><span><strong>Sign in</strong><span id="progress-login-label">Your identity</span></span></a></li>
+            <li id="progress-grant"><a href="#s-grant"><span class="step-index">2</span><span><strong>Give permission</strong><span id="progress-grant-label">Your boundaries</span></span></a></li>
+            <li id="progress-send"><a href="#step-send"><span class="step-index">3</span><span><strong>Make a call</strong><span id="progress-send-label">See it in action</span></span></a></li>
+          </ol>
+          <p class="journey-note">You're in control.<br />Signing in approves nothing. Permissions are a separate choice.</p>
+          <a class="text-link" href="#more-flows">Explore more flows <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg></a>
+        </aside>
 
-      <section id="s-revoke">
-        <h2>6. Revoke</h2>
-        <p>
-          Remove this app's access in
-          <a id="revoke-link" href="https://oaath.taek.tech/accounts" target="_blank" rel="noopener">OAAth → accounts</a>: open
-          the account, find this app's access, and revoke (or invalidate) it on chain.
-        </p>
-      </section>
+        <div class="task-sheet">
+          <section id="s-login" class="task" aria-labelledby="login-heading">
+            <div class="task-heading"><h2 id="login-heading">Sign in with OAAth</h2><span id="login-badge" class="state-label">Start here</span></div>
+            <p>Use a passkey or wallet and choose your account in the OAAth window. Sign-in proves it's you. It approves nothing.</p>
+            <div id="identity-summary" class="identity-summary" hidden>
+              <span class="identity-mark" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 3 7v6c0 4 9 8 9 8s9-4 9-8V7Z"/><path d="m8 12 3 3 5-6"/></svg></span>
+              <div><strong id="identity-title">Your account</strong><code id="identity-account"></code></div>
+            </div>
+            <div class="actions"><button id="login" class="button button-primary" type="button" disabled>Sign in with OAAth <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button><span class="action-note">Opens a secure sign-in window</span></div>
+            <details id="identity-details" class="disclosure" hidden><summary>Account details</summary><pre id="identity"></pre></details>
+          </section>
 
-      <h2>Log</h2>
-      <pre id="result" aria-live="polite"></pre>
-      <pre id="log"></pre>
+          <section id="s-grant" class="task" aria-labelledby="grant-heading">
+            <div class="task-heading"><h2 id="grant-heading">Give this app a little permission</h2><span id="grant-badge" class="state-label">Not requested</span></div>
+            <p>Approve a session key for the demo's test call. You review the scope in OAAth before the account owner signs.</p>
+            <dl class="permission-limits">
+              <div><dt>Value per call</dt><dd>0 <span>ETH</span></dd></div>
+              <div><dt>Calls per chain</dt><dd>2 <span>maximum</span></dd></div>
+              <div><dt>Expires after</dt><dd>1 <span>hour</span></dd></div>
+            </dl>
+            <details class="disclosure scope-details"><summary>Exactly what am I approving?</summary><div class="disclosure-body"><p>One permission across all chains, limited to zero-value calls to the target and function below. It allows at most two calls per chain for one hour. Gas costs are separate.</p><dl class="technical-list"><div><dt>Contract</dt><dd><code id="target"></code></dd></div><div><dt>Function selector</dt><dd><code id="selector"></code></dd></div></dl><p>One owner signature approves the permission. A member's request waits for the owner.</p></div></details>
+            <div class="actions"><button id="grant" class="button button-primary" type="button" disabled>Request permission <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button><button id="redeem" class="button button-outline" type="button" hidden>Check approval</button></div>
+            <details id="permission-details" class="disclosure result-details" hidden><summary>Permission details</summary><pre id="grant-state"></pre></details>
+            <a id="owner-review-link" href="https://oaath.taek.tech/accounts" class="text-link owner-review-link" target="_blank" rel="noopener" hidden>Open owner review</a>
+          </section>
+
+          <section id="step-send" class="task" aria-labelledby="send-heading">
+            <div class="task-heading"><h2 id="send-heading">Make your first call</h2><span id="send-badge" class="state-label">Permission needed</span></div>
+            <p id="call-empty" class="empty-copy">Your test call will be ready here once a permission is approved. No funds are transferred by the call.</p>
+            <div id="s-send" hidden>
+              <p>Send the approved zero-value call on Arbitrum Sepolia. The first call deploys your account and enables the permission.</p>
+              <p id="sponsored" class="notice success-notice" hidden>Gas is sponsored by the demo. You don't need to fund this call.</p>
+              <div id="funding" class="funding" hidden><p id="amount"></p><div class="actions"><button id="balance" class="button button-outline" type="button">Check balance</button><span id="balance-value" aria-live="polite"></span></div></div>
+              <details id="call-details" class="disclosure"><summary>Account and submission details</summary><div class="disclosure-body"><code id="account"></code><p>The call is sent once. If an answer is lost, this page only observes the recorded operation. Reloading continues observation; it does not resend.</p></div></details>
+              <div class="actions"><button id="send" class="button button-primary" type="button">Send test call <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button><span class="action-note">Uses your approved session key</span></div>
+              <a id="transaction-link" class="text-link result-link" target="_blank" rel="noopener" href="https://sepolia.arbiscan.io" hidden>View transaction on explorer</a>
+              <details id="operation-details" class="disclosure result-details" hidden><summary>Transaction details</summary><pre id="operation"></pre></details>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="feedback" class="feedback" hidden><span class="feedback-dot" aria-hidden="true"></span><p id="result" role="status" aria-live="polite"></p></div>
+
+      <section id="more-flows" class="more-flows" aria-labelledby="more-heading">
+        <div class="section-intro"><h2 id="more-heading">There's more to try</h2><p>Share an account, approve a single operation, or take back access.</p></div>
+        <div class="extra-flows">
+          <section id="s-invite" class="extra-flow" aria-labelledby="invite-heading" hidden>
+            <h3 id="invite-heading">Invite a member</h3><p>Share this link with another browser or profile. They choose a signer and request access to your account.</p>
+            <details id="invite-details" class="disclosure"><summary>Invite link and next steps</summary><div class="disclosure-body"><pre id="invite-url"></pre><p>Approve the link request in <a id="accounts-link" href="https://oaath.taek.tech/accounts" target="_blank" rel="noopener">your accounts</a>, or use the approval link they send you.</p></div></details>
+            <button id="copy-invite" class="button button-outline" type="button">Copy invite link</button>
+          </section>
+          <section id="s-owner" class="extra-flow" aria-labelledby="owner-heading" hidden>
+            <h3 id="owner-heading">Approve one exact operation</h3><p>Try an owner operation with the same zero-value call. The owner reviews and signs it in OAAth; this app submits it once. The account pays its own gas.</p>
+            <div class="actions"><button id="owner-prepare" class="button button-outline" type="button">Prepare operation</button><button id="owner-approve" class="button button-primary" type="button" hidden>Approve in OAAth</button></div>
+            <p id="owner-cost" class="owner-cost" hidden></p>
+            <a id="owner-transaction-link" class="text-link result-link" target="_blank" rel="noopener" href="https://sepolia.arbiscan.io" hidden>View transaction on explorer</a>
+            <details id="owner-operation-details" class="disclosure result-details" hidden><summary>Operation details</summary><pre id="owner-result"></pre></details>
+          </section>
+          <section id="s-revoke" class="extra-flow revoke-flow" aria-labelledby="revoke-heading">
+            <div><h3 id="revoke-heading">Your permission. Your off switch.</h3><p>Open your account in OAAth, find this app's access, and revoke or invalidate it on chain. Removing access requires a separate owner signature.</p></div>
+            <a id="revoke-link" class="button button-outline" href="https://oaath.taek.tech/accounts" target="_blank" rel="noopener">Manage access <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+          </section>
+        </div>
+      </section>
+      <details class="diagnostics"><summary>Activity &amp; technical details</summary><div class="diagnostics-body"><h3>Connection</h3><p id="status">Loading configuration…</p><h3>Activity</h3><pre id="log"></pre><p class="log-empty">Your actions will appear here as you try the demo.</p></div></details>
     </main>
-    <script type="module" src="/src/app.ts"></script>
+    <footer class="site-footer wrap"><span>OAAth · Your account, your choice.</span><span>Testnet demo · Proof of concept</span></footer>
+    <script type="module" src="/src/entry.ts"></script>
   </body>
 </html>

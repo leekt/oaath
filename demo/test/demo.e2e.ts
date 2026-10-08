@@ -16,7 +16,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -164,7 +164,9 @@ function assets(dist: string, origin: string) {
           ? "text/javascript"
           : path.endsWith(".css")
             ? "text/css"
-            : "text/html";
+            : path.endsWith(".woff2")
+              ? "font/woff2"
+              : "text/html";
         return new Response(new Uint8Array(file), { headers: { "content-type": type } });
       } catch {
         return new Response("Not found", { status: 404 });
@@ -516,8 +518,38 @@ async function outcome(page: Page, expected: string, timeout = 30_000) {
   await page.waitForSelector(`#result[data-outcome='${expected}']`, { timeout });
 }
 
-const text = (page: Page, selector: string) =>
-  page.$eval(selector, (node) => (node as HTMLElement).innerText);
+async function text(page: Page, selector: string) {
+  const disclosure = await page.$eval(selector, (node) => {
+    const details = node.closest("details");
+    return details && !details.open ? details.id : null;
+  });
+  if (disclosure) await click(page, `#${disclosure} > summary`);
+  const value = await page.$eval(selector, (node) => (node as HTMLElement).innerText);
+  if (disclosure) await click(page, `#${disclosure} > summary`);
+  return value;
+}
+
+/** Optional visual evidence from the real, isolated flows; never live accounts. */
+async function capture(page: Page, name: string) {
+  const directory = process.env.OAATH_DEMO_SCREENSHOTS;
+  if (!directory) return;
+  await mkdir(directory, { recursive: true });
+  for (const [viewport, width, height] of [
+    ["desktop", 1440, 1000],
+    ["mobile", 390, 844],
+  ] as const) {
+    await page.setViewport({ width, height });
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      window.scrollTo(0, 0);
+    });
+    await page.waitForFunction(() => window.scrollY === 0);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({ path: join(directory, `${name}-${viewport}.png`), fullPage: true });
+  }
+}
 
 let demo: string;
 let local: Awaited<ReturnType<typeof startLocalArbitrumSepolia>>;
@@ -576,9 +608,29 @@ afterAll(async () => {
 });
 
 describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
+  it("explains a failed startup and keeps actions unavailable", async () => {
+    const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/config.json")
+        void request.respond({ status: 503, contentType: "application/json", body: "{}" });
+      else void request.continue();
+    });
+    await page.goto(demo);
+    await page.waitForFunction(() =>
+      document.getElementById("startup-message")?.textContent?.includes("couldn't connect"),
+    );
+    expect(await page.$eval("#login", (node) => (node as HTMLButtonElement).disabled)).toBe(true);
+    expect(await page.$eval("#grant", (node) => (node as HTMLButtonElement).disabled)).toBe(true);
+    await capture(page, "unavailable");
+    await page.goto(`${demo}/callback`);
+    await capture(page, "callback");
+    await page.close();
+  });
   it("root logs in, grants and sends sponsored; a member joins, waits, is approved and sends", async () => {
     // 1. The root logs in with a new wallet signer and a new account.
     const root = await openDemo(`${demo}/`);
+    await capture(root, "start");
     let popup = await popupFrom(root, "#login");
     await click(popup, "::-p-text(Add signer)");
     await click(popup, "#add-wallet-method");
@@ -590,6 +642,9 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     )?.[0] as `0x${string}`;
     await owned?.click();
     await outcome(root, "signed-in");
+    expect(await text(root, "#identity-title")).toBe("Owner · signed in");
+    expect(await text(root, "#login-badge")).toBe("Signed in");
+    await capture(root, "signed-in");
     const identity = JSON.parse(await text(root, "#identity"));
     expect(identity).toMatchObject({
       account: address,
@@ -614,11 +669,19 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     expect(walletSignatures).toBe(signatures + 1);
     expect(await text(root, "#account")).toBe(address);
     expect(await root.$eval("#sponsored", (node) => (node as HTMLElement).hidden)).toBe(false);
+    expect(await text(root, "#send-badge")).toBe("Ready to send");
+    expect(await text(root, "#grant")).toBe("Request new permission");
+    expect(await root.$eval("#grant", (node) => node.classList.contains("button-outline"))).toBe(
+      true,
+    );
+    await capture(root, "permission");
 
     // 4. The sponsored test call deploys, enables and executes with an unfunded account.
     expect(await local.chain.rpc("eth_getBalance", [address, "latest"])).toBe("0x0");
     await click(root, "#send");
     await outcome(root, "finalized");
+    expect(await text(root, "#send-badge")).toBe("Call finalized");
+    await capture(root, "completed");
     expect(await text(root, "#operation")).toMatch(
       /UserOperation 0x[0-9a-f]{64}[\s\S]*https:\/\/sepolia\.arbiscan\.io\/tx\/0x[0-9a-f]{64}/u,
     );
@@ -638,6 +701,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await local.chain.rpc("anvil_setBalance", [address, toHex(10n ** 18n)]);
     await click(root, "#owner-prepare");
     await outcome(root, "owner-prepared");
+    await capture(root, "owner-prepared");
     popup = await popupFrom(root, "#owner-approve:not([hidden])");
     await click(popup, "#wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
@@ -653,6 +717,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     const device = await browser.createBrowserContext();
     const member = await openDemo(`${demo}/?invite=${address}`, device);
     expect(await text(member, "#join-account")).toBe(address);
+    await capture(member, "invitation");
     popup = await popupFrom(member, "#join");
     const authenticator = await addAuthenticator(popup);
     await click(popup, "::-p-text(Add signer)");
@@ -678,6 +743,8 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await rootPortal.waitForSelector("::-p-text(Signer added)");
     await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
     await outcome(member, "signed-in");
+    expect(await member.$eval("#s-join", (node) => (node as HTMLElement).hidden)).toBe(true);
+    expect(await text(member, "#login")).toBe("Sign in again");
     expect(JSON.parse(await text(member, "#identity"))).toMatchObject({
       account: address,
       role: "permission",
@@ -693,6 +760,11 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await popup.waitForSelector("#ask-heading");
     await click(popup, "::-p-text(Send request to the owner)");
     await outcome(member, "pending");
+    expect(await text(member, "#grant-badge")).toBe("Waiting for owner");
+    expect(await member.$eval("#redeem", (node) => node.classList.contains("button-primary"))).toBe(
+      true,
+    );
+    await capture(member, "pending");
     expect(await text(member, "#grant-state")).toContain(`${portal}/requests/`);
     expect(await member.$eval("#redeem", (node) => (node as HTMLElement).hidden)).toBe(false);
 
@@ -711,6 +783,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     // A reload recreates the SDK; redeemPending yields the Grant.
     await member.reload();
     await outcome(member, "granted");
+    expect(await text(member, "#identity-title")).toBe("Saved account · sign in again");
     expect(await text(member, "#account")).toBe(address);
 
     // The member's sponsored test call enables its permission and executes.
