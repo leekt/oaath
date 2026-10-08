@@ -2299,8 +2299,18 @@ describe("revoking an invalidated grant on chain", () => {
       expect(signed.status).toBe("delivered");
       expect(local.sent).toHaveLength(sentBefore);
 
-      // The dapp reads the signed operation and submits it through its own bundler.
-      const delivered = (await relayCall(`/oauth/grants/${grantId}/revocation`)).json as {
+      // The dapp proves its grant's session key to read the signed operation.
+      const path = `/oauth/grants/${grantId}/revocation`;
+      expect((await fetch(`${relayBase}${path}`)).status).toBe(401);
+      const issuedAt = Math.floor(Date.now() / 1000);
+      const proof = await sessionAccount.signMessage({
+        message: `OAAth grant request v1\ngrant: ${grantId}\nmethod: GET\npath: ${path}\nissued: ${issuedAt}`,
+      });
+      const deliveredResponse = await fetch(`${relayBase}${path}`, {
+        headers: { authorization: `OAAth-Grant-Proof ${issuedAt}.${proof}` },
+      });
+      expect(deliveredResponse.status).toBe(200);
+      const delivered = (await deliveredResponse.json()) as {
         signed_operation: { request: { userOperation: Record<string, string> }; signature: string };
       };
       const op = delivered.signed_operation.request.userOperation;
