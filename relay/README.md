@@ -30,8 +30,8 @@ already exists. There are no migrations: an older schema is recreated. Logs
 never include codes, artifacts, verifiers, tokens, keys, request bodies, the
 RPC URL or the bundler URL.
 
-The developer console at `/developers` uses `oaath.oauth-client-record/v2` and
-PostgreSQL schema `oaath.relay-postgres-schema/v2`. Deploy the relay and portal
+The developer console at `/developers` uses `oaath.oauth-client-record/v1` and
+PostgreSQL schema `oaath.relay-postgres-schema/v1`. Deploy the relay and portal
 Worker together. Recreate older relay state and re-register clients (including
 Keyline); there is no in-place upgrade. Console apps belong to the signer that
 creates them. Public `/oauth/clients` registrations have no managing signer and

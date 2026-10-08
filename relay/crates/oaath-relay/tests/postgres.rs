@@ -89,7 +89,7 @@ async fn refuses_to_create_the_schema_over_existing_objects() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(version, "oaath.relay-postgres-schema/v2");
+    assert_eq!(version, "oaath.relay-postgres-schema/v1");
     pool.close().await;
 }
 
