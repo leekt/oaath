@@ -5,6 +5,7 @@
 
 mod support;
 
+use alloy_primitives::B256;
 use k256::ecdsa::SigningKey;
 use oaath_relay::error::RelayErrorCode as E;
 use oaath_relay::revocation::MAX_BUNDLER_REQUESTS;
@@ -292,6 +293,7 @@ async fn an_opted_in_dapp_receives_the_signed_uninstall_and_the_relay_never_subm
         delivered["signed_operation"]["version"],
         "oaath.signed-owner-operation/v1"
     );
+    assert_eq!(signed["relay_submits"], false);
     // The dapp submits it; the relay observes the receipt by hash.
     shared.lock().unwrap().receipt = Some(receipt(&request, true));
     assert_eq!(status(&h, &granted).await.ok(200)["status"], "included");
@@ -361,4 +363,114 @@ async fn dapp_grant(
     .await
     .ok(200);
     id
+}
+
+#[tokio::test]
+async fn the_root_may_submit_an_opted_in_dapps_revocation_from_oaath() {
+    let (url, shared) = stub(Send::Accept).await;
+    let h = harness_with(configure(&url));
+    let root = Root::Ecdsa(root_key());
+    let (root_id, cookie) = sign_in(&h, &root).await;
+    let account = h
+        .send(portal_call(
+            "POST",
+            "/portal/accounts",
+            Some(&cookie),
+            Some(json!({ "root_signer_id": root_id, "creation_key": creation_key() })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    let client_id = text(
+        h.send(post(
+            "/oauth/clients",
+            None,
+            Some(json!({
+                "client_name": "Dapp",
+                "redirect_uris": [REDIRECT_URI],
+                "revocation_delivery": "dapp",
+            })),
+        ))
+        .await
+        .ok(201),
+        "client_id",
+    )
+    .to_owned();
+    let grant_id = dapp_grant(&h, &client_id, &root, &root_id, &account, &cookie).await;
+    let account_id = text(&account, "account_id").to_owned();
+    let members = h
+        .send(portal_call(
+            "GET",
+            &format!("/portal/accounts/{account_id}/members"),
+            Some(&cookie),
+            None,
+        ))
+        .await
+        .ok(200)
+        .clone();
+    let dapp_signer = members["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["grant_id"] == json!(grant_id))
+        .unwrap()["signer_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    h.send(portal_call(
+        "DELETE",
+        &format!("/portal/accounts/{account_id}/members/{dapp_signer}"),
+        Some(&cookie),
+        None,
+    ))
+    .await
+    .ok(200);
+    let granted = Granted {
+        root,
+        cookie,
+        account,
+        member_id: dapp_signer,
+        grant_id: grant_id.clone(),
+    };
+    let request = prepare(&h, &granted).await.ok(200)["request"].clone();
+    let digest: B256 = request["userOperationHash"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let signature = format!("0x{}", hex::encode(granted.root.sign(digest)));
+    let path = format!("/portal/grants/{grant_id}/revocation/sign");
+    // Anything but a boolean choice is refused.
+    h.send(portal_call(
+        "POST",
+        &path,
+        Some(&granted.cookie),
+        Some(json!({ "signature": signature, "submit_from_oaath": "yes" })),
+    ))
+    .await
+    .failure(E::RequestInvalid);
+    let signed = h
+        .send(portal_call(
+            "POST",
+            &path,
+            Some(&granted.cookie),
+            Some(json!({ "signature": signature, "submit_from_oaath": true })),
+        ))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(signed["status"], "submitted");
+    assert_eq!(signed["relay_submits"], true);
+    assert_eq!(calls(&shared, "eth_sendUserOperation"), 1);
+    // The dapp still reads the signed operation; the relay never sends it again.
+    let delivered = h
+        .send(get(&format!("/oauth/grants/{grant_id}/revocation"), None))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(delivered["status"], "submitted");
+    assert_eq!(delivered["signed_operation"]["request"], request);
+    shared.lock().unwrap().receipt = Some(receipt(&request, true));
+    assert_eq!(status(&h, &granted).await.ok(200)["status"], "included");
+    assert_eq!(calls(&shared, "eth_sendUserOperation"), 1);
 }

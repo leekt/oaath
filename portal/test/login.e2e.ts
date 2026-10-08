@@ -1925,6 +1925,7 @@ async function rootRevokes(
   },
   rootAccount: ReturnType<typeof privateKeyToAccount>,
   address: `0x${string}`,
+  submitFromOaath = false,
 ) {
   const path = `/portal/grants/${grantId}/revocation`;
   expect(((await relayCall(path, rootCookie)).json as unknown as Revocation).status).toBe(
@@ -1947,8 +1948,9 @@ async function rootRevokes(
   );
   expect(request.userOperation.sender).toBe(address);
   const signature = await rootAccount.signMessage({ message: { raw: request.userOperationHash } });
-  const signed = (await relayCall(`${path}/sign`, rootCookie, { signature }))
-    .json as unknown as Revocation;
+  const signed = (
+    await relayCall(`${path}/sign`, rootCookie, { signature, submit_from_oaath: submitFromOaath })
+  ).json as unknown as Revocation;
   return { prepared, signed, request };
 }
 
@@ -2025,224 +2027,239 @@ describe("revoking an invalidated grant on chain", () => {
     expect(await local.chain.rpc("eth_getBalance", [target, "latest"])).toBe("0x3e8");
   }, 180_000);
 
-  it("a dapp that opted in receives the root-signed uninstall and submits it itself", async () => {
-    const local = await startLocalArbitrumSepolia();
-    rpcUpstream = local.chain.url;
-    bundlerUpstream = local.bundlerUrl;
-    const deployment = kernelDeployment({ chainId: 421_614 });
-    const [ports] = createCetaneChainPorts({ 421614: { publicRpcUrls: [local.chain.url] } });
-    if (!ports) throw new Error("no chain reads");
-    const reads = ports.reads;
-    const rootAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
-    const rootProfile = {
-      version: "oaath.owner-credential-profile/v1",
-      kind: "ecdsa",
-      address: rootAccount.address.toLowerCase() as `0x${string}`,
-    } as const;
-    const root = await relaySignIn(rootProfile, async (challenge) =>
-      rootAccount.signMessage({ message: challenge.message ?? "" }),
-    );
-    const account = (
-      await relayCall("/portal/accounts", root.cookie, {
-        root_signer_id: root.signerId,
-        creation_key: randomBytes(16).toString("hex"),
-      })
-    ).json as { account_id: string; address: `0x${string}` };
+  it.each([false, true])(
+    "a dapp that opted in receives the root-signed uninstall; OAAth also submits it: %s",
+    async (submitFromOaath) => {
+      const local = await startLocalArbitrumSepolia();
+      rpcUpstream = local.chain.url;
+      bundlerUpstream = local.bundlerUrl;
+      const deployment = kernelDeployment({ chainId: 421_614 });
+      const [ports] = createCetaneChainPorts({ 421614: { publicRpcUrls: [local.chain.url] } });
+      if (!ports) throw new Error("no chain reads");
+      const reads = ports.reads;
+      const rootAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+      const rootProfile = {
+        version: "oaath.owner-credential-profile/v1",
+        kind: "ecdsa",
+        address: rootAccount.address.toLowerCase() as `0x${string}`,
+      } as const;
+      const root = await relaySignIn(rootProfile, async (challenge) =>
+        rootAccount.signMessage({ message: challenge.message ?? "" }),
+      );
+      const account = (
+        await relayCall("/portal/accounts", root.cookie, {
+          root_signer_id: root.signerId,
+          creation_key: randomBytes(16).toString("hex"),
+        })
+      ).json as { account_id: string; address: `0x${string}` };
 
-    // The dapp registers with revocation_delivery "dapp" and asks for a grant for its key.
-    const redirectUri = `${dapp}/callback`;
-    const client = (
-      await relayCall("/oauth/clients", undefined, {
-        client_name: "Opt-in dapp",
-        redirect_uris: [redirectUri],
-        revocation_delivery: "dapp",
-      })
-    ).json as { client_id: string; revocation_delivery: string };
-    expect(client.revocation_delivery).toBe("dapp");
-    const sessionAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
-    const target = `0x${"7d".repeat(20)}` as const;
-    const now = Math.floor(Date.now() / 1000);
-    const verifier = randomBytes(32).toString("base64url");
-    const pushed = await fetch(`${relayBase}/oauth/par`, {
-      method: "POST",
-      body: new URLSearchParams({
-        client_id: client.client_id,
-        redirect_uri: redirectUri,
-        response_type: "code",
-        code_challenge: createHash("sha256").update(verifier).digest("base64url"),
-        code_challenge_method: "S256",
-        scope: "openid",
-        authorization_details: JSON.stringify([
-          {
-            type: "oaath_grant",
-            signer: {
-              version: "oaath.operator-credential-profile/v1",
-              kind: "ecdsa",
-              address: sessionAccount.address.toLowerCase(),
-            },
-            policy: {
-              version: "oaath.grant-policy/v1",
-              calls: [{ target, selector: "0x12345678", valueLimit: "500", argumentEquals: [] }],
-              validAfter: now,
-              validUntil: now + 3600,
-              perChainOperationLimit: { count: 3, intervalSeconds: null },
-            },
-            chains: [421614],
-            expires_at: now + 7200,
-            device_id: "opt-in-device",
-          },
-        ]),
-      }),
-    });
-    const pushedBody = (await pushed.json()) as { request_uri?: string };
-    if (!pushedBody.request_uri)
-      throw new Error(`par ${pushed.status} ${JSON.stringify(pushedBody)}`);
-    const grantId = pushedBody.request_uri.split(":").pop() ?? "";
-    const prepared = (
-      await relayCall(`/portal/transactions/${grantId}/prepare`, root.cookie, {
-        signer_id: root.signerId,
-        account_id: account.account_id,
-      })
-    ).json as { permission_request: unknown };
-    const approval = prepareDerivedAccountPermissionApproval({
-      request: parsePermissionRequest(prepared.permission_request),
-      chainId: 421_614,
-      account: account.address,
-    });
-    const rootKey = kernelKey({
-      account: { address: rootProfile.address, sign: ({ hash }) => rootAccount.sign({ hash }) },
-      validator: ECDSA_VALIDATOR,
-    });
-    const decision = await approval.sign(rootKey, now);
-    const redirect = (
-      await relayCall(`/portal/transactions/${grantId}/decision`, root.cookie, {
-        outcome: "approved",
-        signer_id: root.signerId,
-        account_id: account.account_id,
-        artifact: JSON.stringify(decision),
-      })
-    ).json as { redirect: string };
-    const token = (await (
-      await fetch(`${relayBase}/oauth/token`, {
+      // The dapp registers with revocation_delivery "dapp" and asks for a grant for its key.
+      const redirectUri = `${dapp}/callback`;
+      const client = (
+        await relayCall("/oauth/clients", undefined, {
+          client_name: "Opt-in dapp",
+          redirect_uris: [redirectUri],
+          revocation_delivery: "dapp",
+        })
+      ).json as { client_id: string; revocation_delivery: string };
+      expect(client.revocation_delivery).toBe("dapp");
+      const sessionAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
+      const target = `0x${"7d".repeat(20)}` as const;
+      const now = Math.floor(Date.now() / 1000);
+      const verifier = randomBytes(32).toString("base64url");
+      const pushed = await fetch(`${relayBase}/oauth/par`, {
         method: "POST",
         body: new URLSearchParams({
-          grant_type: "authorization_code",
           client_id: client.client_id,
-          code: new URL(redirect.redirect).searchParams.get("code") ?? "",
-          code_verifier: verifier,
           redirect_uri: redirectUri,
+          response_type: "code",
+          code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+          code_challenge_method: "S256",
+          scope: "openid",
+          authorization_details: JSON.stringify([
+            {
+              type: "oaath_grant",
+              signer: {
+                version: "oaath.operator-credential-profile/v1",
+                kind: "ecdsa",
+                address: sessionAccount.address.toLowerCase(),
+              },
+              policy: {
+                version: "oaath.grant-policy/v1",
+                calls: [{ target, selector: "0x12345678", valueLimit: "500", argumentEquals: [] }],
+                validAfter: now,
+                validUntil: now + 3600,
+                perChainOperationLimit: { count: 3, intervalSeconds: null },
+              },
+              chains: [421614],
+              expires_at: now + 7200,
+              device_id: "opt-in-device",
+            },
+          ]),
         }),
-      })
-    ).json()) as {
-      authorization_details: {
-        permission_request: unknown;
-        enable: Parameters<typeof materializeKernelPermission>[0]["approval"];
-      }[];
-    };
-    const [detail] = token.authorization_details;
-    if (!detail) throw new Error("no grant");
+      });
+      const pushedBody = (await pushed.json()) as { request_uri?: string };
+      if (!pushedBody.request_uri)
+        throw new Error(`par ${pushed.status} ${JSON.stringify(pushedBody)}`);
+      const grantId = pushedBody.request_uri.split(":").pop() ?? "";
+      const prepared = (
+        await relayCall(`/portal/transactions/${grantId}/prepare`, root.cookie, {
+          signer_id: root.signerId,
+          account_id: account.account_id,
+        })
+      ).json as { permission_request: unknown };
+      const approval = prepareDerivedAccountPermissionApproval({
+        request: parsePermissionRequest(prepared.permission_request),
+        chainId: 421_614,
+        account: account.address,
+      });
+      const rootKey = kernelKey({
+        account: { address: rootProfile.address, sign: ({ hash }) => rootAccount.sign({ hash }) },
+        validator: ECDSA_VALIDATOR,
+      });
+      const decision = await approval.sign(rootKey, now);
+      const redirect = (
+        await relayCall(`/portal/transactions/${grantId}/decision`, root.cookie, {
+          outcome: "approved",
+          signer_id: root.signerId,
+          account_id: account.account_id,
+          artifact: JSON.stringify(decision),
+        })
+      ).json as { redirect: string };
+      const token = (await (
+        await fetch(`${relayBase}/oauth/token`, {
+          method: "POST",
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: client.client_id,
+            code: new URL(redirect.redirect).searchParams.get("code") ?? "",
+            code_verifier: verifier,
+            redirect_uri: redirectUri,
+          }),
+        })
+      ).json()) as {
+        authorization_details: {
+          permission_request: unknown;
+          enable: Parameters<typeof materializeKernelPermission>[0]["approval"];
+        }[];
+      };
+      const [detail] = token.authorization_details;
+      if (!detail) throw new Error("no grant");
 
-    // The dapp's first covered call installs its permission.
-    const request = parsePermissionRequest(detail.permission_request);
-    const owner = createKernelRuntime({
-      deployment,
-      operator: ownerOperator({
-        key: kernelKey({ credential: rootProfile, validator: ECDSA_VALIDATOR }),
-      }),
-      reads,
-    });
-    const session = createKernelRuntime({
-      deployment,
-      operator: sessionOperator({
-        key: kernelKey({
-          account: {
-            address: sessionAccount.address,
-            sign: ({ hash }) => sessionAccount.sign({ hash }),
-          },
-          validator: ECDSA_VALIDATOR,
+      // The dapp's first covered call installs its permission.
+      const request = parsePermissionRequest(detail.permission_request);
+      const owner = createKernelRuntime({
+        deployment,
+        operator: ownerOperator({
+          key: kernelKey({ credential: rootProfile, validator: ECDSA_VALIDATOR }),
         }),
-        policies: deriveSessionPolicyProfiles(request.policy),
-      }),
-      reads,
-    });
-    await local.chain.rpc("anvil_setBalance", [account.address, toHex(10n ** 18n)]);
-    const first = await materializeKernelPermission({
-      approval: detail.enable,
-      runtime: session,
-      grantId,
-      account: await session.bindAccount({
-        accountIndex: "0",
-        initialPackages: owner.packages,
-      }),
-      nonceKey: "0",
-      sequence: "0",
-      calls: [{ target, value: "500", data: "0x12345678" }],
-      gas: {
-        callGasLimit: "900000",
-        verificationGasLimit: "3000000",
-        preVerificationGas: "150000",
-        maxFeePerGas: "2000000000",
-        maxPriorityFeePerGas: "1000000000",
-      },
-    });
-    expect(await handleOperation(local, first.prepared, first.signature)).toBe(true);
+        reads,
+      });
+      const session = createKernelRuntime({
+        deployment,
+        operator: sessionOperator({
+          key: kernelKey({
+            account: {
+              address: sessionAccount.address,
+              sign: ({ hash }) => sessionAccount.sign({ hash }),
+            },
+            validator: ECDSA_VALIDATOR,
+          }),
+          policies: deriveSessionPolicyProfiles(request.policy),
+        }),
+        reads,
+      });
+      await local.chain.rpc("anvil_setBalance", [account.address, toHex(10n ** 18n)]);
+      const first = await materializeKernelPermission({
+        approval: detail.enable,
+        runtime: session,
+        grantId,
+        account: await session.bindAccount({
+          accountIndex: "0",
+          initialPackages: owner.packages,
+        }),
+        nonceKey: "0",
+        sequence: "0",
+        calls: [{ target, value: "500", data: "0x12345678" }],
+        gas: {
+          callGasLimit: "900000",
+          verificationGasLimit: "3000000",
+          preVerificationGas: "150000",
+          maxFeePerGas: "2000000000",
+          maxPriorityFeePerGas: "1000000000",
+        },
+      });
+      expect(await handleOperation(local, first.prepared, first.signature)).toBe(true);
 
-    // The root removes the dapp's signer, then signs the uninstall; the relay keeps it.
-    const members = (await relayCall(`/portal/accounts/${account.account_id}/members`, root.cookie))
-      .json as { members: { signer_id: string; grant_id: string | null }[] };
-    const dappSigner = members.members.find((member) => member.grant_id === grantId);
-    if (!dappSigner) throw new Error("no dapp signer");
-    await relayCall(
-      `/portal/accounts/${account.account_id}/members/${dappSigner.signer_id}`,
-      root.cookie,
-      undefined,
-      "DELETE",
-    );
-    const sentBefore = local.sent.length;
-    const { prepared: revocation, signed } = await rootRevokes(
-      grantId,
-      root.cookie,
-      rootProfile,
-      rootAccount,
-      account.address,
-    );
-    expect(revocation.delivery).toBe("dapp");
-    expect(signed.status).toBe("delivered");
-    expect(local.sent).toHaveLength(sentBefore);
+      // The root removes the dapp's signer, then signs the uninstall; the relay keeps it.
+      const members = (
+        await relayCall(`/portal/accounts/${account.account_id}/members`, root.cookie)
+      ).json as { members: { signer_id: string; grant_id: string | null }[] };
+      const dappSigner = members.members.find((member) => member.grant_id === grantId);
+      if (!dappSigner) throw new Error("no dapp signer");
+      await relayCall(
+        `/portal/accounts/${account.account_id}/members/${dappSigner.signer_id}`,
+        root.cookie,
+        undefined,
+        "DELETE",
+      );
+      const sentBefore = local.sent.length;
+      const { prepared: revocation, signed } = await rootRevokes(
+        grantId,
+        root.cookie,
+        rootProfile,
+        rootAccount,
+        account.address,
+        submitFromOaath,
+      );
+      expect(revocation.delivery).toBe("dapp");
+      if (submitFromOaath) {
+        // The root chose to submit from OAAth: the relay sends it once, and that suffices.
+        expect(signed.status).toBe("submitted");
+        expect(local.sent).toHaveLength(sentBefore + 1);
+        expect(await finalized(local, grantId, root.cookie)).toBe("finalized");
+        expect(await permissionInstalled(local, account.address, revocation.packages)).toBe(false);
+        expect(local.sent).toHaveLength(sentBefore + 1);
+        return;
+      }
+      expect(signed.status).toBe("delivered");
+      expect(local.sent).toHaveLength(sentBefore);
 
-    // The dapp reads the signed operation and submits it through its own bundler.
-    const delivered = (await relayCall(`/oauth/grants/${grantId}/revocation`)).json as {
-      signed_operation: { request: { userOperation: Record<string, string> }; signature: string };
-    };
-    const op = delivered.signed_operation.request.userOperation;
-    const quantity = (value: string | undefined) => toHex(BigInt(value ?? "0"));
-    const sent = await fetch(local.bundlerUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_sendUserOperation",
-        params: [
-          {
-            sender: op.sender,
-            nonce: quantity(op.nonce),
-            callData: op.callData,
-            callGasLimit: quantity(op.callGasLimit),
-            verificationGasLimit: quantity(op.verificationGasLimit),
-            preVerificationGas: quantity(op.preVerificationGas),
-            maxFeePerGas: quantity(op.maxFeePerGas),
-            maxPriorityFeePerGas: quantity(op.maxPriorityFeePerGas),
-            signature: delivered.signed_operation.signature,
-          },
-          deployment.entryPoint.address,
-        ],
-      }),
-    });
-    expect(((await sent.json()) as { result?: string }).result).toMatch(/^0x[0-9a-f]{64}$/u);
-    expect(await finalized(local, grantId, root.cookie)).toBe("finalized");
-    expect(await permissionInstalled(local, account.address, revocation.packages)).toBe(false);
-  }, 180_000);
+      // The dapp reads the signed operation and submits it through its own bundler.
+      const delivered = (await relayCall(`/oauth/grants/${grantId}/revocation`)).json as {
+        signed_operation: { request: { userOperation: Record<string, string> }; signature: string };
+      };
+      const op = delivered.signed_operation.request.userOperation;
+      const quantity = (value: string | undefined) => toHex(BigInt(value ?? "0"));
+      const sent = await fetch(local.bundlerUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_sendUserOperation",
+          params: [
+            {
+              sender: op.sender,
+              nonce: quantity(op.nonce),
+              callData: op.callData,
+              callGasLimit: quantity(op.callGasLimit),
+              verificationGasLimit: quantity(op.verificationGasLimit),
+              preVerificationGas: quantity(op.preVerificationGas),
+              maxFeePerGas: quantity(op.maxFeePerGas),
+              maxPriorityFeePerGas: quantity(op.maxPriorityFeePerGas),
+              signature: delivered.signed_operation.signature,
+            },
+            deployment.entryPoint.address,
+          ],
+        }),
+      });
+      expect(((await sent.json()) as { result?: string }).result).toMatch(/^0x[0-9a-f]{64}$/u);
+      expect(await finalized(local, grantId, root.cookie)).toBe("finalized");
+      expect(await permissionInstalled(local, account.address, revocation.packages)).toBe(false);
+    },
+    180_000,
+  );
 });
 
 describe("importing an existing account through the portal's chain-read proxy", () => {

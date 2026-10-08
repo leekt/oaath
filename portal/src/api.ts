@@ -312,6 +312,8 @@ export interface RevocationView {
     | "finalized"
     | "failed";
   readonly delivery: "relay" | "dapp";
+  /** Whether OAAth submits the signed uninstall: always for relay delivery, by choice for dapp. */
+  readonly relay_submits: boolean;
   /** The grant's install packages: what the uninstall removes. */
   readonly packages: unknown;
   /** The unsigned uninstall the root signs, while one is prepared. */
@@ -494,10 +496,11 @@ export const portalApi = {
       method: "POST",
       body: { estimation_signature: estimationSignature },
     }),
-  signRevocation: (grantId: string, signature: string) =>
+  /** `submitFromOaath` makes OAAth submit a revocation the dapp would otherwise submit. */
+  signRevocation: (grantId: string, signature: string, submitFromOaath: boolean) =>
     call<RevocationView>(`/portal/grants/${segment(grantId)}/revocation/sign`, {
       method: "POST",
-      body: { signature },
+      body: { signature, submit_from_oaath: submitFromOaath },
     }),
   memberGrant: (grantId: string) => call<MemberGrantView>(`/portal/grants/${segment(grantId)}`),
   rejectLink: (id: string) =>

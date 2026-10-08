@@ -118,6 +118,9 @@ pub struct RevocationRecord {
     pub request: Option<String>,
     pub signature: Option<String>,
     pub signed_at: Option<u64>,
+    /// Whether the relay submits: always for relay delivery; for dapp
+    /// delivery, the root's choice when it signs. Never set before signing.
+    pub relay_submits: bool,
     /// Written before the one submission attempt; never cleared.
     pub submitted_at: Option<u64>,
     pub outcome: Option<RevocationOutcome>,
@@ -154,6 +157,7 @@ impl RevocationRecord {
                 "request",
                 "signature",
                 "signedAt",
+                "relaySubmits",
                 "submittedAt",
                 "outcome",
                 "transactionHash",
@@ -181,6 +185,10 @@ impl RevocationRecord {
             request: nullable(r.get("request"), text)?,
             signature: nullable(r.get("signature"), text)?,
             signed_at: nullable(r.get("signedAt"), |v| timestamp(Some(v), UNREADABLE))?,
+            relay_submits: r
+                .get("relaySubmits")
+                .and_then(Value::as_bool)
+                .ok_or(UNREADABLE)?,
             submitted_at: nullable(r.get("submittedAt"), |v| timestamp(Some(v), UNREADABLE))?,
             outcome,
             transaction_hash: nullable(r.get("transactionHash"), text)?,
@@ -190,11 +198,14 @@ impl RevocationRecord {
             updated_at: timestamp(r.get("updatedAt"), UNREADABLE)?,
         };
         // A signature names a request; a submission or delivery outcome a signature;
-        // a relay submission is the only way to `submitted`.
+        // the relay submits relay deliveries always and dapp deliveries by choice.
         let consistent = (record.signature.is_none() || record.request.is_some())
             && (record.signature.is_some() == record.signed_at.is_some())
-            && (record.submitted_at.is_none()
-                || (record.signature.is_some() && record.delivery == RevocationDelivery::Relay))
+            && (!record.relay_submits || record.signature.is_some())
+            && (record.signature.is_none()
+                || record.delivery == RevocationDelivery::Dapp
+                || record.relay_submits)
+            && (record.submitted_at.is_none() || record.relay_submits)
             && (record.outcome.is_none() || record.signature.is_some())
             && (record.transaction_hash.is_some() == record.block_number.is_some())
             && record.revision >= 1
@@ -255,6 +266,9 @@ pub struct RevocationView {
     /// `included`, `finalized`, or `failed`.
     pub status: &'static str,
     pub delivery: RevocationDelivery,
+    /// Whether OAAth submits the signed uninstall (always for relay delivery;
+    /// the root's choice for dapp delivery, once signed).
+    pub relay_submits: bool,
     /// The grant's install packages: what the uninstall removes.
     pub packages: Value,
     /// The unsigned request the root signs, while one is prepared.
@@ -362,6 +376,8 @@ fn view(
         grant_id: grant_id.to_owned(),
         status,
         delivery: revocable.delivery,
+        relay_submits: revocable.delivery == RevocationDelivery::Relay
+            || record.is_some_and(|record| record.relay_submits),
         packages: revocable.packages.clone(),
         user_operation_hash: request.as_ref().map(|r| r.user_operation_hash.clone()),
         request: request
@@ -610,6 +626,7 @@ pub async fn prepare_revocation(
             request: None,
             signature: None,
             signed_at: None,
+            relay_submits: false,
             submitted_at: None,
             outcome: None,
             transaction_hash: None,
@@ -665,9 +682,11 @@ pub async fn prepare_revocation(
     view(grant_id, &revocable, Some(&prepared), "pending_signature")
 }
 
-/// `POST /portal/grants/{id}/revocation/sign {signature}`: the root's one
-/// signature over the prepared request. With relay delivery the submission is
-/// recorded, then sent once; nothing ever sends it again.
+/// `POST /portal/grants/{id}/revocation/sign {signature, submit_from_oaath?}`:
+/// the root's one signature over the prepared request. With relay delivery, or
+/// with dapp delivery and `submit_from_oaath: true`, the submission is
+/// recorded, then sent once; nothing ever sends it again. A dapp can still
+/// read the signed operation; the account nonce lets only one copy land.
 #[allow(clippy::too_many_arguments)]
 pub async fn sign_revocation(
     store: &dyn RelayStore,
@@ -679,7 +698,17 @@ pub async fn sign_revocation(
     body: &Map<String, Value>,
     session: &str,
 ) -> RelayResult<RevocationView> {
-    exact_record(&Value::Object(body.clone()), &["signature"], INVALID)?;
+    let submit_from_oaath = match body.get("submit_from_oaath") {
+        None => false,
+        Some(Value::Bool(choice)) => *choice,
+        Some(_) => return Err(INVALID),
+    };
+    let keys: &[&str] = if body.contains_key("submit_from_oaath") {
+        &["signature", "submit_from_oaath"]
+    } else {
+        &["signature"]
+    };
+    exact_record(&Value::Object(body.clone()), keys, INVALID)?;
     let signature = signature_hex(body.get("signature"))?;
     let now = relay_now(clock)?;
     let (revocable, record) = load(store, kms, grant_id, Some(session)).await?;
@@ -701,7 +730,7 @@ pub async fn sign_revocation(
     ) {
         return Err(INVALID);
     }
-    let relay = record.delivery == RevocationDelivery::Relay;
+    let relay = record.delivery == RevocationDelivery::Relay || submit_from_oaath;
     let bundler = if relay {
         Some(ports.bundler.ok_or(UNAVAILABLE)?)
     } else {
@@ -714,6 +743,7 @@ pub async fn sign_revocation(
     };
     signed.signature = Some(signature.clone());
     signed.signed_at = Some(now);
+    signed.relay_submits = relay;
     if relay {
         signed.submitted_at = Some(now);
     }
