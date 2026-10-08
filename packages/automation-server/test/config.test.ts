@@ -30,6 +30,13 @@ describe("configFromEnv", () => {
       relayPaysGas: false,
     });
     expect(config.budgets).toEqual({ rpc: 3000, bundler: 300, paymaster: 100, windowSeconds: 600 });
+    expect(config.maxOpenSlots).toBe(4);
+    expect(
+      configFromEnv({ ...env, AUTOMATION_MAX_OPEN_SLOTS: "2" }, [definition]).maxOpenSlots,
+    ).toBe(2);
+    expect(() => configFromEnv({ ...env, AUTOMATION_MAX_OPEN_SLOTS: "0" }, [definition])).toThrow(
+      expect.objectContaining({ variable: "AUTOMATION_MAX_OPEN_SLOTS" }),
+    );
   });
 
   it("captures an optional paymaster API key only alongside its paymaster", () => {

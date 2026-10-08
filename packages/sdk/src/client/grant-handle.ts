@@ -288,7 +288,8 @@ export interface OaathSendCallsInput {
   /**
    * An independent session sequence for this Grant and chain. It keeps its
    * own journal and its own one-unresolved-operation rule, and requires the
-   * permission to be installed on the chain already.
+   * permission to be installed on the chain, or its installing operation to
+   * be included there; a lane never carries enable data.
    */
   readonly lane?: Readonly<OaathOperationLane>;
 }
@@ -1514,8 +1515,23 @@ export function createGrantHandle(
       );
     }
     // Only the default lane may enable on first use, so two lanes can never
-    // race the install: an explicit lane waits for observed installation.
-    if (requireInstalled && materialization?.state !== "installed") {
+    // race the install: an explicit lane waits until the installing operation
+    // is included on chain, then runs in standard mode. Kernel enables in
+    // validation, so a lane operation can only validate on a chain that
+    // carries the install; if that inclusion is reorganized away, the lane
+    // operation fails validation instead of executing.
+    if (
+      requireInstalled &&
+      materialization?.state !== "installed" &&
+      !(
+        materialization?.state === "installing" &&
+        (await installIncluded(
+          publicationGrant.identity.grantId,
+          binding,
+          materialization.operationId,
+        ))
+      )
+    ) {
       return clientFail(
         "oaath_client_state_conflict",
         "an explicit lane requires the permission to be installed on this chain",
@@ -1542,10 +1558,13 @@ export function createGrantHandle(
         publicationGrant = latest.value;
       }
     } else if (materialization.state === "installing") {
-      if (input.installApproval === null) {
-        return unsupported("grant_capability_unavailable");
+      // An explicit lane proved the install included above; it never carries enable data.
+      if (!requireInstalled) {
+        if (input.installApproval === null) {
+          return unsupported("grant_capability_unavailable");
+        }
+        mode = "enable-replayable";
       }
-      mode = "enable-replayable";
     } else if (materialization.state !== "installed") {
       return unsupported(`grant_materialization_${materialization.state}`);
     }
@@ -2403,7 +2422,15 @@ export function createGrantHandle(
         }
       }
 
-      if (current.state !== "installed") {
+      // A standard-mode operation is only ever prepared off an installed or,
+      // on an explicit lane, an included install; re-prove it at signing.
+      if (
+        current.state !== "installed" &&
+        !(
+          current.state === "installing" &&
+          (await installIncluded(snapshot.value.identity.grantId, binding, current.operationId))
+        )
+      ) {
         return clientFail(
           "oaath_client_state_conflict",
           "the Grant permission is not installed",
@@ -2471,6 +2498,24 @@ export function createGrantHandle(
         operationId,
         abandonedAt,
       }),
+    );
+  }
+
+  /** The installing operation's own journal record shows it included and successful for this binding. */
+  async function installIncluded(
+    grantId: string,
+    binding: Readonly<{ chainId: number; account: `0x${string}` }>,
+    operationId: `0x${string}`,
+  ): Promise<boolean> {
+    const operation = await exactOperation(
+      Object.freeze({ grantId, chainId: binding.chainId, kind: "execution" as const }),
+      operationId,
+    );
+    return (
+      operation?.value.state === "included" &&
+      operation.value.inclusion.outcome === "success" &&
+      operation.value.identity.account === binding.account &&
+      operation.value.identity.userOperationHash === operationId
     );
   }
 

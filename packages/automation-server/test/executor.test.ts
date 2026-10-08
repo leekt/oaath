@@ -13,6 +13,7 @@ import {
   type OperationGateway,
   paymasterPayer,
   processRun,
+  type RunLane,
 } from "../src/executor.js";
 import { createOperationStore } from "../src/store.js";
 import { ACCOUNT, definition, testContext } from "./support/fixture.js";
@@ -60,12 +61,20 @@ async function insertRun(
   kind: "setup" | "occurrence" | "cancel",
   slot: number | null,
 ) {
+  const at = START + (slot ?? 0) * 3600;
   await context.pool.query(
-    `INSERT INTO automation_runs(plan_id,run_key,kind,slot,scheduled_at,closes_at,status,next_attempt_at)
-     VALUES($1,$2,$3,$4,$5,$6,'due',$5)`,
-    [planId, key, kind, slot, START, slot === null ? null : START + 600],
+    `INSERT INTO automation_runs(plan_id,run_key,kind,slot,lane,scheduled_at,closes_at,status,next_attempt_at)
+     VALUES($1,$2,$3,$4,$5,$6,$7,'due',$6)`,
+    [planId, key, kind, slot, slot ?? 0, at, slot === null ? null : at + 600],
   );
 }
+
+/** One distinct operation hash per lane, so no lane can pass for another. */
+const laneHash = (lane: number) =>
+  (lane === 0
+    ? `0x${"cd".repeat(32)}`
+    : `0x${lane.toString(16).padStart(64, "e")}`) as `0x${string}`;
+const laneKey = (lane: RunLane) => (lane === null ? 0 : Number(lane.nonceKey));
 
 /** Journals like the SDK, then answers observations from a script. */
 function scriptedGateway(
@@ -74,14 +83,23 @@ function scriptedGateway(
   script: { observations: Observation[]; failSend?: "before_journal" | "after_journal" },
 ) {
   const counts = { sends: 0, observations: 0 };
+  /** The lane key of every send and every observation, in order. */
+  const lanes = { sends: [] as number[], observations: [] as number[] };
   const journal = createOperationStore(context.pool);
-  const hash = `0x${"cd".repeat(32)}` as const;
+  const hash = laneHash(0);
   const gateway: OperationGateway = {
-    async send() {
+    async send(_calls, lane) {
       counts.sends += 1;
+      lanes.sends.push(laneKey(lane));
       if (script.failSend === "before_journal") throw new Error("bundler_unavailable");
+      const hash = laneHash(laneKey(lane));
       const committed = await journal.compareAndSwap({
-        key: { grantId, chainId: 31337, kind: "execution" },
+        key: {
+          grantId,
+          chainId: 31337,
+          kind: "execution",
+          ...(lane === null ? {} : { lane: laneKey(lane) }),
+        },
         expectedStoreRevision: null,
         next: {
           version: "oaath.operation-store-record/v1",
@@ -96,16 +114,18 @@ function scriptedGateway(
       if (script.failSend === "after_journal") throw new Error("submission_timeout");
       return hash;
     },
-    async observe(id) {
-      expect(id).toBe(hash);
+    async observe(id, lane) {
+      // A run observes only its own lane's operation.
+      expect(id).toBe(laneHash(laneKey(lane)));
       counts.observations += 1;
+      lanes.observations.push(laneKey(lane));
       return (
         script.observations.shift() ?? { status: "pending", transactionHash: null, execution: null }
       );
     },
     async close() {},
   };
-  return { counts, open: async () => gateway, hash };
+  return { counts, lanes, open: async () => gateway, hash };
 }
 
 async function run(context: ServiceContext, planId: string, key: string) {
@@ -189,6 +209,62 @@ describe.skipIf(!postgresAvailable)("executor", () => {
     await context.pool.end();
   });
 
+  it("sends the next slot on its own lane while the previous one is included but not final", async () => {
+    const clock = { now: START + 1 };
+    const context = await testContext(await cluster.database(), clock);
+    const { planId, grantId } = await insertPlan(context, "active");
+    await insertRun(context, planId, "occurrence:0", "occurrence", 0);
+    const included: Observation = {
+      status: "pending",
+      transactionHash: `0x${"ee".repeat(32)}`,
+      execution: null,
+    };
+    const gateway = scriptedGateway(context, grantId, { observations: [included, included] });
+    await drain(context, gateway.open);
+    expect((await run(context, planId, "occurrence:0")).status).toBe("observed");
+
+    // Slot 1 comes due while slot 0 still waits for finality.
+    await insertRun(context, planId, "occurrence:1", "occurrence", 1);
+    clock.now = START + 3600 + 1;
+    await drain(context, gateway.open);
+    const [zero, one] = [
+      await run(context, planId, "occurrence:0"),
+      await run(context, planId, "occurrence:1"),
+    ];
+    expect([zero.status, zero.op_hash]).toEqual(["observed", laneHash(0)]);
+    expect([one.status, one.op_hash, one.lane]).toEqual(["submitted", laneHash(1), 1]);
+    expect(gateway.lanes.sends).toEqual([0, 1]);
+
+    // Observation retries on both lanes submit nothing new.
+    for (let pass = 0; pass < 4; pass += 1) {
+      clock.now += 120;
+      await drain(context, gateway.open);
+    }
+    expect(gateway.lanes.sends).toEqual([0, 1]);
+    expect(new Set(gateway.lanes.observations)).toEqual(new Set([0, 1]));
+    expect((await run(context, planId, "occurrence:0")).op_hash).toBe(laneHash(0));
+    expect((await run(context, planId, "occurrence:1")).op_hash).toBe(laneHash(1));
+    await context.pool.end();
+  });
+
+  it("binds a journaled identity only to the prepared run on its own lane", async () => {
+    const clock = { now: START + 3600 + 1 };
+    const context = await testContext(await cluster.database(), clock);
+    const { planId, grantId } = await insertPlan(context, "active");
+    await insertRun(context, planId, "occurrence:0", "occurrence", 0);
+    await insertRun(context, planId, "occurrence:1", "occurrence", 1);
+    await context.pool.query("UPDATE automation_runs SET status='prepared', calls='[]'");
+    const gateway = await scriptedGateway(context, grantId, { observations: [] }).open();
+    // No run is prepared on lane 7: its identity is refused and nothing is journaled.
+    await expect(gateway.send([], { id: "occurrence:7", nonceKey: 7n })).rejects.toThrow(
+      "journal_refused",
+    );
+    await gateway.send([], { id: "occurrence:1", nonceKey: 1n });
+    expect((await run(context, planId, "occurrence:0")).op_hash).toBeNull();
+    expect((await run(context, planId, "occurrence:1")).op_hash).toBe(laneHash(1));
+    await context.pool.end();
+  });
+
   it("never sends again once the journal holds the identity", async () => {
     const clock = { now: START + 1 };
     const context = await testContext(await cluster.database(), clock);
@@ -246,7 +322,7 @@ describe.skipIf(!postgresAvailable)("executor", () => {
       "UPDATE automation_runs SET status='prepared', calls='[]' WHERE plan_id=$1",
       [planId],
     );
-    await (await first.open()).send([]);
+    await (await first.open()).send([], null);
     expect((await run(context, planId, "occurrence:0")).op_hash).toBe(first.hash);
     // The lease expires; another replica resumes from PostgreSQL alone.
     clock.now += LEASE_SECONDS + 1;
@@ -263,7 +339,7 @@ describe.skipIf(!postgresAvailable)("executor", () => {
     const context = await testContext(await cluster.database(), clock);
     const { grantId } = await insertPlan(context, "active");
     const gateway = scriptedGateway(context, grantId, { observations: [] });
-    await expect((await gateway.open()).send([])).rejects.toThrow("journal_refused");
+    await expect((await gateway.open()).send([], null)).rejects.toThrow("journal_refused");
     const rows = await context.pool.query("SELECT count(*)::int AS n FROM automation_operations");
     expect(rows.rows[0].n).toBe(0);
     await context.pool.end();
@@ -369,6 +445,39 @@ describe.skipIf(!postgresAvailable)("claims across replicas", () => {
       [stale?.plan_id, stale?.run_key, stale?.generation],
     );
     expect(write.rowCount).toBe(0);
+    await a.pool.end();
+    await b.pool.end();
+  });
+
+  it("sends each open slot of one plan exactly once across two replicas", async () => {
+    const clock = { now: START + 3600 + 1 };
+    const url = await cluster.database();
+    const a = await testContext(url, clock, "replica-a");
+    const b = await testContext(url, clock, "replica-b");
+    const { planId, grantId } = await insertPlan(a, "active");
+    // Slot 0 is still inside its window here only because closes_at is widened.
+    await insertRun(a, planId, "occurrence:0", "occurrence", 0);
+    await insertRun(a, planId, "occurrence:1", "occurrence", 1);
+    await a.pool.query("UPDATE automation_runs SET closes_at=$1", [START + 7200]);
+    const gateway = scriptedGateway(a, grantId, { observations: [] });
+    for (let pass = 0; pass < 3; pass += 1) {
+      await Promise.all(
+        [a, b, a, b].map(async (replica) => {
+          const claimed = await claimRun(replica);
+          if (claimed !== null) await processRun(replica, claimed, gateway.open);
+        }),
+      );
+      clock.now += LEASE_SECONDS + 1;
+    }
+    expect([...gateway.lanes.sends].sort()).toEqual([0, 1]);
+    const rows = await a.pool.query(
+      "SELECT run_key, op_hash FROM automation_runs WHERE plan_id=$1 ORDER BY run_key",
+      [planId],
+    );
+    expect(rows.rows).toEqual([
+      { run_key: "occurrence:0", op_hash: laneHash(0) },
+      { run_key: "occurrence:1", op_hash: laneHash(1) },
+    ]);
     await a.pool.end();
     await b.pool.end();
   });

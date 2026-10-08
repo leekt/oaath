@@ -31,6 +31,7 @@ first start; an older schema is refused and must be dropped and recreated
 | `AUTOMATION_PAYMASTER_URL_<chainId>` | Optional ERC-7677 paymaster; operations are self-funded without it. |
 | `AUTOMATION_PAYMASTER_API_KEY_<chainId>` | Optional key for that paymaster, sent as the ERC-7677 context `{ "apiKey": ... }` (as [paymaster-rs](https://github.com/leekt/paymaste_rs) accepts it) instead of `{}`. Requires the paymaster URL. |
 | `AUTOMATION_RELAY_PAYS_GAS_<chainId>` | Optional `true` when that chain's bundler pays gas itself ([bundle_rs](https://github.com/zerodevapp/bundle_rs) fast mode): operations carry zero fees and need no funds or paymaster. Refused together with a paymaster URL. |
+| `AUTOMATION_MAX_OPEN_SLOTS` | Occurrences of one plan that may be open at once, each on its own nonce lane; default 4. |
 | `AUTOMATION_RPC_BUDGET`, `AUTOMATION_BUNDLER_BUDGET`, `AUTOMATION_PAYMASTER_BUDGET` | Hard request budgets per window; defaults 3000, 300 and 100. |
 | `AUTOMATION_BUDGET_WINDOW_SECONDS` | Budget window; default 600. Exhausted work waits for the next window. |
 
@@ -45,7 +46,15 @@ run   due -> claimed -> prepared -> submitted -> observed -> finalized
       terminal: finalized | failed | skipped
 ```
 
-- One open run per plan, so one unresolved operation per Grant, chain and lane.
+- Each run has one Kernel nonce lane, assigned once at admission: setup and
+  cancel use the default lane, occurrence slot N uses lane N. One open run per
+  plan and lane (a unique index), so one unresolved operation per Grant, chain
+  and lane.
+- A slot does not wait for an earlier slot's finality: once one of the plan's
+  operations is included (the permission install is on chain), up to
+  `AUTOMATION_MAX_OPEN_SLOTS` occurrences run side by side. Before that, and
+  always before setup finalizes, slots open one at a time. A slot that cannot
+  open is skipped once its window closes. Cancel waits until no run is open.
 - Runs are claimed with `SELECT … FOR UPDATE SKIP LOCKED` and a lease; every
   write is fenced by the claim's generation.
 - The calls are persisted before sending. The SDK journals each operation
@@ -74,6 +83,7 @@ The PostgreSQL suites start a throwaway local cluster (or use
 `OAATH_TEST_POSTGRES_URL`) and skip without PostgreSQL binaries unless
 `OAATH_REQUIRE_POSTGRES=1`. The end-to-end run builds the relay with cargo,
 approves a [DCA plan](../../examples/dca) through the portal API as its account
-root, and checks that the setup and one due occurrence each send exactly once,
-including while a held operation is observed repeatedly. Its bundler is a
+root, and checks that the setup and two due occurrences each send exactly once,
+including while a held operation is observed repeatedly and while the first
+occurrence is included but held short of finality as the second comes due. Its bundler is a
 loopback fixture over `EntryPoint.handleOps`; no public network is contacted.

@@ -241,13 +241,13 @@ describe.skipIf(!postgresAvailable)("HTTP API", () => {
   it("lists runs without a slot beside the occurrences", async () => {
     const alice = await session("alice");
     const plan = (await create(alice, "k-runs")).json;
-    for (const [key, kind, slot] of [
-      ["setup", "setup", null],
-      ["occurrence:0", "occurrence", 0],
+    for (const [key, kind, slot, status] of [
+      ["setup", "setup", null, "finalized"],
+      ["occurrence:0", "occurrence", 0, "due"],
     ] as const)
       await service.context.pool.query(
-        "INSERT INTO automation_runs(plan_id,run_key,kind,slot,scheduled_at,status) VALUES($1,$2,$3,$4,1,'due')",
-        [plan.id, key, kind, slot],
+        "INSERT INTO automation_runs(plan_id,run_key,kind,slot,lane,scheduled_at,status) VALUES($1,$2,$3,$4,0,1,$5)",
+        [plan.id, key, kind, slot, status],
       );
     const runs = (await call("GET", `/v1/plans/${plan.id}/runs`, alice)).json.runs;
     expect(runs.map((run: { kind: string }) => run.kind)).toEqual(["setup", "occurrence"]);

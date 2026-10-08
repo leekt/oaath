@@ -8,6 +8,6 @@
 export type { AutomationServiceConfig, ChainEndpoints } from "./config.js";
 export { ConfigError, configFromEnv, loadDefinitions } from "./config.js";
 export { AUTOMATION_SCHEMA_VERSION } from "./db.js";
-export type { Observation, OpenGateway, OperationGateway } from "./executor.js";
+export type { Observation, OpenGateway, OperationGateway, RunLane } from "./executor.js";
 export type { AutomationService, StartOptions } from "./service.js";
 export { startAutomationService } from "./service.js";

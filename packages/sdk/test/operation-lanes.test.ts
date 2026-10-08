@@ -46,6 +46,40 @@ describe("caller-reserved operation lanes", () => {
     await connection.close();
   });
 
+  it("runs a lane in standard mode once the installing operation is included, not before", async () => {
+    let withhold = true;
+    let final = false;
+    const chain = createChainFixture({
+      withholdReceipt: () => withhold,
+      withholdFinality: () => !final,
+    });
+    const realm = createRealm({ chain });
+    const connection = await realm.oaath.connect();
+    const grant = await connection.requestPermission(permissionInput());
+    const installing = await grant.sendCalls(sendCallsInput());
+    expect(installing.outcome.status).toBe("pending");
+    // Submitted but not included: the lane still may not race the install.
+    await expect(grant.sendCalls(onLane(17n))).rejects.toMatchObject({
+      source: "operation_lane_permission_not_installed",
+    });
+    expect(chain.sends).toHaveLength(1);
+    withhold = false;
+    const included = await installing.wait({ attempts: 1 });
+    expect(included.status).toBe("pending");
+    expect(included.transactionHash).not.toBeNull();
+
+    // Included, not final: the lane runs on its own nonce key, without enable data.
+    const laned = await grant.sendCalls(onLane(17n));
+    expect(chain.sends).toHaveLength(2);
+    const enableKey = BigInt(chain.sends[0]?.userOperation.nonce ?? "0") >> 64n;
+    const laneKey = BigInt(chain.sends[1]?.userOperation.nonce ?? "0") >> 64n;
+    expect(laneKey & 0xffffn).toBe(17n);
+    expect(laneKey >> 16n).not.toBe(enableKey >> 16n);
+    final = true;
+    expect((await laned.wait()).status).toBe("finalized");
+    await connection.close();
+  });
+
   it("rejects keys outside the nonce namespace and malformed lanes before any quote", async () => {
     const { chain, connection, grant } = await installedGrant();
     const quotes = chain.quotes;

@@ -8,8 +8,9 @@
  * The account root approves the plan's Grant through the portal API exactly as
  * the portal does: sign in, create an account, prepare, sign, decide. The
  * service then runs the setup operation (deploy + enable + approve + open) and
- * one due occurrence (a real swap), observing a held operation repeatedly
- * without sending it again.
+ * two due occurrences (real swaps). It observes a held operation repeatedly
+ * without sending it again, and while the first occurrence is included but not
+ * final, the second is sent on time on its own Kernel nonce lane.
  *
  * Opt-in: `bun run --filter @oaath/automation-server test:e2e` (needs cargo,
  * Anvil and PostgreSQL binaries).
@@ -208,7 +209,9 @@ async function deployMarket(anvil: Anvil) {
 /**
  * The bundler fixture: estimates generously, submits through
  * `EntryPoint.handleOps`, and reads receipts back from chain evidence. While
- * `hold` is set, an accepted operation is kept out of the chain.
+ * `hold` is set, an accepted operation is kept out of the chain. While
+ * `holdFinality` is set, inclusion mines no further blocks, so Anvil's
+ * `finalized` tag (two blocks behind) stays below it, as on a rollup awaiting L1.
  */
 async function startBundler(anvil: Anvil, stack: Stack) {
   const deployment = kernelDeployment({ chainId: CHAIN_ID });
@@ -216,6 +219,7 @@ async function startBundler(anvil: Anvil, stack: Stack) {
   const state = {
     sends: 0,
     hold: false,
+    holdFinality: false,
     held: [] as Operation[],
     receiptReads: new Map<string, number>(),
   };
@@ -234,7 +238,7 @@ async function startBundler(anvil: Anvil, stack: Stack) {
       }),
     });
     await anvil.client.waitForTransactionReceipt({ hash });
-    await anvil.rpc("anvil_mine", ["0x3"]);
+    if (!state.holdFinality) await anvil.rpc("anvil_mine", ["0x3"]);
   };
   const server: Server = createServer(async (request, response) => {
     const chunks: Buffer[] = [];
@@ -313,6 +317,10 @@ async function startBundler(anvil: Anvil, stack: Stack) {
     async release() {
       state.hold = false;
       for (const operation of state.held.splice(0)) await include(operation);
+    },
+    async finalize() {
+      state.holdFinality = false;
+      await anvil.rpc("anvil_mine", ["0x3"]);
     },
     close: () => server.close(),
   };
@@ -433,7 +441,7 @@ async function portalRoot(relay: string) {
     );
     return decided.redirect;
   }
-  return { address: account.address as Hex, approve };
+  return { address: account.address as Hex, signerId: signerId as string, approve };
 }
 
 describe.skipIf(!ENABLED)("automation service end to end", () => {
@@ -467,7 +475,7 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
     anvil?.stop();
   });
 
-  it("authorizes through the issuer, runs setup and one due occurrence, and never resends", async () => {
+  it("authorizes, runs setup, and sends a due slot while the previous one awaits finality, never resending", async () => {
     const market = await deployMarket(anvil);
     const definition = dcaAutomation({
       chainId: CHAIN_ID,
@@ -523,8 +531,10 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         }),
       );
+    // The application's user is the root's OAAth signer: the service's
+    // login_hint binds it and the account at the issuer.
     const session = await call("POST", "/v1/sessions", APP_TOKEN, {
-      userId: "e2e-user",
+      userId: root.signerId,
       account: root.address,
     });
     const startAt = Math.floor(Date.now() / 1000) + 45;
@@ -558,12 +568,13 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
 
     // The first occurrence's operation is accepted but held out of the chain.
     bundler.state.hold = true;
-    const run = async () =>
+    const run = async (slot: number) =>
       (await call("GET", `/v1/plans/${plan.id}/runs`, session.token)).runs.find(
-        (entry: { kind: string; slot: number }) => entry.kind === "occurrence" && entry.slot === 0,
+        (entry: { kind: string; slot: number }) =>
+          entry.kind === "occurrence" && entry.slot === slot,
       );
     const submitted = await until(async () => {
-      const current = await run();
+      const current = await run(0);
       return current?.operation ? current : null;
     }, "the occurrence to be journaled and sent");
     await until(
@@ -571,34 +582,73 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
       "repeated observation of the held operation",
     );
     expect(bundler.state.sends).toBe(2);
+    // Included but not final, as a rollup operation awaiting L1 finality.
+    bundler.state.holdFinality = true;
     await bundler.release();
-    const finalized = await until(async () => {
-      const current = await run();
-      return current?.status === "finalized" ? current : null;
-    }, "the occurrence to finalize");
-    expect(finalized.operation).toBe(submitted.operation);
-    expect(finalized.transactionHash).toMatch(/^0x[0-9a-f]{64}$/u);
-    // One send per operation across both replicas and every observation pass.
-    expect(bundler.state.sends).toBe(2);
+    await until(
+      async () => (await run(0))?.status === "observed",
+      "the occurrence to be observed included",
+    );
 
-    const receipt = await anvil.client.getTransactionReceipt({ hash: finalized.transactionHash });
-    const purchases = (receipt?.logs ?? []).flatMap((log) => {
-      try {
-        const event = decodeEventLog({
-          abi: parseAbi([
-            "event Purchased(bytes32 indexed planId, uint32 indexed slot, address indexed account, uint256 amountIn, uint256 amountOut)",
-          ]),
-          data: log.data,
-          topics: log.topics as never,
-        });
-        return [event.args];
-      } catch {
-        return [];
-      }
-    });
-    expect(purchases).toHaveLength(1);
-    expect(purchases[0]).toMatchObject({ planId: plan.id, slot: 0, amountIn: 1_000_000n });
-    expect((purchases[0]?.amountOut ?? 0n) > 0n).toBe(true);
+    // The second slot comes due a minute later and is sent on time on its own lane.
+    const second = await until(
+      async () => {
+        const current = await run(1);
+        return current?.status === "observed" ? current : null;
+      },
+      "the second slot to be included while the first awaits finality",
+      150,
+    );
+    expect((await run(0))?.status).toBe("observed");
+    expect(bundler.state.sends).toBe(3);
+    const nonces = await a.context.pool.query(
+      "SELECT run_key, lane, op_nonce FROM automation_runs WHERE plan_id=$1 AND kind='occurrence' ORDER BY slot",
+      [plan.id],
+    );
+    expect(
+      nonces.rows.map((row) => [row.run_key, row.lane, (BigInt(row.op_nonce) >> 64n) & 0xffffn]),
+    ).toEqual([
+      ["occurrence:0", 0, 0n],
+      ["occurrence:1", 1, 1n],
+    ]);
+
+    await bundler.finalize();
+    const finalized = await Promise.all(
+      [0, 1].map((slot) =>
+        until(async () => {
+          const current = await run(slot);
+          return current?.status === "finalized" ? current : null;
+        }, `slot ${slot} to finalize`),
+      ),
+    );
+    expect(finalized.map((entry) => entry.operation)).toEqual([
+      submitted.operation,
+      second.operation,
+    ]);
+    // One send per operation across both replicas and every observation pass.
+    expect(bundler.state.sends).toBe(3);
+
+    for (const [slot, entry] of finalized.entries()) {
+      expect(entry.transactionHash).toMatch(/^0x[0-9a-f]{64}$/u);
+      const receipt = await anvil.client.getTransactionReceipt({ hash: entry.transactionHash });
+      const purchases = (receipt?.logs ?? []).flatMap((log) => {
+        try {
+          const event = decodeEventLog({
+            abi: parseAbi([
+              "event Purchased(bytes32 indexed planId, uint32 indexed slot, address indexed account, uint256 amountIn, uint256 amountOut)",
+            ]),
+            data: log.data,
+            topics: log.topics as never,
+          });
+          return [event.args];
+        } catch {
+          return [];
+        }
+      });
+      expect(purchases).toHaveLength(1);
+      expect(purchases[0]).toMatchObject({ planId: plan.id, slot, amountIn: 1_000_000n });
+      expect((purchases[0]?.amountOut ?? 0n) > 0n).toBe(true);
+    }
 
     const leases = await a.context.pool.query(
       "SELECT run_key, status, generation, attempts FROM automation_runs WHERE plan_id=$1 ORDER BY run_key",
@@ -606,7 +656,7 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
     );
     expect(
       leases.rows.filter((row) => row.status === "finalized").map((row) => row.run_key),
-    ).toEqual(["occurrence:0", "setup"]);
+    ).toEqual(["occurrence:0", "occurrence:1", "setup"]);
     expect(leases.rows.every((row) => row.attempts === 0)).toBe(true);
   }, 600_000);
 });

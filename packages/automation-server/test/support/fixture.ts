@@ -70,6 +70,7 @@ export function testConfig(
         },
       ],
     ]),
+    maxOpenSlots: 4,
     budgets: { rpc: 10, bundler: 10, paymaster: 10, windowSeconds: 60 },
     ...overrides,
   };

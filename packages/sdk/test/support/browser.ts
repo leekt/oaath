@@ -333,6 +333,8 @@ export interface ChainFixtureOptions {
   readonly blockOffset?: () => number;
   /** Withholds inclusion evidence, leaving the operation pending. */
   readonly withholdReceipt?: () => boolean;
+  /** Keeps the finalized head one block behind inclusion, leaving the operation included. */
+  readonly withholdFinality?: () => boolean;
   /** UserOperation execution result by submission index; validation still succeeded. */
   readonly operationSuccess?: (submissionIndex: number) => boolean;
   /**
@@ -533,6 +535,15 @@ export function createChainFixture(options: ChainFixtureOptions = {}): ChainFixt
             : null;
         }
         // The fixture's finalized head is its canonical inclusion block.
+        if (request.type === "finalized_block" && options.withholdFinality?.()) {
+          const index = currentIndex() - 1;
+          return {
+            number: quantity(blockNumber(index)),
+            hash: blockHash(index),
+            parentHash: blockHash(index - 1),
+            transactions: [],
+          };
+        }
         if (request.type === "finalized_block" || request.type === "canonical_block") {
           return inclusionBlock();
         }
