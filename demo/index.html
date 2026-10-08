@@ -112,6 +112,11 @@
             <a id="owner-transaction-link" class="text-link result-link" target="_blank" rel="noopener" href="https://sepolia.arbiscan.io" hidden>View transaction on explorer</a>
             <details id="owner-operation-details" class="disclosure result-details" hidden><summary>Operation details</summary><pre id="owner-result"></pre></details>
           </section>
+          <section id="s-automate" class="extra-flow" aria-labelledby="automate-heading" hidden>
+            <h3 id="automate-heading">Automate on a backend</h3><p>An automation service calls <code>ping(plan, slot)</code> on <code>0x000000000000000000000000000000000000dead</code> once a minute, three times, with its own session key. The account owner approves exactly that call in OAAth; the service sends each occurrence once and afterwards only observes it.</p>
+            <div class="actions"><button id="automate" class="button button-outline" type="button">Schedule three pings</button></div>
+            <pre id="automation" aria-live="polite"></pre>
+          </section>
           <section id="s-revoke" class="extra-flow revoke-flow" aria-labelledby="revoke-heading">
             <div><h3 id="revoke-heading">Your permission. Your off switch.</h3><p>Open your account in OAAth, find this app's access, and revoke or invalidate it on chain. Removing access requires a separate owner signature.</p></div>
             <a id="revoke-link" class="button button-outline" href="https://oaath.taek.tech/accounts" target="_blank" rel="noopener">Manage access <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>

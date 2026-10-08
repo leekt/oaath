@@ -17,9 +17,12 @@
       "version": "0.0.0",
       "dependencies": {
         "@fontsource-variable/geist": "5.3.0",
+        "@oaath/automation": "workspace:*",
         "@oaath/sdk": "workspace:*",
+        "jose": "6.2.12",
       },
       "devDependencies": {
+        "@oaath/automation-server": "workspace:*",
         "@types/node": "22.13.0",
         "puppeteer-core": "25.5.0",
         "viem": "2.55.8",

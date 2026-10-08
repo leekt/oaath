@@ -6,7 +6,12 @@
  * Every chain, bundler and paymaster request goes through this origin's Worker
  * (`/rpc/*`, `/paymaster/421614`), which holds the endpoints and budgets. A
  * send is made once per click; a lost answer is observed, never resent.
+ *
+ * Section 6 schedules backend calls with `@oaath/automation`: the Worker turns
+ * the verified login into an automation session, and the page creates and
+ * watches a plan at the automation service directly.
  */
+import { type AutomationClient, createAutomation, type Plan, type Run } from "@oaath/automation";
 import {
   createOAAth,
   loginWithOAAth,
@@ -24,6 +29,8 @@ interface DemoConfig {
   readonly selector: `0x${string}`;
   readonly explorerTxUrl: string | null;
   readonly sponsored: boolean;
+  /** The automation service and the definition this demo schedules, or null. */
+  readonly automation: Readonly<{ url: string; id: string }> | null;
 }
 
 const configuration = await fetch("/config.json");
@@ -37,6 +44,7 @@ const STORAGE = {
   login: `oaath-demo-login:${issuer}`,
   operation: `oaath-demo-operation:${issuer}:${chainId}`,
   owner: `oaath-demo-owner-operation:${issuer}:${chainId}`,
+  automation: `oaath-demo-automation:${issuer}`,
 };
 const POLL_MS = 3_000;
 const MAX_POLLS = 40;
@@ -194,6 +202,7 @@ function showIdentity(summary: Pick<OaathLogin, "account" | "signer" | "accounts
   $("s-invite").hidden = current !== "root";
   $("invite-url").textContent = `${location.origin}/?invite=${summary.account}`;
   $("s-owner").hidden = current !== "root" || login === null;
+  $("s-automate").hidden = config.automation === null || login === null;
 }
 
 const remembered = storage(STORAGE.login);
@@ -578,4 +587,118 @@ const pendingOwner = storage(STORAGE.owner);
 if (pendingOwner) {
   $("s-owner").hidden = false;
   void observeOwner(pendingOwner).catch(failed);
+}
+
+// ---- 6. automate on a backend ----------------------------------------------------
+
+interface AutomationState {
+  readonly token: string;
+  readonly expiresAt: number;
+  readonly planId: string | null;
+}
+
+function automationState(next?: AutomationState): AutomationState | null {
+  try {
+    const raw = storage(STORAGE.automation, next === undefined ? undefined : JSON.stringify(next));
+    const state = raw === null ? null : (JSON.parse(raw) as AutomationState);
+    return state && state.expiresAt > Date.now() / 1000 + 60 ? state : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A session at the automation service, from the verified login of this page visit. */
+async function automationClient(): Promise<AutomationClient> {
+  const automation = config.automation;
+  if (!automation) throw Object.assign(new Error("automation is not configured"), { code: "off" });
+  let state = automationState();
+  if (!state) {
+    if (!login)
+      throw Object.assign(new Error("log in again to schedule"), { code: "login_required" });
+    const response = await fetch("/automation/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken: login.idToken }),
+    });
+    const body = (await response.json()) as { token?: string; expiresAt?: number; error?: string };
+    if (!response.ok || !body.token || !body.expiresAt)
+      throw Object.assign(new Error("no automation session"), { code: body.error ?? "error" });
+    state = automationState({ token: body.token, expiresAt: body.expiresAt, planId: null });
+  }
+  if (!state) throw Object.assign(new Error("no automation session"), { code: "storage" });
+  return createAutomation({ baseUrl: automation.url, token: state.token });
+}
+
+function describeRun(run: Run) {
+  const label = run.kind === "occurrence" ? `ping ${run.slot}` : run.kind;
+  return (
+    `${label}: ${run.status}` +
+    (run.operation ? ` · UserOperation ${run.operation}` : "") +
+    (run.transactionHash
+      ? ` · transaction ${run.transactionHash}${explorer(run.transactionHash)}`
+      : "")
+  );
+}
+
+async function watchPlan(client: AutomationClient, id: string) {
+  for (let poll = 0; poll < MAX_POLLS * 5; poll += 1) {
+    let plan: Plan;
+    let runs: readonly Run[];
+    try {
+      plan = await client.get(id);
+      runs = (await client.runs(id)).runs;
+    } catch (error) {
+      failed(error);
+      return;
+    }
+    $("automation").textContent =
+      `Plan ${plan.id}\nstatus ${plan.status}` +
+      (plan.signer ? `\nservice session key ${plan.signer}` : "") +
+      (runs.length ? `\n${runs.map(describeRun).join("\n")}` : "");
+    if (
+      runs.some((run) => run.status === "finalized") &&
+      $("result").dataset.outcome !== "automation-finalized"
+    )
+      show("automation-finalized", "The automation service executed a scheduled ping");
+    if (["completed", "cancelled", "expired", "failed"].includes(plan.status)) return;
+    await sleep(POLL_MS);
+  }
+}
+
+button("automate").addEventListener("click", async () => {
+  const automation = config.automation;
+  if (!automation) return;
+  button("automate").disabled = true;
+  // Opened inside the click, before anything is awaited, so it is not blocked.
+  const popup = window.open("about:blank", "oaath-automation", "popup,width=480,height=760");
+  try {
+    const client = await automationClient();
+    const plan = await client.create({
+      automation: automation.id,
+      occurrences: 3,
+      startAt: Math.floor(Date.now() / 1000) + 60,
+      idempotencyKey: crypto.randomUUID(),
+    });
+    const state = automationState();
+    if (state) automationState({ ...state, planId: plan.id });
+    const { authorizationUrl } = await client.authorize(plan.id);
+    if (!authorizationUrl)
+      throw Object.assign(new Error("nothing to approve"), { code: plan.status });
+    if (popup) popup.location.href = authorizationUrl;
+    else location.assign(authorizationUrl);
+    show("automation-pending", `Plan ${plan.id} waits for the account owner in OAAth`);
+    await watchPlan(client, plan.id);
+  } catch (error) {
+    popup?.close();
+    failed(error);
+  }
+  button("automate").disabled = false;
+});
+
+const scheduled = automationState();
+if (config.automation && scheduled?.planId) {
+  $("s-automate").hidden = false;
+  void automationClient()
+    .then((client) => watchPlan(client, scheduled.planId as string))
+    .catch(failed);
 }
