@@ -184,9 +184,11 @@ export async function signGrantApproval(input: {
   )
     return refuse("digest-mismatch");
   const key = await rootKey(signer, approval.signingRequest.typedData);
+  // The relay stamps `requestedAt` with its clock. A browser clock a second behind, or an
+  // approval within the same second, must not date the decision before the request.
   const decision: Readonly<KernelPermissionDecision> = await approval.sign(
     key,
-    Math.floor(Date.now() / 1_000),
+    Math.max(Math.floor(Date.now() / 1_000), request.requestedAt),
   );
   return JSON.stringify(decision);
 }
