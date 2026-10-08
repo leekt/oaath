@@ -91,9 +91,13 @@ function log(line: string) {
 function show(outcome: string, text: string) {
   feedbackHost.append($("feedback"));
   $("feedback").hidden = false;
-  $("feedback").dataset.tone = ["signed-in", "granted", "finalized", "owner-included"].includes(
-    outcome,
-  )
+  $("feedback").dataset.tone = [
+    "signed-in",
+    "granted",
+    "included",
+    "finalized",
+    "owner-included",
+  ].includes(outcome)
     ? "success"
     : "info";
   $("result").dataset.outcome = outcome;
@@ -319,6 +323,7 @@ async function observe(operation: Operation) {
   button("send").textContent = "Call submitted";
   $("operation-details").hidden = false;
   $("operation").textContent = `UserOperation ${operation.id}\nwaiting for inclusion…`;
+  let announced = false;
   for (let poll = 0; poll < MAX_POLLS; poll += 1) {
     const outcome = await operation.wait({ attempts: 1 });
     $("operation").textContent =
@@ -330,6 +335,15 @@ async function observe(operation: Operation) {
       const link = $<HTMLAnchorElement>("transaction-link");
       link.href = `${config.explorerTxUrl}${outcome.transactionHash}`;
       link.hidden = false;
+    }
+    // Inclusion is the user-visible success; L1 finality on Arbitrum follows minutes later.
+    if (outcome.status === "pending" && outcome.transactionHash && !announced) {
+      announced = true;
+      step("send", "done", "Call included");
+      show(
+        "included",
+        "Test call included on Arbitrum Sepolia. Final confirmation continues in the background.",
+      );
     }
     if (["finalized", "dropped", "superseded", "abandoned"].includes(outcome.status)) {
       step("send", outcome.status === "finalized" ? "done" : "", `Call ${outcome.status}`);
