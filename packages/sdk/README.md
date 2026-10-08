@@ -6,7 +6,7 @@ OAAth browser client and Kernel/ZeroDev runtime. See the
 | Entry | What it gives you |
 | --- | --- |
 | `@oaath/sdk` | `loginWithOAAth` / `completeOAAthLogin`, `createOAAth` (owner, `wallet` and `oauth` approvals), `requestOwnerOperationApproval`, `OaathClientError` |
-| `@oaath/sdk/kernel` | `createKernelRuntime`, `kernelKey`, permission approval and revocation, `prepareOwnerOperation` / `verifyOwnerOperation`, `readKernelModules` |
+| `@oaath/sdk/kernel` | `createKernelRuntime`, `kernelKey`, permission approval and revocation, `prepareOwnerOperation` / `verifyOwnerOperation`, `prepareOwnerPermissionUninstall`, `readKernelModules` |
 | `@oaath/sdk/cetane` | `createCetaneChainPorts` and the Grant-backed EIP-1193 provider |
 | `@oaath/sdk/advanced` | custom-deployment ports, low-level Kernel v4 encoders, and the fully injected composition |
 | `@oaath/sdk/persistence` | the IndexedDB store set and persisted record contracts |
@@ -152,6 +152,14 @@ WebAuthn root asserts for the issuer's relying party). It resolves to
 `{ signed, entryPoint, userOperation }`, ready for the caller's own
 `eth_sendUserOperation`; OAAth never submits. A signed operation for another
 request fails with `oaath_client_state_conflict` (`oauth_operation_mismatch`).
+
+`prepareOwnerPermissionUninstall({ account, chainId, approval, nonce, gas,
+paymaster? })` (`@oaath/sdk/kernel`) prepares the owner operation that removes
+one installed Kernel 0.4.0 permission: `approval` is the Grant's install
+approval (`authorization_details[0].enable`), whose packages name the
+permission's policies and signer; they are uninstalled in reverse install
+order, then the signer. It is an ordinary owner-operation request for the same
+approval and verification path, and refuses an approval for another account.
 
 Portal-approved Grants (`createOAAth({ chains, approvals: { kind: "oauth", issuer,
 clientId, redirectUri } })`) open the same popup from `requestPermission`. Where no

@@ -5,6 +5,8 @@
  * a local bundler; a tampered artifact is refused before anything is sent, and
  * a reload observes the receipt by hash without resubmitting. The same account,
  * then imported as an existing profile, executes its next owner operation.
+ * Finally, a session permission installed in enable mode is uninstalled by one
+ * root-signed owner operation.
  */
 import { OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION } from "@oaath/protocol";
 import { getSigningHash, type Operation } from "cetane/execution/erc4337";
@@ -12,16 +14,29 @@ import { encodeFunctionData, parseEther } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
 import { afterAll, describe, expect, it } from "vitest";
 import { createKernelRuntime } from "../src/kernel/create-kernel-runtime.js";
+import { ECDSA_VALIDATOR } from "../src/kernel/deployment/v33.js";
 import { credentialKey } from "../src/kernel/key/credential.js";
+import { ecdsaKey } from "../src/kernel/key/ecdsa.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
-import { kernelDeployment, prepareOwnerOperation, verifyOwnerOperation } from "../src/kernel.js";
+import { sessionOperator } from "../src/kernel/operator/session.js";
+import { deriveSessionPolicyProfiles } from "../src/kernel/permission/profiles.js";
+import {
+  kernelDeployment,
+  materializeKernelPermission,
+  prepareKernelPermissionApproval,
+  prepareOwnerOperation,
+  prepareOwnerPermissionUninstall,
+  verifyOwnerOperation,
+} from "../src/kernel.js";
 import type { AnvilChain, KernelHarness } from "./support/anvil.js";
 import { startPortalChain } from "./support/portal-chain.js";
 import {
   PORTAL_ORIGIN,
   PORTAL_RP_ID,
   type PortalRootKind,
+  portalPermissionRequest,
   portalRoot,
+  portalSession,
 } from "./support/portal-roots.js";
 
 const requireAnvil = process.env.OAATH_REQUIRE_ANVIL === "1";
@@ -34,6 +49,20 @@ const gas = Object.freeze({
   maxFeePerGas: "2000000000",
   maxPriorityFeePerGas: "1000000000",
 });
+
+const IS_MODULE_INSTALLED = [
+  {
+    type: "function",
+    name: "isModuleInstalled",
+    stateMutability: "view",
+    inputs: [
+      { name: "moduleTypeId", type: "uint256" },
+      { name: "module", type: "address" },
+      { name: "additionalContext", type: "bytes" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
 
 const chains: AnvilChain[] = [];
 afterAll(() => {
@@ -196,6 +225,123 @@ function fixtureBundler(harness: KernelHarness) {
         ),
       ).toBe(imported.request.userOperationHash);
       expect(await harness.client.getBalance({ address: target })).toBe(1000n);
+    },
+    120_000,
+  );
+
+  it.each<[PortalRootKind, "derived" | "imported"]>([
+    ["ecdsa", "derived"],
+    ["webauthn", "imported"],
+  ])(
+    "%s root, %s account: one signed owner operation uninstalls a permission installed in enable mode",
+    async (kind, profile) => {
+      const harness = await startPortalChain(CHAIN_ID, chains);
+      const root = portalRoot(kind);
+      const now = Number((await harness.client.getBlock()).timestamp);
+      const target = `0x${"7a".repeat(20)}` as const;
+      const request = portalPermissionRequest({ root, target, requestedAt: now });
+      const approval = (
+        await (
+          await prepareKernelPermissionApproval({
+            request,
+            chainId: CHAIN_ID,
+            reads: harness.reads,
+          })
+        ).sign(root.key, now)
+      ).installApproval;
+      if (approval.version !== "oaath.kernel.all-chain-approval/v1")
+        throw new Error("expected a Kernel 0.4.0 approval");
+      await harness.fund(approval.account, parseEther("1"));
+
+      // Install: the session's first operation deploys the account and enables it.
+      const deployment = kernelDeployment({ chainId: CHAIN_ID });
+      const owner = createKernelRuntime({
+        deployment,
+        operator: ownerOperator({
+          key: credentialKey({ credential: root.credential, validator: root.validator }),
+        }),
+        reads: harness.reads,
+      });
+      const session = createKernelRuntime({
+        deployment,
+        operator: sessionOperator({
+          key: ecdsaKey({ account: portalSession(), validator: ECDSA_VALIDATOR }),
+          policies: deriveSessionPolicyProfiles(request.policy),
+        }),
+        reads: harness.reads,
+      });
+      const first = await materializeKernelPermission({
+        approval,
+        runtime: session,
+        grantId: request.requestId,
+        account: await session.bindAccount({ accountIndex: "0", initialPackages: owner.packages }),
+        nonceKey: "0",
+        sequence: "0",
+        calls: [{ target, value: "500", data: "0x12345678" }],
+        gas,
+      });
+      expect(await harness.sendSigned(first.prepared, first.signature)).toBe("success");
+      if (session.validation.kind !== "permission") throw new Error("no permission validation");
+      const { permissionId } = session.validation;
+      const signer = session.packages.find((entry) => entry.moduleType === 6)?.module;
+      if (!signer) throw new Error("no permission signer");
+      const installed = () =>
+        harness.client.readContract({
+          address: approval.account,
+          abi: IS_MODULE_INSTALLED,
+          functionName: "isModuleInstalled",
+          args: [6n, signer, permissionId],
+        });
+      expect(await installed()).toBe(true);
+
+      type Profile = Parameters<typeof prepareOwnerPermissionUninstall>[0]["account"];
+      const account: Profile =
+        profile === "derived"
+          ? (request.logicalAccount as Profile)
+          : {
+              version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+              kind: "kernel",
+              address: approval.account,
+              kernelVersion: "0.4.0",
+              entryPoint: { version: "0.9" },
+              ownerCredential: root.credential,
+            };
+      // The approval of another account is refused before signing.
+      const other: Profile =
+        profile === "derived"
+          ? ({ ...account, accountIndex: "1" } as Profile)
+          : ({ ...account, address: `0x${"11".repeat(20)}` } as Profile);
+      expect(() =>
+        prepareOwnerPermissionUninstall({
+          account: other,
+          chainId: CHAIN_ID,
+          approval,
+          nonce: { lane: "0", sequence: "0" },
+          gas,
+        }),
+      ).toThrow(expect.objectContaining({ code: "kernel_runtime_binding_mismatch" }));
+
+      const uninstall = prepareOwnerPermissionUninstall({
+        account,
+        chainId: CHAIN_ID,
+        approval,
+        nonce: { lane: "0", sequence: "0" },
+        gas,
+      });
+      expect(uninstall.request.userOperation.factory).toBeNull();
+      const verified = await verifyOwnerOperation(
+        JSON.parse(JSON.stringify(await uninstall.sign(root.key))),
+        RELYING_PARTY,
+      );
+      const bundler = fixtureBundler(harness);
+      await bundler.sendUserOperation({ ...verified.userOperation }, verified.entryPoint);
+      expect(
+        await bundler.getUserOperationReceipt(
+          verified.entryPoint,
+          uninstall.request.userOperationHash,
+        ),
+      ).toEqual({ success: true });
+      expect(await installed()).toBe(false);
     },
     120_000,
   );
