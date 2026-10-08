@@ -113,9 +113,11 @@ function failed(error: unknown) {
     "error",
     known === "access_denied"
       ? "The request was declined. You can start again when you're ready."
-      : known === "request_outcome_unknown"
-        ? "The service didn't answer. Reload to check the plan before trying again."
-        : `That didn't work (${known}). Nothing was retried automatically.`,
+      : (error as { rpcCode?: unknown } | null)?.rpcCode === -32001
+        ? "The bundler refused this site's API key (RPC -32001). Nothing was submitted."
+        : known === "request_outcome_unknown"
+          ? "The service didn't answer. Reload to check the plan before trying again."
+          : `That didn't work (${known}). Nothing was retried automatically.`,
   );
 }
 

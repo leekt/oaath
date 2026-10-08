@@ -45,6 +45,9 @@ export function createBudgetedChains(
           {
             publicRpcUrls: [endpoints.rpcUrl],
             bundlerUrl: endpoints.bundlerUrl,
+            ...(endpoints.bundlerApiKey === null
+              ? {}
+              : { bundlerHeaders: { "x-api-key": endpoints.bundlerApiKey } }),
             ...(endpoints.paymasterUrl === null ? {} : { paymasterUrl: endpoints.paymasterUrl }),
             ...(endpoints.relayPaysGas ? { relayPaysGas: true } : {}),
           },

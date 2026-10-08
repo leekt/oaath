@@ -168,7 +168,12 @@ async function drain(context: ServiceContext, open: () => Promise<OperationGatew
 }
 
 describe("paymasterPayer", () => {
-  const endpoints = { rpcUrl: "http://rpc", bundlerUrl: "http://bundler", relayPaysGas: false };
+  const endpoints = {
+    rpcUrl: "http://rpc",
+    bundlerUrl: "http://bundler",
+    bundlerApiKey: null,
+    relayPaysGas: false,
+  };
 
   it("sends the configured API key as the ERC-7677 context, else an empty one", () => {
     expect(

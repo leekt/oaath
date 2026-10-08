@@ -61,7 +61,9 @@ In order:
    Register again whenever the relay's
    database is recreated.
 4. **Worker secret.** `cd dca && bunx wrangler@4.147.0 secret put AUTOMATION_APP_TOKEN`
-   with the same token.
+   with the same token, and `secret put BUNDLER_API_KEY` with the bundle_rs
+   client key (sent to the bundler only, as `x-api-key`; without it the bundler
+   refuses the mint with RPC `-32001`).
 5. **Worker.** `bun run build` at the root (wrangler bundles the built
    `@oaath/automation`), then `cd dca && bunx wrangler@4.147.0 deploy`.
 
