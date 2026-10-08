@@ -149,6 +149,7 @@ const EVALUATE = {
   parseOaathGrantRef: P.parseOaathGrantRef,
   parseGrantVerificationResult: P.parseGrantVerificationResult,
   encodeKernelPermissionUninstallCalls: P.encodeKernelPermissionUninstallCalls,
+  encodeKernelInstallNonceInvalidationCall: P.encodeKernelInstallNonceInvalidationCall,
 };
 
 /** Records one case; `input` may hold `Raw` numbers or be a whole `Text`. */
@@ -2275,6 +2276,29 @@ record("parseOaathGrantRef", "version v2", { ...GRANT_REF, version: "oaath.grant
   });
   record(fn, "zero account", { ...base, account: ZERO_ADDRESS });
   record(fn, "extra field", { ...base, chainId: 1 });
+}
+
+// ------------------------------------------ install nonce invalidation
+
+{
+  const fn = "encodeKernelInstallNonceInvalidationCall";
+  const account = hex("a1", 20);
+  const key = (0xab12n << 64n) | 7n;
+  record(fn, "key and sequence", { account, installNonce: key.toString() });
+  record(fn, "zero nonce", { account, installNonce: "0" });
+  record(fn, "largest key", {
+    account,
+    installNonce: (((1n << 192n) - 1n) << 64n).toString(),
+  });
+  record(fn, "exhausted sequence", {
+    account,
+    installNonce: ((1n << 64n) - 1n).toString(),
+  });
+  record(fn, "above uint256", { account, installNonce: (1n << 256n).toString() });
+  record(fn, "leading zero", { account, installNonce: "07" });
+  record(fn, "number", { account, installNonce: 7 });
+  record(fn, "zero account", { account: ZERO_ADDRESS, installNonce: "1" });
+  record(fn, "extra field", { account, installNonce: "1", chainId: 1 });
 }
 
 // ------------------------------------------------------------------ output

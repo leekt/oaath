@@ -1,0 +1,114 @@
+[
+  {
+    "name": "key and sequence",
+    "fn": "encodeKernelInstallNonceInvalidationCall",
+    "input": {
+      "account": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "installNonce": "807856709964036103471111"
+    },
+    "expect": {
+      "ok": {
+        "target": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "value": "0",
+        "data": "0x7adc576e000000000000000000000000000000000000000000000000000000000000ab120000000000000000000000000000000000000000000000000000000000000008"
+      }
+    }
+  },
+  {
+    "name": "zero nonce",
+    "fn": "encodeKernelInstallNonceInvalidationCall",
+    "input": {
+      "account": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "installNonce": "0"
+    },
+    "expect": {
+      "ok": {
+        "target": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "value": "0",
+        "data": "0x7adc576e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"
+      }
+    }
+  },
+  {
+    "name": "largest key",
+    "fn": "encodeKernelInstallNonceInvalidationCall",
+    "input": {
+      "account": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "installNonce": "115792089237316195423570985008687907853269984665640564039439137263839420088320"
+    },
+    "expect": {
+      "ok": {
+        "target": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "value": "0",
+        "data": "0x7adc576e0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000001"
+      }
+    }
+  },
+  {
+    "name": "exhausted sequence",
+    "fn": "encodeKernelInstallNonceInvalidationCall",
+    "input": {
+      "account": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "installNonce": "18446744073709551615"
+    },
+    "expect": {
+      "error": "signing_request_invalid"
+    }
+  },
+  {
+    "name": "above uint256",
+    "fn": "encodeKernelInstallNonceInvalidationCall",
+    "input": {
+      "account": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "installNonce": "115792089237316195423570985008687907853269984665640564039457584007913129639936"
+    },
+    "expect": {
+      "error": "signing_request_invalid"
+    }
+  },
+  {
+    "name": "leading zero",
+    "fn": "encodeKernelInstallNonceInvalidationCall",
+    "input": {
+      "account": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "installNonce": "07"
+    },
+    "expect": {
+      "error": "signing_request_invalid"
+    }
+  },
+  {
+    "name": "number",
+    "fn": "encodeKernelInstallNonceInvalidationCall",
+    "input": {
+      "account": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "installNonce": 7
+    },
+    "expect": {
+      "error": "signing_request_invalid"
+    }
+  },
+  {
+    "name": "zero account",
+    "fn": "encodeKernelInstallNonceInvalidationCall",
+    "input": {
+      "account": "0x0000000000000000000000000000000000000000",
+      "installNonce": "1"
+    },
+    "expect": {
+      "error": "signing_request_invalid"
+    }
+  },
+  {
+    "name": "extra field",
+    "fn": "encodeKernelInstallNonceInvalidationCall",
+    "input": {
+      "account": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "installNonce": "1",
+      "chainId": 1
+    },
+    "expect": {
+      "error": "signing_request_invalid"
+    }
+  }
+]

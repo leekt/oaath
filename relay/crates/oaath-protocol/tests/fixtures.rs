@@ -20,7 +20,9 @@ use oaath_protocol::identity::{
 };
 use oaath_protocol::kernel_account::derive_kernel_v4_account_address;
 use oaath_protocol::kernel_install::parse_kernel_replayable_install_owner_signing_request;
-use oaath_protocol::kernel_revocation::kernel_permission_uninstall_calls;
+use oaath_protocol::kernel_revocation::{
+    kernel_install_nonce_invalidation_call, kernel_permission_uninstall_calls,
+};
 use oaath_protocol::permission::{
     PermissionDecision, hash_permission_decision, hash_permission_request,
     parse_approved_permission, parse_permission_decision, parse_permission_request,
@@ -111,6 +113,8 @@ fn evaluate(function: &str, input: &Value) -> ProtocolResult<Value> {
                     .collect(),
             )
         }),
+        "encodeKernelInstallNonceInvalidationCall" => kernel_install_nonce_invalidation_call(input)
+            .map(|call| json!({ "target": call.target, "value": call.value, "data": call.data })),
         other => panic!("fixture names an unported function {other}"),
     }
 }
