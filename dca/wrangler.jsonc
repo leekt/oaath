@@ -18,7 +18,7 @@
     "OAATH_ISSUER": "https://oaath.taek.tech",
     // REPLACE: register with POST https://oaath.taek.tech/oauth/clients
     // (redirect_uris ["https://dca.taek.tech/callback"]) and put the returned id here.
-    "OAATH_CLIENT_ID": "REPLACE_WITH_REGISTERED_CLIENT_ID",
+    "OAATH_CLIENT_ID": "6982278824b7ebfa22dcbfd6a5feb1f41f8deab5",
     "EXPLORER_TX_URL": "https://sepolia.arbiscan.io/tx/",
     "CHAIN_RPC_URL": "https://sepolia-rollup.arbitrum.io/rpc",
     // The hosted automation service. The app stays off until the AUTOMATION_APP_TOKEN
