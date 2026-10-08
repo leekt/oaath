@@ -486,7 +486,9 @@ export function createCetaneChainPorts(
           id: chainId,
           name: `Chain ${chainId}`,
           nativeAA: false,
-          fees: { baseFeeMultiplier: 12000 },
+          // 2x base-fee headroom (Cetane's default): bundlers (e.g. Pimlico) refuse an op whose maxFeePerGas is
+          // below their own quote, and the cap costs nothing extra (the chain charges base + tip).
+          fees: { baseFeeMultiplier: 20000 },
         },
         transport: custom({
           request: ({ method, params }) =>
