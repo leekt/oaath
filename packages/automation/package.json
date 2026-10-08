@@ -1,0 +1,64 @@
+{
+  "name": "@oaath/automation",
+  "version": "0.3.5",
+  "description": "Declarative OAAth automations: the definition schema and the automation service client.",
+  "type": "module",
+  "sideEffects": false,
+  "license": "Apache-2.0",
+  "author": "taek <leekt216@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leekt/oaath.git",
+    "directory": "packages/automation"
+  },
+  "bugs": {
+    "url": "https://github.com/leekt/oaath/issues"
+  },
+  "homepage": "https://github.com/leekt/oaath#readme",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "oaath-source": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "oaath-source": {
+        "types": "./src/server.ts",
+        "default": "./src/server.ts"
+      },
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsdown src/index.ts src/server.ts --platform neutral",
+    "prepack": "bun run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "release:publish": "bun publish --access public --tolerate-republish",
+    "release:check": "bun pm pack --dry-run"
+  },
+  "dependencies": {
+    "@oaath/protocol": "workspace:*",
+    "cetane": "0.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

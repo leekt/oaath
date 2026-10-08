@@ -16,8 +16,13 @@
     "example:oauth-grant-demo": "node oauth-grant-demo/run.mjs"
   },
   "dependencies": {
+    "@oaath/automation": "workspace:*",
     "@oaath/protocol": "workspace:*",
     "@oaath/sdk": "workspace:*",
+    "@openzeppelin/contracts": "5.4.0",
+    "@uniswap/swap-router-contracts": "1.1.0",
+    "@uniswap/v3-core": "1.0.1",
+    "@uniswap/v3-periphery": "1.4.4",
     "esbuild": "0.25.12",
     "cetane": "0.0.4"
   }

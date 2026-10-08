@@ -47,7 +47,8 @@
     "smoke:cetane": "node scripts/smoke-packed-cetane.mjs",
     "smoke:kernel-import": "node scripts/smoke-packed-kernel-import.mjs",
     "smoke:weighted-root": "node scripts/smoke-packed-weighted-root.mjs",
-    "smoke:rpc": "node scripts/smoke-packed-rpc.mjs"
+    "smoke:rpc": "node scripts/smoke-packed-rpc.mjs",
+    "smoke:automation": "node scripts/smoke-packed-automation.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",

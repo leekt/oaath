@@ -7,6 +7,7 @@ Each example demonstrates one capability.
 | [all-chain/](all-chain) | approve before chain B exists, then materialize on B |
 | [oauth-login/](oauth-login) | Login with OAAth from a static page through the live portal |
 | [oauth-grant-demo/](oauth-grant-demo) | live Arbitrum Sepolia: portal-approved Grant (a member's request waits for the root), then one enable-mode covered call (opt-in) |
+| [dca/](dca) | dollar-cost averaging as one declarative automation (`dca.automation.ts`) plus its executor contract |
 | [extension/](extension) | MV3 extension: an EIP-6963 Grant provider any dapp can use, paired through `chrome.identity.launchWebAuthFlow` |
 
 ```sh

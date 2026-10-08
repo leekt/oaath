@@ -9,6 +9,8 @@
       "!**/.build",
       "!packages/contracts/cache",
       "!packages/contracts/out",
+      "!examples/dca/contracts/cache",
+      "!examples/dca/contracts/out",
       "!relay/target",
       "!relay/fixtures"
     ]

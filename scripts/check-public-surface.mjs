@@ -10,9 +10,9 @@
  *
  * Four enforced facts:
  *
- *   1. Browser graphs: the transitive import graph of the `@oaath/sdk` and
- *      `@oaath/protocol` root entries reaches no `node:*`, no driver, and no
- *      test-only package.
+ *   1. Browser graphs: the transitive import graph of the `@oaath/sdk`,
+ *      `@oaath/protocol` and `@oaath/automation` root entries reaches no
+ *      `node:*`, no driver, and no test-only package.
  *   2. Direction: production edges match the declared table exactly, so
  *      protocol depends on nothing internal, sdk only on protocol, and
  *      `@oaath/testing` is never a production dependency of anything.
@@ -57,6 +57,8 @@ const DIRECTION = {
   "@oaath/testing": ["@oaath/protocol", "@oaath/sdk"],
   "@oaath/contracts": [],
   "@oaath/cli": ["@oaath/sdk"],
+  "@oaath/automation": ["@oaath/protocol"],
+  "@oaath/automation-server": ["@oaath/automation", "@oaath/protocol", "@oaath/sdk"],
 };
 
 /** Production groups only: a devDependency never reaches a consumer. */
@@ -266,6 +268,7 @@ function externals(graph) {
 const workspace = await readManifests();
 const sdk = await checkBrowserGraph("@oaath/sdk", workspace);
 const protocol = await checkBrowserGraph("@oaath/protocol", workspace);
+const automation = await checkBrowserGraph("@oaath/automation", workspace);
 checkDirection(workspace);
 checkPublishedEntries(workspace);
 const versionAgnosticEntries = await checkVersionAgnosticEntries(workspace);
@@ -280,6 +283,9 @@ console.log("check-public-surface: ok");
 console.log(`  @oaath/sdk       ${sdk.modules.size} modules; externals: ${externals(sdk)}`);
 console.log(
   `  @oaath/protocol  ${protocol.modules.size} modules; externals: ${externals(protocol)}`,
+);
+console.log(
+  `  @oaath/automation ${automation.modules.size} modules; externals: ${externals(automation)}`,
 );
 console.log(`  direction        ${Object.keys(DIRECTION).length} packages, production edges only`);
 console.log("  provenance       every published entry resolves dist");
