@@ -1,11 +1,15 @@
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { concatHex, encodeFunctionData, toHex } from "viem";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mintCall } from "../src/plan.js";
 import worker, { type Env } from "../worker/index.js";
+import { ENTRY_POINT_V09, isMintCall, MINT_AMOUNT } from "../worker/rpc.js";
 
 const ORIGIN = "https://dca.taek.tech";
 const SERVICE = "https://automation.test";
 const APP_TOKEN = "dca-app-credential-secret";
 const ACCOUNT = `0x${"ab".repeat(20)}`;
+const TUSD = "0xa394869aabedb1a989614aa9c3dd41907c596e71";
 const allow = { limit: async () => ({ success: true }) };
 
 function environment(overrides: { [K in keyof Env]?: Env[K] | undefined } = {}): Env {
@@ -21,7 +25,11 @@ function environment(overrides: { [K in keyof Env]?: Env[K] | undefined } = {}):
     CHAIN_RPC_URL: "https://chain.test/rpc",
     AUTOMATION_URL: SERVICE,
     AUTOMATION_APP_TOKEN: APP_TOKEN,
+    TUSD_TOKEN: TUSD,
+    // The VPC binding; tests route it through the stubbed global fetch.
+    BUNDLER: { fetch: (request: Request) => fetch(request) },
     RPC_LIMIT: allow,
+    SEND_LIMIT: allow,
     ...overrides,
   } as Env;
 }
@@ -98,6 +106,7 @@ describe("dca worker pages", () => {
       chainId: 421614,
       explorerTxUrl: "https://sepolia.arbiscan.io/tx/",
       automation: { url: SERVICE, prefix: "dca.arbsep." },
+      mint: { token: TUSD, amount: "1000000000" },
     });
     expect(text).not.toContain(APP_TOKEN);
   });
@@ -141,7 +150,7 @@ describe("dca chain proxy", () => {
         .status,
     ).toBe(403);
     expect((await post("/rpc/chain", Array(9).fill(rpc("eth_chainId")))).status).toBe(413);
-    expect((await post("/rpc/chain", "x".repeat(17 * 1024))).status).toBe(413);
+    expect((await post("/rpc/chain", "x".repeat(65 * 1024))).status).toBe(413);
     expect(requests).toHaveLength(0);
   });
 
@@ -234,5 +243,148 @@ describe("dca automation session", () => {
       "sec-fetch-site": "cross-site",
     });
     expect(cross.status).toBe(403);
+  });
+});
+
+/** Kernel v4 `execute(mode, executionData)` for one call. */
+function execute(
+  target: string,
+  value: bigint,
+  data: `0x${string}`,
+  mode = toHex(0, { size: 32 }),
+) {
+  return encodeFunctionData({
+    abi: [
+      {
+        type: "function",
+        name: "execute",
+        inputs: [
+          { name: "mode", type: "bytes32" },
+          { name: "executionCalldata", type: "bytes" },
+        ],
+        outputs: [],
+        stateMutability: "payable",
+      },
+    ],
+    args: [mode, concatHex([target as `0x${string}`, toHex(value, { size: 32 }), data])],
+  });
+}
+
+const MINT = encodeFunctionData({
+  abi: [
+    {
+      type: "function",
+      name: "mint",
+      inputs: [
+        { name: "to", type: "address" },
+        { name: "value", type: "uint256" },
+      ],
+      outputs: [],
+      stateMutability: "nonpayable",
+    },
+  ],
+  functionName: "mint",
+  args: [ACCOUNT as `0x${string}`, MINT_AMOUNT],
+});
+const MINT_CALL = execute(TUSD, 0n, MINT);
+const SENDER = `0x${"11".repeat(20)}`;
+
+function relayed(callData: string, method = "eth_sendUserOperation", entryPoint = ENTRY_POINT_V09) {
+  return rpc(method, [{ sender: SENDER, callData }, entryPoint]);
+}
+
+describe("dca mint relay", () => {
+  it("answers 503 and hides the mint without the bundler binding or the token", async () => {
+    const requests = upstream(() => Response.json({}));
+    for (const env of [
+      environment({ BUNDLER: undefined }),
+      environment({ TUSD_TOKEN: undefined }),
+    ]) {
+      expect((await post("/rpc/bundler", relayed(MINT_CALL), env)).status).toBe(503);
+      const config = await worker.fetch(new Request(`${ORIGIN}/config.json`), env);
+      expect((await config.json()).mint).toBeNull();
+    }
+    expect(requests).toHaveLength(0);
+  });
+
+  it("estimates and sends only one zero-value mint of exactly 1,000 tUSD through EntryPoint 0.9", async () => {
+    const requests = upstream(() => Response.json({}));
+    const mint = (to: string, amount: bigint) =>
+      `0x40c10f19${to.slice(2).padStart(64, "0")}${amount.toString(16).padStart(64, "0")}` as const;
+    for (const method of ["eth_sendUserOperation", "eth_estimateUserOperationGas"]) {
+      const refusals = [
+        // The wrong amount.
+        relayed(execute(TUSD, 0n, mint(ACCOUNT, MINT_AMOUNT + 1n)), method),
+        relayed(execute(TUSD, 0n, mint(ACCOUNT, 1n)), method),
+        // Another target, a value, another selector, trailing data.
+        relayed(execute(`0x${"cd".repeat(20)}`, 0n, MINT), method),
+        relayed(execute(TUSD, 1n, MINT), method),
+        relayed(execute(TUSD, 0n, `0xa9059cbb${MINT.slice(10)}`), method),
+        relayed(execute(TUSD, 0n, `${MINT}00`), method),
+        // A recipient word with high bits set is not an address.
+        relayed(execute(TUSD, 0n, `0x40c10f19${"ff".repeat(32)}${MINT.slice(74)}`), method),
+        // A batch mode is refused even when its one call is the mint.
+        relayed(execute(TUSD, 0n, MINT, `0x01${"00".repeat(31)}`), method),
+        relayed("0x", method),
+        relayed(MINT_CALL, method, `0x${"00".repeat(20)}`),
+        // A state override would simulate against another state.
+        rpc(method, [{ sender: SENDER, callData: MINT_CALL }, ENTRY_POINT_V09, {}]),
+        rpc(method, [null, ENTRY_POINT_V09]),
+      ];
+      for (const body of refusals) {
+        const answer = await (await post("/rpc/bundler", body)).json();
+        expect(answer.error.code).toBe(-32005);
+      }
+      // One refused call refuses the whole batch.
+      const mixed = await post("/rpc/bundler", [relayed(MINT_CALL, method), relayed("0x", method)]);
+      expect((await mixed.json()).error.code).toBe(-32005);
+    }
+    expect(requests).toHaveLength(0);
+  });
+
+  it("accepts the page's mint for any recipient, plain or executeUserOp-wrapped", () => {
+    const page = mintCall(TUSD, `0x${"77".repeat(20)}`, MINT_AMOUNT.toString());
+    expect(isMintCall(execute(page.to, 0n, page.data), TUSD)).toBe(true);
+    expect(isMintCall(MINT_CALL, TUSD)).toBe(true);
+    expect(isMintCall(`0x8dd7712f${MINT_CALL.slice(2)}`, TUSD)).toBe(true);
+    expect(isMintCall(MINT_CALL, `0x${"cd".repeat(20)}`)).toBe(false);
+  });
+
+  it("forwards the mint and receipt reads through the binding once, and spends the send budget", async () => {
+    // Nothing reaches the public network: only the binding is called.
+    const publicFetches = upstream(() => Response.json({}));
+    const requests: Request[] = [];
+    const sends: string[] = [];
+    let remaining = 1;
+    const env = environment({
+      BUNDLER: {
+        fetch: async (request: Request) => {
+          requests.push(request.clone());
+          const { id } = (await request.json()) as { id: number };
+          return Response.json({ jsonrpc: "2.0", id, result: "0x01" });
+        },
+      },
+      SEND_LIMIT: {
+        limit: async ({ key }: { key: string }) => {
+          sends.push(key);
+          remaining -= 1;
+          return { success: remaining >= 0 };
+        },
+      },
+    });
+    const headers = { "cf-connecting-ip": "203.0.113.9" };
+    for (const body of [
+      relayed(MINT_CALL, "eth_estimateUserOperationGas"),
+      relayed(MINT_CALL),
+      rpc("eth_getUserOperationReceipt", [`0x${"11".repeat(32)}`]),
+    ]) {
+      const response = await post("/rpc/bundler", body, env, headers);
+      expect(await response.json()).toEqual({ jsonrpc: "2.0", id: 1, result: "0x01" });
+    }
+    expect((await post("/rpc/bundler", relayed(MINT_CALL), env, headers)).status).toBe(429);
+    expect(sends).toEqual(["203.0.113.9", "203.0.113.9"]);
+    expect(requests).toHaveLength(3);
+    expect([...requests[0]!.headers.keys()]).toEqual(["content-type"]);
+    expect(publicFetches).toHaveLength(0);
   });
 });

@@ -23,13 +23,28 @@
     "CHAIN_RPC_URL": "https://sepolia-rollup.arbitrum.io/rpc",
     // The hosted automation service. The app stays off until the AUTOMATION_APP_TOKEN
     // secret holds this app's credential there.
-    "AUTOMATION_URL": "https://oaath-automation.taek.tech"
+    "AUTOMATION_URL": "https://oaath-automation.taek.tech",
+    // Test tUSD (`contracts.token` of the dca.arbsep.* definitions). The bundler relays
+    // only `mint(sender, 1000e6)` on it; re-set it when the market is redeployed.
+    "TUSD_TOKEN": "0xa394869aaBEDb1A989614AA9c3dd41907C596E71"
   },
+  // Bundler: bundle_rs in its default fast mode (zero-fee operations, its executor
+  // pays gas), loopback-only on the VM, reached through a Workers VPC service. Without
+  // the binding the bundler route answers 503 and the mint button stays hidden.
+  "vpc_services": [
+    {
+      "binding": "BUNDLER",
+      // Workers VPC service for bundle_rs: 127.0.0.1:4337 on the OCI VM's loopback.
+      "service_id": "01a11b20-f2a5-7080-96a8-aca3de4fd906"
+    }
+  ],
   // Server-side calls to the hosted automation service go through its Worker directly.
   "services": [{ "binding": "AUTOMATION_SERVICE", "service": "oaath-automation" }],
-  // Per IP: every proxied chain read and session request.
   "ratelimits": [
-    { "name": "RPC_LIMIT", "namespace_id": "4216160", "simple": { "limit": 120, "period": 60 } }
+    // Per IP: every proxied chain and bundler call, and session request.
+    { "name": "RPC_LIMIT", "namespace_id": "4216160", "simple": { "limit": 300, "period": 60 } },
+    // Per IP: eth_sendUserOperation (the tUSD mint).
+    { "name": "SEND_LIMIT", "namespace_id": "4216161", "simple": { "limit": 3, "period": 60 } }
   ],
   "observability": { "enabled": true }
 }

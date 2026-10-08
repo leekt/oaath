@@ -1,19 +1,28 @@
 /**
- * The app's read-only chain proxy: the page reads token balances through it.
- * It spends a shared chain RPC on behalf of anyone who loads the page, so
- * every request is bounded:
+ * The app's chain and bundler proxies. The page reads balances through
+ * `/rpc/chain`, and sends its one relay-paid call, `tUSD.mint(account,
+ * MINT_AMOUNT)` from a throwaway Kernel account, through `/rpc/bundler`.
+ * They spend a shared chain RPC and our own gas-paying relay on behalf of
+ * anyone who loads the page, so every request is bounded:
  *
- * - an allow-listed read-only method set; at most `MAX_BATCH` calls per request;
+ * - an allow-listed method set per role; at most `MAX_BATCH` calls per request;
  * - body and response size caps;
- * - each call spends one unit of the per-IP `RPC_LIMIT` budget; a missing
- *   binding refuses;
- * - one upstream attempt, capped in time, with no fallback and no retry.
+ * - each call spends one unit of a per-IP rate budget (`RPC_LIMIT`); a send
+ *   (`eth_sendUserOperation`) also spends `SEND_LIMIT`. A missing binding refuses;
+ * - one upstream attempt, capped in time, with no fallback and no retry. A
+ *   send without an answer gets a bare 504: the SDK keeps it uncertain and only
+ *   observes it, and this proxy never repeats it;
+ * - the relay pays every operation's gas, so it simulates and sends only one
+ *   zero-value `mint(any recipient, MINT_AMOUNT)` on `TUSD_TOKEN` through
+ *   EntryPoint 0.9, decoded from the operation's Kernel callData. tUSD's mint
+ *   is permissionless; the per-IP send budget bounds the relay's spend.
  *
- * The app never sends a transaction or a UserOperation: the automation service
- * submits every plan operation through its own bundler.
+ * The bundler is bundle_rs in its default fast mode (zero-fee operations, its
+ * executor pays chain gas), reached through the `BUNDLER` Workers VPC binding.
+ * The automation service sends every plan operation through its own bundler.
  *
- * Only `content-type` reaches the provider. The upstream URL is never logged or
- * returned; answers pass through unchanged only when they are JSON-RPC.
+ * Only `content-type` reaches a provider. Upstream URLs are never logged or
+ * returned; provider answers pass through unchanged only when they are JSON-RPC.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -25,20 +34,96 @@ export interface RateLimit {
 export interface ProxyEnv {
   /** Per-IP budget: every proxied call. */
   readonly RPC_LIMIT?: RateLimit;
+  /** Per-IP budget: `eth_sendUserOperation`. */
+  readonly SEND_LIMIT?: RateLimit;
   /** Arbitrum Sepolia JSON-RPC endpoint. */
   readonly CHAIN_RPC_URL: string;
+  /** The test tUSD token the relay mints into the sender. */
+  readonly TUSD_TOKEN?: string;
+  /** Workers VPC service: bundle_rs on the VM's loopback. Unset: the bundler route answers 503. */
+  readonly BUNDLER?: { fetch(request: Request): Promise<Response> };
 }
 
+export type Role = "chain" | "bundler";
+
 export const DCA_CHAIN_ID = 421_614;
+/** 1,000 tUSD (6 decimals). */
+export const MINT_AMOUNT = 1_000_000_000n;
+/** `mint(address,uint256)`. */
+export const MINT_SELECTOR = "0x40c10f19";
+export const ENTRY_POINT_V09 = "0x433709009b8330fda32311df1c2afa402ed8d009";
 export const MAX_BATCH = 8;
-export const MAX_BODY_BYTES = 16 * 1024;
-export const MAX_RESPONSE_BYTES = 256 * 1024;
+export const MAX_BODY_BYTES = 64 * 1024;
+export const MAX_RESPONSE_BYTES = 1024 * 1024;
 export const TIMEOUT_MS = 15_000;
 
-/** Read-only methods the page uses. */
-export const METHODS: ReadonlySet<string> = new Set(["eth_chainId", "eth_blockNumber", "eth_call"]);
+/** The tUSD token the relay mints, or null when the relay or the token is not configured. */
+export function mintToken(env: ProxyEnv): `0x${string}` | null {
+  return env.BUNDLER && /^0x[0-9a-fA-F]{40}$/u.test(env.TUSD_TOKEN ?? "")
+    ? (env.TUSD_TOKEN?.toLowerCase() as `0x${string}`)
+    : null;
+}
+
+/** Exactly the methods Cetane's Kernel ERC-4337 execution sends, plus the page's own reads. */
+export const METHODS: Readonly<Record<Role, ReadonlySet<string>>> = {
+  chain: new Set([
+    "eth_chainId",
+    "eth_blockNumber",
+    "eth_getCode",
+    "eth_getStorageAt",
+    "eth_call",
+    "eth_gasPrice",
+    "eth_maxPriorityFeePerGas",
+    "eth_feeHistory",
+    "eth_getBlockByNumber",
+    "eth_getTransactionByHash",
+    "eth_getTransactionReceipt",
+    "eth_getBalance",
+  ]),
+  bundler: new Set([
+    "eth_chainId",
+    "eth_supportedEntryPoints",
+    "eth_estimateUserOperationGas",
+    "eth_sendUserOperation",
+    "eth_getUserOperationReceipt",
+  ]),
+};
+
+/** Methods the relay pays for or simulates: only the mint. */
+const RELAY_PAID = new Set(["eth_sendUserOperation", "eth_estimateUserOperationGas"]);
 
 type Call = { jsonrpc: "2.0"; id: string | number | null; method: string; params: unknown[] };
+
+const EXECUTE = "e9ae5c53";
+const EXECUTE_USER_OP = "8dd7712f";
+
+/**
+ * True when Kernel callData is exactly one zero-value `mint(recipient, MINT_AMOUNT)`
+ * call to `token`, for any recipient: `[executeUserOp ‖] execute(mode, token ‖
+ * value ‖ data)` with a single-call mode.
+ */
+export function isMintCall(callData: unknown, token: string): boolean {
+  if (typeof callData !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/u.test(callData)) return false;
+  let hex = callData.slice(2).toLowerCase();
+  if (hex.startsWith(EXECUTE_USER_OP)) hex = hex.slice(8);
+  if (!hex.startsWith(EXECUTE)) return false;
+  const word = (index: number) => hex.slice(8 + index * 64, 8 + (index + 1) * 64);
+  // Call type 0x00 (single); exec type 0x00 (revert on failure).
+  if (!word(0).startsWith("0000")) return false;
+  if (BigInt(`0x${word(1) || "0"}`) !== 64n) return false;
+  const length = Number(BigInt(`0x${word(2) || "0"}`));
+  const execution = hex.slice(8 + 3 * 64, 8 + 3 * 64 + length * 2);
+  // token (20 bytes) ‖ value 0 (32) ‖ mint selector (4) ‖ recipient word (32) ‖ amount (32).
+  const prefix = `${token.slice(2).toLowerCase()}${"0".repeat(64)}${MINT_SELECTOR.slice(2)}`;
+  const recipient = execution.slice(prefix.length, prefix.length + 64);
+  return (
+    length === 120 &&
+    execution.length === 240 &&
+    execution.startsWith(prefix) &&
+    /^0{24}[0-9a-f]{40}$/u.test(recipient) &&
+    execution.slice(prefix.length + 64) === MINT_AMOUNT.toString(16).padStart(64, "0")
+  );
+}
 
 function captureCall(value: unknown): Call | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
@@ -55,6 +140,10 @@ function captureCall(value: unknown): Call | null {
 
 function reply(status: number, body: unknown): Response {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+function refused(call: Call, message: string): Response {
+  return reply(200, { jsonrpc: "2.0", id: call.id, error: { code: -32005, message } });
 }
 
 async function boundedText(response: Response): Promise<string | null> {
@@ -81,9 +170,27 @@ async function boundedText(response: Response): Promise<string | null> {
   return new TextDecoder().decode(body);
 }
 
-/** Serves one same-origin chain request; the caller has checked the path and origin. */
-export async function proxy(request: Request, env: ProxyEnv): Promise<Response> {
+async function spend(limiter: RateLimit | undefined, key: string): Promise<boolean> {
+  return limiter ? (await limiter.limit({ key })).success : false;
+}
+
+/** The relay-paid call's refusal, or null: only the mint through EntryPoint 0.9. */
+function relayRefusal(call: Call, token: string): string | null {
+  const [operation, entryPoint] = call.params;
+  // A third (state override) parameter would simulate against another state.
+  if (call.params.length !== 2) return "invalid bundler params";
+  if (String(entryPoint).toLowerCase() !== ENTRY_POINT_V09) return "unsupported EntryPoint";
+  if (!isMintCall((operation as { callData?: unknown } | null)?.callData, token))
+    return "the app relays only a test tUSD mint";
+  return null;
+}
+
+/** Serves one same-origin proxy request; the caller has checked the path and origin. */
+export async function proxy(role: Role, request: Request, env: ProxyEnv): Promise<Response> {
   if (request.method !== "POST") return reply(405, { error: "Unsupported method" });
+  const token = mintToken(env);
+  if (role === "bundler" && token === null)
+    return reply(503, { error: "The bundler is not configured" });
   if (Number(request.headers.get("content-length") ?? "0") > MAX_BODY_BYTES)
     return reply(413, { error: "Request too large" });
   const text = await request.text();
@@ -104,35 +211,43 @@ export async function proxy(request: Request, env: ProxyEnv): Promise<Response> 
   const captured = calls as Call[];
   // A refused call refuses the whole request: a batch is forwarded whole or not at all.
   for (const call of captured) {
-    if (!METHODS.has(call.method))
-      return reply(200, {
-        jsonrpc: "2.0",
-        id: call.id,
-        error: { code: -32005, message: "method not allowed by the app" },
-      });
+    if (!METHODS[role].has(call.method)) return refused(call, "method not allowed by the app");
+    if (RELAY_PAID.has(call.method)) {
+      const refusal = relayRefusal(call, token as string);
+      if (refusal) return refused(call, refusal);
+    }
   }
 
-  // Every call spends budget before anything reaches the provider.
+  // Every call spends budget before anything reaches a provider.
   const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  for (const _ of captured) {
-    if (!env.RPC_LIMIT || !(await env.RPC_LIMIT.limit({ key: ip }).then((r) => r.success)))
-      return reply(429, { error: "Too many requests. Try again in a minute." });
+  const tooMany = () => reply(429, { error: "Too many requests. Try again in a minute." });
+  for (const call of captured) {
+    if (!(await spend(env.RPC_LIMIT, ip))) return tooMany();
+    if (call.method === "eth_sendUserOperation" && !(await spend(env.SEND_LIMIT, ip)))
+      return tooMany();
   }
 
+  const forwarded = new Request(
+    // The VPC binding pins the bundler's destination; this URL only sets its path.
+    role === "chain" ? env.CHAIN_RPC_URL : "http://bundler.internal/",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(batch ? captured : captured[0]),
+      // Workers accepts only "follow" or "manual"; a 3xx is not ok and is refused below.
+      redirect: "manual",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    },
+  );
   let upstream: Response;
   try {
-    upstream = await fetch(
-      new Request(env.CHAIN_RPC_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(batch ? captured : captured[0]),
-        // Workers accepts only "follow" or "manual"; a 3xx is not ok and is refused below.
-        redirect: "manual",
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      }),
-    );
+    upstream = await (role === "bundler"
+      ? (env.BUNDLER as NonNullable<ProxyEnv["BUNDLER"]>).fetch(forwarded)
+      : fetch(forwarded));
   } catch {
-    return reply(504, { error: "The provider did not answer" });
+    // No answer is not a refusal: a send may still land. A bare 504 keeps it
+    // uncertain in the SDK, which observes and never resends.
+    return new Response(null, { status: 504, headers: { "Cache-Control": "no-store" } });
   }
   const body = upstream.ok ? await boundedText(upstream) : null;
   let answer: unknown = null;

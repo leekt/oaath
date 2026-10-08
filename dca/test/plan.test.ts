@@ -7,7 +7,7 @@ import {
   type Run,
   resolveCalls,
 } from "@oaath/automation";
-import { decodeFunctionData, getAddress } from "viem";
+import { decodeFunctionData, getAddress, parseAbi } from "viem";
 import { describe, expect, it } from "vitest";
 import executor from "../../examples/dca/contracts/artifacts/DcaExecutor.json" with {
   type: "json",
@@ -21,6 +21,7 @@ import {
   decodeUint,
   formatUnits,
   intervalLabel,
+  mintCall,
   type PlanInputError,
   parseAmount,
   planRequest,
@@ -259,5 +260,19 @@ describe("watching a plan", () => {
     expect(decodeUint(`0x${"0".repeat(63)}a`)).toBe(10n);
     expect(decodeUint("0x")).toBeNull();
     expect(decodeUint(null)).toBeNull();
+  });
+});
+
+describe("minting test tUSD", () => {
+  it("encodes one zero-value tUSD mint of exactly the configured amount to the account", () => {
+    const call = mintCall(SELL, ACCOUNT, "1000000000");
+    expect(call.to).toBe(SELL);
+    expect(call).not.toHaveProperty("value");
+    expect(
+      decodeFunctionData({
+        abi: parseAbi(["function mint(address to, uint256 value)"]),
+        data: call.data,
+      }),
+    ).toEqual({ functionName: "mint", args: [getAddress(ACCOUNT), 1_000_000_000n] });
   });
 });
