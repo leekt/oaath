@@ -6,6 +6,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { CircleCheck, CircleHelp, CircleX } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import {
   type AccountInspection,
@@ -19,7 +20,7 @@ import { type PortalAccount, portalApi } from "./api.js";
 import { message } from "./shared.js";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 
-const STATUS_MARK = { pass: "✓", fail: "✕", unknown: "?" } as const;
+const STATUS_MARK = { pass: <CircleCheck />, fail: <CircleX />, unknown: <CircleHelp /> };
 const STATUS_TEXT = { pass: "Passed", fail: "Failed", unknown: "Not readable" } as const;
 const ORIGIN_TEXT: Readonly<Record<ModuleOrigin, string>> = {
   root: "Root",

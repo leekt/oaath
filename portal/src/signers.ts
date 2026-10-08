@@ -84,6 +84,13 @@ export function rememberSigner(signer: RememberedSigner): RememberedSigner[] {
   return next;
 }
 
+/** Forgets only the browser's public identity record; never changes account authority. */
+export function forgetSigner(signerId: string): RememberedSigner[] {
+  const next = rememberedSigners().filter((signer) => signer.signer_id !== signerId);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
 export interface NewSigner {
   readonly kind: SignerKind;
   readonly label: string;

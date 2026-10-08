@@ -217,10 +217,12 @@ export function LinkApproval({ linkId }: { linkId: string }) {
   };
 
   return (
-    <Frame>
-      <header className="client">
-        <p className="eyebrow">Add a signer</p>
-      </header>
+    <Frame variant={link?.status === "approved" ? "workspace" : "auth"}>
+      {link?.status !== "approved" && (
+        <header className="client">
+          <p className="context-title">Add a signer</p>
+        </header>
+      )}
       {!signer && (
         <>
           <p className="quiet">Sign in as the account's owner to review this request.</p>
@@ -719,20 +721,29 @@ export function ManageAccounts() {
   useEffect(() => {
     if (!signer) return;
     portalApi.signerAccounts(signer.signer_id).then(
-      (response) => setAccounts(response.accounts.filter((account) => account.role === "root")),
+      (response) => {
+        const owned = response.accounts.filter((account) => account.role === "root");
+        setAccounts(owned);
+        const requested = new URLSearchParams(location.search).get("account")?.toLowerCase();
+        if (requested) setChosen(owned.find((account) => account.address === requested) ?? null);
+      },
       (failure: unknown) => setError(linkMessage(failure)),
     );
   }, [signer]);
 
   return (
-    <Frame>
-      <header className="client">
-        <p className="eyebrow">Your accounts</p>
-      </header>
+    <Frame variant={signer ? "workspace" : "auth"}>
+      {!signer && (
+        <header className="client">
+          <p className="context-title">Your accounts, in one place.</p>
+          <p className="quiet">Manage members, review app requests and set the access you share.</p>
+        </header>
+      )}
       {!signer && <SignerStep onChosen={setSigner} />}
       {signer && !chosen && (
         <section aria-labelledby="owned-heading">
           <h1 id="owned-heading">Accounts you own</h1>
+          <p className="quiet">Choose an account to manage its members, policies and app access.</p>
           {accounts?.length === 0 && <p className="quiet">This signer owns no account.</p>}
           {accounts && accounts.length > 0 && (
             <ul className="choices">
@@ -760,9 +771,13 @@ export function ManageAccounts() {
       )}
       {chosen && signer && (
         <section aria-labelledby="account-members-heading">
-          <h1 id="account-members-heading" className="mono">
-            {shortAddress(chosen.address)}
-          </h1>
+          <div className="workspace-title">
+            <div>
+              <h1 id="account-members-heading">Account settings</h1>
+              <p className="quiet mono">{shortAddress(chosen.address)}</p>
+            </div>
+            <span className="role-label">Owner</span>
+          </div>
           <button type="button" className="link" onClick={() => setChosen(null)}>
             All accounts
           </button>
