@@ -22,6 +22,7 @@ import {
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
+import { isSubmissionRejection } from "./cetane/rpc.js";
 import type { ObserveOperationResult, OperationObserver } from "./operation-observer.js";
 import {
   deriveOperationId,
@@ -47,6 +48,8 @@ export type OperationRunnerErrorCode =
   | "operation_runner_state_conflict"
   | "operation_runner_store_unavailable"
   | "operation_runner_store_uncertain"
+  /** The bundler conclusively refused the one send; the Operation is abandoned. */
+  | "operation_runner_submission_rejected"
   | "operation_runner_closed"
   | "operation_runner_close_failed";
 
@@ -54,6 +57,8 @@ export class OaathOperationRunnerError extends Error {
   readonly code: OperationRunnerErrorCode;
   readonly failure: Readonly<OaathUserOperationError> | null;
   readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
+  /** The bundler's JSON-RPC error code for a conclusive send rejection; never its message. */
+  readonly rpcCode: number | null;
 
   constructor(
     code: OperationRunnerErrorCode,
@@ -64,6 +69,7 @@ export class OaathOperationRunnerError extends Error {
     const captured = captureValidationGasDiagnostic(diagnostic);
     super(captured === null ? message : validationGasDiagnosticMessage(captured), options);
     this.failure = readUserOperationFailure(options?.cause);
+    this.rpcCode = isSubmissionRejection(options?.cause) ? options.cause.rpcCode : null;
     this.name = "OaathOperationRunnerError";
     this.code = code;
     this.diagnostic = captured;
@@ -1114,6 +1120,34 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
     await configuration.preparation.abandonOperation(prepared).catch(() => undefined);
   }
 
+  async function rejectSubmission(
+    input: OperationRunInput,
+    record: OperationStoreRecord,
+    prepared: PreparedUserOperation,
+    error: unknown,
+  ): Promise<void> {
+    const abandoned = advanceOperation(record.value, {
+      type: "mark_abandoned",
+      identity: record.value.identity,
+      abandonedAt: Math.max(input.submittedAt, record.value.updatedAt),
+      reason: "submission_rejected",
+    });
+    const persisted = await commit(input.key, record.storeRevision, abandoned);
+    if (persisted.status === "conflict") {
+      const current = requireConflictIdentity(persisted.current, record.value.identity);
+      // Another writer advanced this identity first; its durable state stays
+      // canonical and the caller continues with observation only.
+      if (current.value.state !== "abandoned") return;
+    }
+    await configuration.preparation.abandonOperation(prepared).catch(() => undefined);
+    throw new OaathOperationRunnerError(
+      "operation_runner_submission_rejected",
+      "the bundler rejected the Operation; it was not submitted",
+      readValidationGasDiagnostic(error),
+      { cause: error },
+    );
+  }
+
   async function authorizePreparedOperation(
     input: OperationRunInput,
     record: OperationStoreRecord,
@@ -1365,6 +1399,9 @@ export function createOperationRunner(configurationValue: unknown): PreparedOper
     try {
       submissionValue = await withTimeout(session.submit, input.timeoutMs);
     } catch (error) {
+      // Only a captured JSON-RPC error answer proves the bundler did not accept
+      // this identity. Anything else stays attempted and observation-only.
+      if (isSubmissionRejection(error)) await rejectSubmission(input, record, prepared, error);
       const diagnostic = readValidationGasDiagnostic(error);
       return frozenResult({
         status: "submission_uncertain",

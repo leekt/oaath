@@ -194,6 +194,7 @@ export type {
   IncludedOperation,
   Operation,
   OperationAbandonment,
+  OperationAbandonmentReason,
   OperationDropEvidence,
   OperationErrorCode,
   OperationFinality,

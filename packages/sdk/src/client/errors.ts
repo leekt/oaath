@@ -24,6 +24,7 @@ import {
   type ValidationGasDiagnostic,
   validationGasDiagnosticMessage,
 } from "@oaath/protocol";
+import { OaathOperationRunnerError } from "../operation-runner.js";
 
 export type OaathClientErrorCode =
   /** Application input is not a usable request. */
@@ -62,6 +63,8 @@ export type OaathClientErrorCode =
   | "oaath_client_signing_failed"
   /** A send was attempted and its outcome is unknown; never resubmit. */
   | "oaath_client_submission_uncertain"
+  /** The bundler conclusively refused the send; nothing was submitted and the lane is free. */
+  | "oaath_client_submission_rejected"
   /** Observation could not conclude; retry observation, never submission. */
   | "oaath_client_observation_unavailable"
   /** The user cancelled sign-in (OAuth `access_denied`) or closed its window. */
@@ -85,6 +88,8 @@ export class OaathClientError extends Error {
   readonly source: string | null;
   readonly failure: Readonly<OaathUserOperationError> | null;
   readonly diagnostic: Readonly<ValidationGasDiagnostic> | null;
+  /** The bundler's JSON-RPC error code when the send was rejected; never its message. */
+  readonly rpcCode: number | null;
 
   constructor(
     code: OaathClientErrorCode,
@@ -100,6 +105,11 @@ export class OaathClientError extends Error {
     this.source = source;
     this.failure = readUserOperationFailure(options?.cause);
     this.diagnostic = captured;
+    const cause = options?.cause;
+    this.rpcCode =
+      code === "oaath_client_submission_rejected" && cause instanceof OaathOperationRunnerError
+        ? cause.rpcCode
+        : null;
   }
 }
 
@@ -153,6 +163,7 @@ const RUNNER_CODES: Readonly<Record<string, OaathClientErrorCode>> = Object.free
   operation_runner_state_conflict: "oaath_client_state_conflict",
   operation_runner_store_unavailable: "oaath_client_store_unavailable",
   operation_runner_store_uncertain: "oaath_client_store_unavailable",
+  operation_runner_submission_rejected: "oaath_client_submission_rejected",
   operation_runner_closed: "oaath_client_closed",
   operation_runner_close_failed: "oaath_client_internal",
 });

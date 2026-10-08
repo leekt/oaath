@@ -119,8 +119,15 @@ export interface OperationSupersession {
   readonly observedAt: number;
 }
 
+/**
+ * Why an operation released its lane without inclusion. `submission_not_attempted`
+ * means no send ever began. `submission_rejected` means the one send received a
+ * well-formed JSON-RPC error answer: the bundler conclusively did not accept it.
+ */
+export type OperationAbandonmentReason = "submission_not_attempted" | "submission_rejected";
+
 export interface OperationAbandonment {
-  readonly reason: "submission_not_attempted";
+  readonly reason: OperationAbandonmentReason;
 }
 
 /**
@@ -216,7 +223,7 @@ export type OperationTransition =
       type: "mark_abandoned";
       identity: OperationIdentity;
       abandonedAt: number;
-      reason: "submission_not_attempted";
+      reason: OperationAbandonmentReason;
     }>
   | Readonly<{
       type: "mark_submission_attempted";
@@ -699,10 +706,16 @@ function parseOperationUnsafe(value: unknown, context: CaptureContext): Operatio
       code,
       context,
     );
-    if (abandonmentRecord.reason !== "submission_not_attempted") {
+    const reason = abandonmentRecord.reason;
+    if (reason !== "submission_not_attempted" && reason !== "submission_rejected") {
       return invalid(code, "operation abandonment reason is unsupported");
     }
-    assertTimeOrder(base.revision === 1, "abandoned operation revision", code);
+    // A rejected send passed through submission_attempted first.
+    assertTimeOrder(
+      base.revision === (reason === "submission_rejected" ? 2 : 1),
+      "abandoned operation revision",
+      code,
+    );
     assertTimeOrder(
       abandonedAt >= base.preparedAt && base.updatedAt === abandonedAt,
       "abandoned operation time",
@@ -713,7 +726,7 @@ function parseOperationUnsafe(value: unknown, context: CaptureContext): Operatio
       ...base,
       state,
       abandonedAt,
-      abandonment: Object.freeze({ reason: abandonmentRecord.reason }),
+      abandonment: Object.freeze({ reason }),
       observation: null,
     });
   }
@@ -1059,7 +1072,7 @@ function parseTransition(value: unknown): InternalOperationTransition {
       "abandoned transition",
       code,
     );
-    if (record.reason !== "submission_not_attempted") {
+    if (record.reason !== "submission_not_attempted" && record.reason !== "submission_rejected") {
       return invalid(code, "abandoned transition reason is unsupported");
     }
     return Object.freeze({
@@ -1273,12 +1286,23 @@ function advanceParsedOperation(
   requireIdentity(operation, transition.identity);
 
   if (transition.type === "mark_abandoned") {
-    if (operation.state !== "prepared") return forbidden(operation, transition);
+    // Only a never-attempted send or a conclusively rejected send releases the
+    // lane here. Every other attempted state stays observation-only.
+    if (
+      transition.reason === "submission_not_attempted"
+        ? operation.state !== "prepared"
+        : operation.state !== "submission_attempted"
+    )
+      return forbidden(operation, transition);
     requireTime(operation, transition.abandonedAt);
     return Object.freeze({
-      ...operation,
+      version: operation.version,
+      lane: operation.lane,
+      identity: operation.identity,
       revision: nextRevision(operation),
       state: "abandoned",
+      submission: null,
+      preparedAt: operation.preparedAt,
       abandonedAt: transition.abandonedAt,
       abandonment: Object.freeze({ reason: transition.reason }),
       updatedAt: transition.abandonedAt,
