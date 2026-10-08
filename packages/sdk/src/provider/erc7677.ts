@@ -324,11 +324,21 @@ interface CapturedEstimate {
 function captureEstimate(value: unknown): Readonly<CapturedEstimate> {
   const record = allowedRecord(
     value,
-    ["callGasLimit", "verificationGasLimit", "preVerificationGas", "paymasterVerificationGasLimit"],
+    [
+      "callGasLimit",
+      "verificationGasLimit",
+      "preVerificationGas",
+      "paymasterVerificationGasLimit",
+      // Bundlers (e.g. Pimlico on EntryPoint 0.8+) also estimate post-op gas. It is
+      // validated and ignored: the paymaster's own stub owns the post-op limit.
+      "paymasterPostOpGasLimit",
+    ],
     ["callGasLimit", "verificationGasLimit", "preVerificationGas"],
     "ERC-7677 gas estimate",
     new WeakSet(),
   );
+  if (Object.hasOwn(record, "paymasterPostOpGasLimit"))
+    decimal(record.paymasterPostOpGasLimit, "ERC-7677 paymaster post-op gas estimate");
   return Object.freeze({
     callGasLimit: decimal(record.callGasLimit, "ERC-7677 call gas estimate"),
     verificationGasLimit: decimal(

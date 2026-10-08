@@ -47,11 +47,14 @@ export function createTransport(options: AutomationClientOptions): AutomationReq
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
-        redirect: "error",
+        // Cloudflare Workers reject `redirect: "error"`; a redirect is refused below instead.
+        redirect: "manual",
       });
     } catch {
       throw new AutomationError("request_outcome_unknown", 0);
     }
+    if (response.status >= 300 && response.status < 400)
+      throw new AutomationError("redirect_refused", response.status);
     const value: unknown = await response.json().catch(() => {
       throw new AutomationError("response_unreadable", response.status);
     });
