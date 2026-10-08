@@ -11,6 +11,7 @@ import type { PortalAccount } from "./api.js";
 import { CHAINS, ether, SELECTORS } from "./GrantReview.js";
 import { reviewedOperation, signOperation } from "./operation-signing.js";
 import { RootSigningError } from "./root-signing.js";
+import { Hex } from "./shared.js";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 
 function gwei(wei: string): string {
@@ -46,7 +47,7 @@ function Call({ call }: { call: OwnerOperationRequest["calls"][number] }) {
       <span className="call-name">
         {selector === null ? "Send" : (name ?? <span className="mono">{selector}</span>)}
       </span>{" "}
-      to <span className="mono">{call.target}</span>
+      to <Hex value={call.target} />
       <span className="choice-detail">
         Sends {ether(call.value)}
         {selector !== null && ` · ${(call.data.length - 2) / 2} bytes of call data`}
@@ -131,7 +132,7 @@ export function OperationReview({
               "Your account"
             ) : (
               <>
-                Paymaster <span className="mono">{operation.paymaster.address}</span>
+                Paymaster <Hex value={operation.paymaster.address} />
               </>
             )}
           </dd>
@@ -153,8 +154,14 @@ export function OperationReview({
           submits it; it cannot be changed after you sign, and it grants nothing else.
         </p>
       )}
-      <div className="actions">
-        <button type="button" className="primary" disabled={!request || busy} onClick={approve}>
+      <div className="actions dock">
+        <button
+          type="button"
+          className="primary sign"
+          disabled={!request || busy}
+          aria-busy={busy}
+          onClick={approve}
+        >
           Approve and sign
         </button>
       </div>

@@ -134,7 +134,7 @@ export function ImportAccount({
         </button>
       </form>
       {busy && (
-        <p className="quiet" aria-live="polite">
+        <p className="quiet waiting" aria-live="polite">
           Reading the account on {IMPORT_NETWORK}…
         </p>
       )}
@@ -198,8 +198,9 @@ export function ImportAccount({
           )}
           <button
             type="button"
-            className="primary"
+            className="primary sign"
             disabled={busy || (caveats && !acknowledged)}
+            aria-busy={busy}
             onClick={submit}
           >
             Import and sign

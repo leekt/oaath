@@ -133,60 +133,60 @@ export function SignerStep({
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        className="secondary"
-        aria-expanded={adding}
-        aria-controls="add-signer"
-        onClick={() => setAdding(!adding)}
-      >
-        Add signer
-      </button>
-      <p>
+      <div className="alternatives">
+        <button
+          type="button"
+          className="secondary disclosure"
+          aria-expanded={adding}
+          aria-controls="add-signer"
+          onClick={() => setAdding(!adding)}
+        >
+          Add signer
+        </button>
+        {adding && (
+          <ul id="add-signer" className="choices options" aria-label="Signer options">
+            <li>
+              <button
+                type="button"
+                className="choice"
+                disabled={busy}
+                onClick={() => run(() => add(() => createPasskey(signers)))}
+              >
+                <span className="badge badge-passkey" aria-hidden="true" />
+                <span className="choice-text">
+                  <span className="choice-title">New passkey</span>
+                  <span className="choice-detail">Face, fingerprint or device PIN</span>
+                </span>
+              </button>
+            </li>
+            {wallets.length === 0 ? (
+              <li className="quiet">No browser wallet found.</li>
+            ) : (
+              wallets.map((wallet) => (
+                <li key={wallet.info.uuid}>
+                  <button
+                    type="button"
+                    className="choice"
+                    disabled={busy}
+                    onClick={() => run(() => add(() => connectWallet(wallet), wallet))}
+                  >
+                    <span className="badge badge-wallet" aria-hidden="true" />
+                    <span className="choice-text">
+                      <span className="choice-title">{wallet.info.name}</span>
+                      <span className="choice-detail">Sign in with your wallet</span>
+                    </span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        )}
         <button type="button" className="link" disabled={busy} onClick={() => run(recognise)}>
           Use a passkey from another device or browser
         </button>
-      </p>
-      {adding && (
-        <ul id="add-signer" className="choices options" aria-label="Signer options">
-          <li>
-            <button
-              type="button"
-              className="choice"
-              disabled={busy}
-              onClick={() => run(() => add(() => createPasskey(signers)))}
-            >
-              <span className="badge badge-passkey" aria-hidden="true" />
-              <span className="choice-text">
-                <span className="choice-title">New passkey</span>
-                <span className="choice-detail">Face, fingerprint or device PIN</span>
-              </span>
-            </button>
-          </li>
-          {wallets.length === 0 ? (
-            <li className="quiet">No browser wallet found.</li>
-          ) : (
-            wallets.map((wallet) => (
-              <li key={wallet.info.uuid}>
-                <button
-                  type="button"
-                  className="choice"
-                  disabled={busy}
-                  onClick={() => run(() => add(() => connectWallet(wallet), wallet))}
-                >
-                  <span className="badge badge-wallet" aria-hidden="true" />
-                  <span className="choice-text">
-                    <span className="choice-title">{wallet.info.name}</span>
-                    <span className="choice-detail">Sign in with your wallet</span>
-                  </span>
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
+      </div>
       {busy && (
-        <p className="quiet" aria-live="polite">
+        <p className="quiet waiting" aria-live="polite">
           Confirm the sign-in with your passkey or wallet…
         </p>
       )}
@@ -197,6 +197,29 @@ export function SignerStep({
       )}
       {onCancel && <CancelButton onCancel={onCancel} disabled={busy} />}
     </section>
+  );
+}
+
+/**
+ * A full hex value set in groups of four, like a key code, so it can be read
+ * back. The groups are spans with break points between them: the text, as
+ * read or copied, is the value itself.
+ */
+export function Hex({ value }: { value: string }) {
+  const digits = value.startsWith("0x") ? value.slice(2) : value;
+  const groups = digits.match(/.{1,4}/gu) ?? [];
+  return (
+    <span className="mono hex">
+      {value.startsWith("0x") && <span className="hex-prefix">0x</span>}
+      {groups.map((group, index) => (
+        // A group is identified by its position in the immutable value.
+        // biome-ignore lint/suspicious/noArrayIndexKey: the value never reorders
+        <span key={index}>
+          <wbr />
+          {group}
+        </span>
+      ))}
+    </span>
   );
 }
 

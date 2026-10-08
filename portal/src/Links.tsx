@@ -393,7 +393,13 @@ function LinkReview({
         {access === "login" ? "." : "; the signer's first payment installs the policy."}
       </p>
       <div className="actions">
-        <button type="button" className="primary" disabled={busy} onClick={() => run(approve)}>
+        <button
+          type="button"
+          className="primary sign"
+          disabled={busy}
+          aria-busy={busy}
+          onClick={() => run(approve)}
+        >
           Approve and sign
         </button>
         <button
@@ -406,7 +412,7 @@ function LinkReview({
         </button>
       </div>
       {busy && (
-        <p className="quiet" aria-live="polite">
+        <p className="quiet waiting" aria-live="polite">
           Confirm with your passkey or wallet…
         </p>
       )}

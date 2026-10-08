@@ -204,8 +204,9 @@ export function PendingRequests({
             <div className="actions">
               <button
                 type="button"
-                className="primary"
+                className="primary sign"
                 disabled={busy}
+                aria-busy={busy}
                 aria-label={`Approve ${view.client_name}`}
                 onClick={() => run(() => approveRequest(view, signer, account))}
               >
@@ -326,8 +327,9 @@ export function RequestPage({ requestId }: { requestId: string }) {
             <div className="actions">
               <button
                 type="button"
-                className="primary"
+                className="primary sign"
                 disabled={busy}
+                aria-busy={busy}
                 onClick={() => run(() => approveRequest(view, signer, account))}
               >
                 Approve and sign

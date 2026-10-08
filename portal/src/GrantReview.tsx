@@ -16,6 +16,7 @@ import {
   portalApi,
 } from "./api.js";
 import { RootSigningError, reviewedRequest, signGrantApproval } from "./root-signing.js";
+import { Hex } from "./shared.js";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 
 /** Well-known ERC-20 selectors; anything else is shown as its hex selector. */
@@ -65,10 +66,16 @@ function limit(policy: GrantPolicy): string {
     : `Up to ${times} per chain every ${duration(intervalSeconds)}`;
 }
 
-function signerText(credential: OperatorCredentialProfile): string {
-  return credential.kind === "ecdsa"
-    ? `Ethereum key ${credential.address}`
-    : `Passkey ${shortAddress(credential.publicKey)}`;
+function SignerText({ credential }: { credential: OperatorCredentialProfile }) {
+  return credential.kind === "ecdsa" ? (
+    <>
+      Ethereum key <Hex value={credential.address} />
+    </>
+  ) : (
+    <>
+      Passkey <span className="mono">{shortAddress(credential.publicKey)}</span>
+    </>
+  );
 }
 
 export function grantFailure(error: unknown): string {
@@ -110,7 +117,9 @@ export function GrantTerms({
   return (
     <dl className="review">
       <dt>App signer</dt>
-      <dd className="mono">{signerText(credential)}</dd>
+      <dd>
+        <SignerText credential={credential} />
+      </dd>
       <dt>Allowed calls</dt>
       <dd>
         <ul className="calls">
@@ -119,7 +128,7 @@ export function GrantTerms({
               <span className="call-name">
                 {SELECTORS[call.selector] ?? <span className="mono">{call.selector}</span>}
               </span>{" "}
-              on <span className="mono">{call.target}</span>
+              on <Hex value={call.target} />
               <span className="choice-detail">Sends up to {ether(call.valueLimit)}</span>
             </li>
           ))}
@@ -210,7 +219,7 @@ export function GrantReview({
         <span className="mono">{shortAddress(account.address)}</span>, within the limits below.
       </p>
       {!request && !error && (
-        <p className="quiet" aria-live="polite">
+        <p className="quiet waiting" aria-live="polite">
           Preparing the request…
         </p>
       )}
@@ -229,8 +238,14 @@ export function GrantReview({
           asks for.
         </p>
       )}
-      <div className="actions">
-        <button type="button" className="primary" disabled={!request || busy} onClick={approve}>
+      <div className="actions dock">
+        <button
+          type="button"
+          className="primary sign"
+          disabled={!request || busy}
+          aria-busy={busy}
+          onClick={approve}
+        >
           Approve and sign
         </button>
       </div>

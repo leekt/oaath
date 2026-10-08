@@ -246,6 +246,52 @@ a:hover {
   color: var(--ink-2);
 }
 
+.client .steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  margin: var(--s2) 0 0;
+  padding: var(--s2) 0 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+  font: 600 0.8125rem / 1.5 var(--sans);
+  color: var(--ink-2);
+  counter-reset: step;
+}
+
+.steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  counter-increment: step;
+}
+
+.steps li::before {
+  content: counter(step);
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  font: 700 0.6875rem / 1 var(--sans);
+  border: 1px dashed var(--rule-strong);
+  border-radius: 50%;
+}
+
+.steps li:has(~ li[aria-current])::before {
+  border-style: solid;
+  border-color: var(--ink-2);
+}
+
+.steps li[aria-current] {
+  color: var(--ink);
+}
+
+.steps li[aria-current]::before {
+  color: var(--on-brass);
+  background: var(--brass);
+  border: 1px solid var(--brass-ink);
+}
+
 .client-name {
   margin: 0;
   font: 700 1.25rem / 1.25 var(--sans);
@@ -255,6 +301,67 @@ a:hover {
 
 .quiet {
   color: var(--ink-2);
+}
+
+/* Waiting on a wallet, a passkey or the relay: the key half-turns and back. */
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.waiting::before {
+  content: "";
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  background: var(--brass-ink);
+  mask:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='7.5' cy='12' r='4'/%3E%3Cpath d='M11.5 12H21m-4 0v3.5m3-3.5v2.5'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+/* The key you are holding, and the way to put it down. */
+.holding {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin: var(--s3) 0 var(--s4);
+}
+
+.holding p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.holding strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.holding .badge {
+  width: 2rem;
+  height: 2rem;
+}
+
+.holding .badge::before {
+  inset: 0.375rem;
+}
+
+/* Hex in groups of four, like a key code; the gaps are margins, not text. */
+.hex {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.hex > span:not(.hex-prefix) {
+  margin-left: 0.35ch;
+}
+
+.hex > .hex-prefix + span {
+  margin-left: 0.1ch;
 }
 
 .mono {
@@ -287,6 +394,44 @@ a:hover {
 
 .options {
   margin-top: var(--s3);
+}
+
+.alternatives {
+  display: grid;
+  justify-items: start;
+  gap: var(--s2);
+}
+
+.alternatives .secondary,
+.alternatives .choices {
+  width: 100%;
+}
+
+.alternatives .options {
+  margin: 0;
+}
+
+/* A disclosure states its direction with a turning chevron. */
+.disclosure {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+}
+
+.disclosure::after {
+  content: "";
+  width: 0.875rem;
+  height: 0.875rem;
+  background: currentColor;
+  mask:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 3.5 10.5 8 6 12.5' fill='none' stroke='%23000' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  rotate: 90deg;
+}
+
+.disclosure[aria-expanded="true"]::after {
+  rotate: -90deg;
 }
 
 .choice {
@@ -391,16 +536,32 @@ button.choice:hover:not(:disabled)::after {
   --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 5.5H6A2.5 2.5 0 0 0 3.5 8v9A2.5 2.5 0 0 0 6 19.5h12a2.5 2.5 0 0 0 2.5-2.5V10A2.5 2.5 0 0 0 18 7.5H5.5'/%3E%3Cpath d='M20.5 11.5H17a2 2 0 0 0 0 4h3.5'/%3E%3C/svg%3E");
 }
 
-/* The account: a stamped tag on the key ring. */
+/* The account: a stamped tag on the key ring; brass when this key is its root. */
 .badge-account {
   border-radius: 50%;
-  background: var(--brass);
-  border-color: var(--brass-ink);
   --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.75' stroke-linecap='round'%3E%3Ccircle cx='12' cy='7' r='2.25'/%3E%3Cpath d='M7.5 14h9M9 17.5h6'/%3E%3C/svg%3E");
 }
 
-.badge-account::before {
+.badge-root {
+  background: var(--brass);
+  border-color: var(--brass-ink);
+}
+
+.badge-root::before {
   background: var(--on-brass);
+}
+
+/* A suspended key is struck through, not merely recoloured. */
+.choice.suspended .badge::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  width: 2px;
+  rotate: 45deg;
+  background: var(--alert);
+  box-shadow: 0 0 0 2px var(--plate);
 }
 
 /* Actions: one dominant control, quieter alternatives beneath it. */
@@ -441,6 +602,45 @@ button.choice:hover:not(:disabled)::after {
 
 .primary.sign:hover:not(:disabled) {
   background: var(--brass-hi);
+}
+
+/* While the wallet or passkey is asked, the brass key turns once and holds. */
+.primary.sign {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+}
+
+.primary.sign::before {
+  content: "";
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  background: currentColor;
+  mask:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='7.5' cy='12' r='4'/%3E%3Cpath d='M11.5 12H21m-4 0v3.5m3-3.5v2.5'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+.primary.sign[aria-busy="true"] {
+  opacity: 1;
+  cursor: progress;
+}
+
+.primary.sign[aria-busy="true"]::before {
+  rotate: 90deg;
+}
+
+/* On a long review, the signature stays within reach of the thumb. */
+.dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-inline: calc(-1 * var(--s4));
+  padding: var(--s3) var(--s4) calc(var(--s3) + env(safe-area-inset-bottom, 0px));
+  background: var(--ground);
+  border-top: 1px solid var(--rule);
 }
 
 .secondary {
@@ -580,8 +780,8 @@ button.choice:hover:not(:disabled)::after {
   gap: var(--s3);
 }
 
-.calls li {
-  display: grid;
+.calls .choice-detail {
+  display: block;
 }
 
 .call-name {
@@ -867,5 +1067,27 @@ fieldset {
 
   button.choice:hover:not(:disabled)::after {
     translate: 3px -50%;
+  }
+
+  .disclosure::after {
+    transition: rotate 240ms var(--ease);
+  }
+
+  .primary.sign::before {
+    transition: rotate 520ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+
+  .waiting::before {
+    animation: key-turn 1.6s var(--ease) infinite alternate;
+  }
+}
+
+@keyframes key-turn {
+  from {
+    rotate: 0deg;
+  }
+
+  to {
+    rotate: 90deg;
   }
 }

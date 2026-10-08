@@ -127,7 +127,7 @@ function Authorize({ transactionId }: { transactionId: string }) {
   if (!transaction)
     return (
       <Frame>
-        <p className="quiet" aria-live="polite">
+        <p className="quiet waiting" aria-live="polite">
           Loading sign-in…
         </p>
       </Frame>
@@ -149,11 +149,24 @@ function Authorize({ transactionId }: { transactionId: string }) {
   return (
     <Frame>
       <header className="client">
-        <p className="eyebrow">Login with OAAth</p>
         <p className="client-name">{transaction.client_name}</p>
         <p className="quiet">
-          returns to <span className="mono">{transaction.redirect_origin}</span>
+          Login with OAAth, then back to <span className="mono">{transaction.redirect_origin}</span>
         </p>
+        {step.name !== "returning" && (
+          <ol className="steps" aria-label="Progress">
+            {(grant || operation ? STEPS : STEPS.slice(0, 2)).map((name) => (
+              <li
+                key={name}
+                aria-current={
+                  name === (step.name === "ask" ? "review" : step.name) ? "step" : undefined
+                }
+              >
+                {STEP_LABEL[name]}
+              </li>
+            ))}
+          </ol>
+        )}
       </header>
       {step.name === "signer" && (
         <SignerStep onChosen={(signer) => setStep({ name: "account", signer })} onCancel={cancel} />
@@ -216,13 +229,20 @@ function Authorize({ transactionId }: { transactionId: string }) {
         />
       )}
       {step.name === "returning" && (
-        <p className="quiet" aria-live="polite">
+        <p className="quiet waiting" aria-live="polite">
           Returning to {transaction.client_name}…
         </p>
       )}
     </Frame>
   );
 }
+
+const STEPS = ["signer", "account", "review"] as const;
+const STEP_LABEL: Readonly<Record<(typeof STEPS)[number], string>> = {
+  signer: "Sign in",
+  account: "Account",
+  review: "Review",
+};
 
 const ROLE_LABEL: Readonly<Record<PortalAccount["role"], string>> = {
   root: "Owner",
@@ -312,14 +332,17 @@ function AccountStep({
       <h1 id="account-heading" ref={heading} tabIndex={-1}>
         Choose an account
       </h1>
-      <p className="quiet">
-        Signing in as {signer.label}{" "}
+      <div className="holding">
+        <span className={`badge badge-${signer.kind}`} aria-hidden="true" />
+        <p>
+          Signed in as <strong>{signer.label}</strong>
+        </p>
         <button type="button" className="link" onClick={onBack}>
           Change
         </button>
-      </p>
+      </div>
       {accounts === null && !error && (
-        <p className="quiet" aria-live="polite">
+        <p className="quiet waiting" aria-live="polite">
           Loading accounts…
         </p>
       )}
@@ -336,7 +359,7 @@ function AccountStep({
             <li key={account.account_id}>
               <button
                 type="button"
-                className="choice"
+                className={`choice${account.status === "suspended" ? " suspended" : ""}`}
                 // The owner suspended this signer: it cannot sign in as the account.
                 disabled={busy || account.status === "suspended"}
                 aria-label={`Smart account ${account.address}, ${ROLE_LABEL[account.role]}${
@@ -344,7 +367,10 @@ function AccountStep({
                 }`}
                 onClick={() => onChosen(account)}
               >
-                <span className="badge badge-account" aria-hidden="true" />
+                <span
+                  className={`badge badge-account${account.role === "root" ? " badge-root" : ""}`}
+                  aria-hidden="true"
+                />
                 <span className="choice-text">
                   <span className="choice-title mono">{shortAddress(account.address)}</span>
                   <span className="choice-detail">
