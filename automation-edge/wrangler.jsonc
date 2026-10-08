@@ -14,6 +14,8 @@
     }
   ],
   // Per-IP budget for every request to the hosted automation service.
-  "ratelimits": [{ "name": "LIMIT", "namespace_id": "4216160", "simple": { "limit": 120, "period": 60 } }],
+  "ratelimits": [
+    { "name": "LIMIT", "namespace_id": "4216160", "simple": { "limit": 120, "period": 60 } }
+  ],
   "observability": { "enabled": true }
 }
