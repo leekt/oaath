@@ -27,6 +27,9 @@ pub enum Send {
 
 pub struct Stub {
     pub installed: bool,
+    /// The sequence Kernel stores for the enable's install key: 0 leaves the
+    /// enable replayable, 1 consumes it.
+    pub install_sequence: u64,
     pub deployed: bool,
     pub send: Send,
     pub receipt: Option<Value>,
@@ -59,9 +62,18 @@ async fn answer(State(stub): State<Shared>, Json(request): Json<Value>) -> Json<
         "eth_getCode" => json!(if stub.deployed { "0x6080" } else { "0x" }),
         "eth_call" => {
             let data = request["params"][0]["data"].as_str().unwrap_or_default();
-            // isModuleInstalled(uint256,address,bytes); otherwise getNonce on the EntryPoint.
+            // isModuleInstalled(uint256,address,bytes); Kernel's nonce(uint192);
+            // otherwise getNonce on the EntryPoint.
+            let nonce_selector = format!(
+                "0x{}",
+                hex::encode(&alloy_primitives::keccak256(b"nonce(uint192)")[..4])
+            );
             if data.starts_with("0x112d3a7d") {
                 json!(word(u64::from(stub.installed)))
+            } else if data.starts_with(&nonce_selector) {
+                // key << 64 | sequence, for the key asked.
+                let key = &data[data.len() - 48..];
+                json!(format!("0x{:0>48}{:016x}", key, stub.install_sequence))
             } else {
                 json!(format!("0x{:064x}", (1u128 << 64) + 3))
             }
@@ -94,6 +106,7 @@ async fn answer(State(stub): State<Shared>, Json(request): Json<Value>) -> Json<
 pub async fn stub(send: Send) -> (String, Shared) {
     let shared = Arc::new(Mutex::new(Stub {
         installed: true,
+        install_sequence: 0,
         deployed: true,
         send,
         receipt: None,

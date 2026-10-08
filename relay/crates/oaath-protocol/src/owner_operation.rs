@@ -403,6 +403,18 @@ pub fn parse_signed_owner_operation(value: &Value) -> ProtocolResult<SignedOwner
     })
 }
 
+/// The reviewed `KernelFactory` and its deploy call for a derived account
+/// that is not deployed yet: what an owner operation's `factory` must be.
+pub fn kernel_factory_deployment(
+    profile: &KernelDerivedAccountProfile,
+    owner_validator: Option<&str>,
+) -> ProtocolResult<OwnerOperationFactory> {
+    Ok(OwnerOperationFactory {
+        address: KERNEL_V4_FACTORY.to_owned(),
+        data: factory_deploy(profile, owner_validator)?,
+    })
+}
+
 /// `KernelFactory.deploy(initialPackages, index)` for the account's single root package.
 fn factory_deploy(
     profile: &KernelDerivedAccountProfile,

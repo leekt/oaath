@@ -312,6 +312,10 @@ export interface RevocationView {
     | "finalized"
     | "failed";
   readonly delivery: "relay" | "dapp";
+  /** Uninstall an installed permission, or invalidate an unused enable; null when nothing is needed. */
+  readonly action: "uninstall" | "invalidate" | null;
+  /** The grant's enable install nonce, which an invalidation consumes. */
+  readonly install_nonce: string;
   /** Whether OAAth submits the signed uninstall: always for relay delivery, by choice for dapp. */
   readonly relay_submits: boolean;
   /** The grant's install packages: what the uninstall removes. */

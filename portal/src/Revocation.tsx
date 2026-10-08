@@ -6,7 +6,10 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { encodeKernelPermissionUninstallCalls } from "@oaath/protocol";
+import {
+  encodeKernelInstallNonceInvalidationCall,
+  encodeKernelPermissionUninstallCalls,
+} from "@oaath/protocol";
 import { ECDSA_VALIDATOR, kernelKey } from "@oaath/sdk/kernel";
 import { useCallback, useEffect, useState } from "react";
 import { type PortalAccount, PortalApiError, portalApi, type RevocationView } from "./api.js";
@@ -93,14 +96,22 @@ export function RevokeOnChain({
         validator: signer.profile.kind === "ecdsa" ? ECDSA_VALIDATOR : null,
       }).dummySignature;
       const prepared = await portalApi.prepareRevocation(grantId, estimation);
-      if (prepared.status !== "pending_signature" || !prepared.request) {
+      if (prepared.status !== "pending_signature" || !prepared.request || !prepared.action) {
         setView(prepared);
       } else {
         const request = reviewedOperation({ request: prepared.request, signer, account });
-        const expected = encodeKernelPermissionUninstallCalls({
-          account: account.address,
-          packages: prepared.packages as never,
-        });
+        const expected =
+          prepared.action === "invalidate"
+            ? [
+                encodeKernelInstallNonceInvalidationCall({
+                  account: account.address,
+                  installNonce: prepared.install_nonce,
+                }),
+              ]
+            : encodeKernelPermissionUninstallCalls({
+                account: account.address,
+                packages: prepared.packages as never,
+              });
         if (JSON.stringify(request.calls) !== JSON.stringify(expected))
           throw new RootSigningError("calls-mismatch");
         const signature = await signOperation(request, signer);
@@ -114,26 +125,35 @@ export function RevokeOnChain({
     setBusy(false);
   }
 
+  const actionable =
+    view?.status === "pending_signature" ||
+    (view?.status === "not_installed" && view.action === "invalidate");
   return (
     <div className="member-actions">
       <p className="choice-detail" aria-live="polite" data-revocation={view?.status ?? ""}>
         Grant <span className="mono">{shortAddress(grantId)}</span>:{" "}
-        {view ? STATUS[view.status] : "Checking on chain…"}
+        {view
+          ? view.status === "not_installed" && view.action === "invalidate"
+            ? "Not installed, but its approval could still install it."
+            : STATUS[view.status]
+          : "Checking on chain…"}
       </p>
-      {view?.status === "pending_signature" && !confirming && (
+      {actionable && !confirming && (
         <button
           type="button"
           className="secondary"
           disabled={busy}
           onClick={() => setConfirming(true)}
         >
-          Revoke on chain
+          {view?.action === "invalidate" ? "Invalidate on chain" : "Revoke on chain"}
         </button>
       )}
-      {view?.status === "pending_signature" && confirming && (
+      {view && actionable && confirming && (
         <>
           <p className="choice-detail">
-            You sign one operation that removes this permission from the account.
+            {view.action === "invalidate"
+              ? "You sign one operation that makes this grant's approval unusable on the account."
+              : "You sign one operation that removes this permission from the account."}
             {view.delivery === "dapp" && !submitFromOaath
               ? " The app submits it."
               : " OAAth submits it."}

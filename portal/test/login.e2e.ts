@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { p256 } from "@noble/curves/nist.js";
 import {
+  encodeKernelInstallNonceInvalidationCall,
   encodeKernelPermissionUninstallCalls,
   hashOwnerCredentialProfile,
   OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
@@ -1906,6 +1907,8 @@ async function permissionInstalled(
 interface Revocation {
   status: string;
   delivery: string;
+  action: "uninstall" | "invalidate" | null;
+  install_nonce: string;
   packages: { moduleType: number; module: `0x${string}`; moduleData: `0x${string}` }[];
   request: {
     calls: unknown;
@@ -1928,9 +1931,10 @@ async function rootRevokes(
   submitFromOaath = false,
 ) {
   const path = `/portal/grants/${grantId}/revocation`;
-  expect(((await relayCall(path, rootCookie)).json as unknown as Revocation).status).toBe(
-    "pending_signature",
-  );
+  const shown = (await relayCall(path, rootCookie)).json as unknown as Revocation;
+  // An installed permission awaits its uninstall; an unused one, its invalidation.
+  expect(shown.status).toBe(shown.action === "uninstall" ? "pending_signature" : "not_installed");
+  expect(shown.action).not.toBeNull();
   const prepared = (
     await relayCall(`${path}/prepare`, rootCookie, {
       estimation_signature: kernelKey({ credential: rootProfile, validator: ECDSA_VALIDATOR })
@@ -1938,13 +1942,21 @@ async function rootRevokes(
     })
   ).json as unknown as Revocation;
   if (!prepared.request) throw new Error("no prepared revocation");
-  // The relay's calls are exactly the protocol's uninstall of this grant's packages.
+  // The relay's calls are exactly the protocol's uninstall of this grant's
+  // packages, or its invalidation of the grant's install nonce.
   const request = parseOwnerOperationRequest(prepared.request);
   expect(request.calls).toEqual(
-    encodeKernelPermissionUninstallCalls({
-      account: address,
-      packages: prepared.packages as never,
-    }),
+    prepared.action === "uninstall"
+      ? encodeKernelPermissionUninstallCalls({
+          account: address,
+          packages: prepared.packages as never,
+        })
+      : [
+          encodeKernelInstallNonceInvalidationCall({
+            account: address,
+            installNonce: prepared.install_nonce,
+          }),
+        ],
   );
   expect(request.userOperation.sender).toBe(address);
   const signature = await rootAccount.signMessage({ message: { raw: request.userOperationHash } });
@@ -2017,6 +2029,7 @@ describe("revoking an invalidated grant on chain", () => {
       address,
     );
     expect(prepared.delivery).toBe("relay");
+    expect(prepared.action).toBe("uninstall");
     expect(signed.status).toBe("submitted");
     expect(local.sent).toHaveLength(submittedBefore + 1);
     expect(await finalized(local, linkId, context.root.cookie)).toBe("finalized");
@@ -2027,9 +2040,13 @@ describe("revoking an invalidated grant on chain", () => {
     expect(await local.chain.rpc("eth_getBalance", [target, "latest"])).toBe("0x3e8");
   }, 180_000);
 
-  it.each([false, true])(
-    "a dapp that opted in receives the root-signed uninstall; OAAth also submits it: %s",
-    async (submitFromOaath) => {
+  it.each([
+    { delivery: "dapp", submitFromOaath: false, installed: true },
+    { delivery: "dapp", submitFromOaath: true, installed: true },
+    { delivery: "relay", submitFromOaath: false, installed: false },
+  ] as const)(
+    "a dapp grant ($delivery delivery, OAAth submits: $submitFromOaath, installed: $installed)",
+    async ({ delivery, submitFromOaath, installed }) => {
       const local = await startLocalArbitrumSepolia();
       rpcUpstream = local.chain.url;
       bundlerUpstream = local.bundlerUrl;
@@ -2059,10 +2076,10 @@ describe("revoking an invalidated grant on chain", () => {
         await relayCall("/oauth/clients", undefined, {
           client_name: "Opt-in dapp",
           redirect_uris: [redirectUri],
-          revocation_delivery: "dapp",
+          revocation_delivery: delivery,
         })
       ).json as { client_id: string; revocation_delivery: string };
-      expect(client.revocation_delivery).toBe("dapp");
+      expect(client.revocation_delivery).toBe(delivery);
       const sessionAccount = privateKeyToAccount(`0x${randomBytes(32).toString("hex")}`);
       const target = `0x${"7d".repeat(20)}` as const;
       const now = Math.floor(Date.now() / 1000);
@@ -2170,26 +2187,30 @@ describe("revoking an invalidated grant on chain", () => {
         reads,
       });
       await local.chain.rpc("anvil_setBalance", [account.address, toHex(10n ** 18n)]);
-      const first = await materializeKernelPermission({
-        approval: detail.enable,
-        runtime: session,
-        grantId,
-        account: await session.bindAccount({
-          accountIndex: "0",
-          initialPackages: owner.packages,
-        }),
-        nonceKey: "0",
-        sequence: "0",
-        calls: [{ target, value: "500", data: "0x12345678" }],
-        gas: {
-          callGasLimit: "900000",
-          verificationGasLimit: "3000000",
-          preVerificationGas: "150000",
-          maxFeePerGas: "2000000000",
-          maxPriorityFeePerGas: "1000000000",
-        },
-      });
-      expect(await handleOperation(local, first.prepared, first.signature)).toBe(true);
+      const enable = async () =>
+        materializeKernelPermission({
+          approval: detail.enable,
+          runtime: session,
+          grantId,
+          account: await session.bindAccount({
+            accountIndex: "0",
+            initialPackages: owner.packages,
+          }),
+          nonceKey: "0",
+          sequence: "0",
+          calls: [{ target, value: "500", data: "0x12345678" }],
+          gas: {
+            callGasLimit: "900000",
+            verificationGasLimit: "3000000",
+            preVerificationGas: "150000",
+            maxFeePerGas: "2000000000",
+            maxPriorityFeePerGas: "1000000000",
+          },
+        });
+      if (installed) {
+        const first = await enable();
+        expect(await handleOperation(local, first.prepared, first.signature)).toBe(true);
+      }
 
       // The root removes the dapp's signer, then signs the uninstall; the relay keeps it.
       const members = (
@@ -2212,7 +2233,21 @@ describe("revoking an invalidated grant on chain", () => {
         account.address,
         submitFromOaath,
       );
-      expect(revocation.delivery).toBe("dapp");
+      expect(revocation.delivery).toBe(delivery);
+      if (!installed) {
+        // Never installed (the account is not even deployed): the root's operation
+        // deploys it and consumes the install nonce, so the held enable is dead.
+        expect(revocation.action).toBe("invalidate");
+        expect(signed.status).toBe("submitted");
+        expect(local.sent).toHaveLength(sentBefore + 1);
+        expect(local.sent[sentBefore]?.factory).toBeTruthy();
+        expect(await finalized(local, grantId, root.cookie)).toBe("finalized");
+        const replay = await enable();
+        expect(await handleOperation(local, replay.prepared, replay.signature)).not.toBe(true);
+        expect(await local.chain.rpc("eth_getBalance", [target, "latest"])).toBe("0x0");
+        return;
+      }
+      expect(revocation.action).toBe("uninstall");
       if (submitFromOaath) {
         // The root chose to submit from OAAth: the relay sends it once, and that suffices.
         expect(signed.status).toBe("submitted");

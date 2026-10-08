@@ -1,7 +1,9 @@
 //! On-chain revocation of an invalidated grant: the account root signs one
-//! owner operation that uninstalls the grant's Kernel v4 permission, and the
-//! relay submits it through its configured bundler, or hands it to the dapp
-//! when the dapp's client registered `revocation_delivery: "dapp"`.
+//! owner operation that uninstalls the grant's Kernel v4 permission, or, when
+//! it was never installed, consumes the enable's install nonce so the held
+//! enable can never install it. The relay submits it through its configured
+//! bundler, or hands it to the dapp when the dapp's client registered
+//! `revocation_delivery: "dapp"` (the root may still submit from OAAth).
 //!
 //! ```text
 //! GET  /portal/grants/{id}/revocation           root: status (observes once)
@@ -36,23 +38,27 @@
 //!                      grant; this removes its on-chain authority
 //! ```
 //!
-//! A permission that is not installed needs nothing submitted: the
-//! off-chain invalidation suffices. Every bundler request spends one unit of
+//! A permission that is neither installed nor installable (its install
+//! nonce is already consumed) needs nothing submitted. Every bundler request spends one unit of
 //! `MAX_BUNDLER_REQUESTS`, recorded before the request leaves.
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, U256};
 use oaath_protocol::capture::parse_json;
 use oaath_protocol::identity::KernelAccountProfile;
-use oaath_protocol::kernel_revocation::kernel_permission_uninstall_calls;
+use oaath_protocol::kernel_revocation::{
+    kernel_install_nonce_invalidation_call, kernel_permission_uninstall_calls,
+};
 use oaath_protocol::owner_operation::{
     OwnerOperationRequest, OwnerUserOperation, SignedOwnerOperation,
-    compose_owner_operation_request, parse_owner_operation_request,
+    compose_owner_operation_request, kernel_factory_deployment, parse_owner_operation_request,
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::bundler::{Bundler, BundlerFailure};
-use crate::chain::{ChainReader, PermissionTarget, finalized_permission, permission_state};
+use crate::chain::{
+    ChainReader, PermissionState, PermissionTarget, finalized_permission, permission_state,
+};
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::signature::{RelyingParty, verify_root_signature};
@@ -95,6 +101,18 @@ impl RevocationDelivery {
     }
 }
 
+/// What the root's one owner operation does on chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RevocationAction {
+    /// Uninstalls the installed permission: its policies, then its signer.
+    Uninstall,
+    /// Consumes the unused enable's install nonce (`setNonce`), so the
+    /// retained enable signature can never install the permission; an
+    /// undeployed account is deployed first.
+    Invalidate,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RevocationOutcome {
@@ -114,6 +132,7 @@ pub struct RevocationRecord {
     pub version: &'static str,
     pub grant_id: String,
     pub delivery: RevocationDelivery,
+    pub action: RevocationAction,
     /// The exact unsigned request (JSON text); none while only reserved.
     pub request: Option<String>,
     pub signature: Option<String>,
@@ -154,6 +173,7 @@ impl RevocationRecord {
                 "version",
                 "grantId",
                 "delivery",
+                "action",
                 "request",
                 "signature",
                 "signedAt",
@@ -182,6 +202,11 @@ impl RevocationRecord {
             version: REVOCATION_RECORD_VERSION,
             grant_id: canonical_identifier(r.get("grantId"), UNREADABLE)?.to_owned(),
             delivery: RevocationDelivery::parse(r.get("delivery")).ok_or(UNREADABLE)?,
+            action: match r.get("action").and_then(Value::as_str) {
+                Some("uninstall") => RevocationAction::Uninstall,
+                Some("invalidate") => RevocationAction::Invalidate,
+                _ => return Err(UNREADABLE),
+            },
             request: nullable(r.get("request"), text)?,
             signature: nullable(r.get("signature"), text)?,
             signed_at: nullable(r.get("signedAt"), |v| timestamp(Some(v), UNREADABLE))?,
@@ -266,6 +291,10 @@ pub struct RevocationView {
     /// `included`, `finalized`, or `failed`.
     pub status: &'static str,
     pub delivery: RevocationDelivery,
+    /// What the root's operation does, or none when nothing is needed on chain.
+    pub action: Option<RevocationAction>,
+    /// The grant's enable install nonce, which an invalidation consumes.
+    pub install_nonce: String,
     /// Whether OAAth submits the signed uninstall (always for relay delivery;
     /// the root's choice for dapp delivery, once signed).
     pub relay_submits: bool,
@@ -294,6 +323,8 @@ pub struct RevocationPorts<'a> {
 /// One invalidated grant on the root's account.
 struct Revocable {
     account: KernelAccountProfile,
+    owner_validator: Option<String>,
+    install_nonce: U256,
     target: PermissionTarget,
     packages: Value,
     delivery: RevocationDelivery,
@@ -346,12 +377,19 @@ async fn revocable(
     if enable.get("account").and_then(Value::as_str) != Some(account.address.as_str()) {
         return Err(UNREADABLE);
     }
+    let install_nonce = enable
+        .get("installNonce")
+        .and_then(Value::as_str)
+        .and_then(|text| U256::from_str_radix(text, 10).ok())
+        .ok_or(UNREADABLE)?;
     let delivery = match transaction.lock_oauth_client(&request.client_id).await? {
         Some(client) => client.revocation_delivery,
         None => RevocationDelivery::Relay,
     };
     Ok(Revocable {
         account: account.account_profile()?,
+        owner_validator: account.owner_validator.clone(),
+        install_nonce,
         target: PermissionTarget {
             account: address,
             signer: module,
@@ -367,6 +405,7 @@ fn view(
     revocable: &Revocable,
     record: Option<&RevocationRecord>,
     status: &'static str,
+    action: Option<RevocationAction>,
 ) -> RelayResult<RevocationView> {
     let request = match record {
         Some(record) => record.request()?,
@@ -376,6 +415,8 @@ fn view(
         grant_id: grant_id.to_owned(),
         status,
         delivery: revocable.delivery,
+        action: record.map(|record| record.action).or(action),
+        install_nonce: revocable.install_nonce.to_string(),
         relay_submits: revocable.delivery == RevocationDelivery::Relay
             || record.is_some_and(|record| record.relay_submits),
         packages: revocable.packages.clone(),
@@ -440,7 +481,7 @@ fn decimal(value: Option<&Value>) -> RelayResult<String> {
 
 /// The EntryPoint 0.9 RPC form of an operation with `signature`.
 fn wire(op: &OwnerUserOperation, signature: &str) -> RelayResult<Value> {
-    Ok(json!({
+    let mut wire = json!({
         "sender": op.sender,
         "nonce": quantity(&op.nonce)?,
         "callData": op.call_data,
@@ -450,7 +491,12 @@ fn wire(op: &OwnerUserOperation, signature: &str) -> RelayResult<Value> {
         "maxFeePerGas": quantity(&op.max_fee_per_gas)?,
         "maxPriorityFeePerGas": quantity(&op.max_priority_fee_per_gas)?,
         "signature": signature,
-    }))
+    });
+    if let Some(factory) = &op.factory {
+        wire["factory"] = json!(factory.address);
+        wire["factoryData"] = json!(factory.data);
+    }
+    Ok(wire)
 }
 
 fn signature_hex(value: Option<&Value>) -> RelayResult<String> {
@@ -483,14 +529,14 @@ pub async fn revocation_status(
     let (revocable, record) = load(store, kms, grant_id, Some(session)).await?;
     let Some(mut record) = record else {
         let chain = ports.chain.ok_or(UNAVAILABLE)?;
-        let lane =
-            permission_state(chain, &revocable.target, entry_point(), REVOCATION_LANE).await?;
-        let status = if lane.installed {
+        let state = chain_state(chain, &revocable).await?;
+        let status = if state.installed {
             "pending_signature"
         } else {
             "not_installed"
         };
-        return view(grant_id, &revocable, None, status);
+        let action = required_action(&state, revocable.install_nonce)?;
+        return view(grant_id, &revocable, None, status, action);
     };
     if record.observable() {
         record = observe(store, ports, &record, now).await?;
@@ -506,7 +552,44 @@ pub async fn revocation_status(
         save(store, &next).await?;
         record = next;
     }
-    view(grant_id, &revocable, Some(&record), record.stored_status())
+    view(
+        grant_id,
+        &revocable,
+        Some(&record),
+        record.stored_status(),
+        None,
+    )
+}
+
+/// What the chain state requires: uninstall an installed permission;
+/// invalidate an enable that can still install it (an undeployed account, or a
+/// stored install nonce not past the enable's); nothing once it is consumed.
+fn required_action(
+    state: &PermissionState,
+    install_nonce: U256,
+) -> RelayResult<Option<RevocationAction>> {
+    if state.installed {
+        return Ok(Some(RevocationAction::Uninstall));
+    }
+    let Some(stored) = state.install_nonce else {
+        return Ok(Some(RevocationAction::Invalidate));
+    };
+    // Kernel answers its own key: another one is contradictory.
+    if stored >> 64 != install_nonce >> 64 {
+        return Err(UNAVAILABLE);
+    }
+    Ok((stored <= install_nonce).then_some(RevocationAction::Invalidate))
+}
+
+async fn chain_state(chain: &ChainReader, revocable: &Revocable) -> RelayResult<PermissionState> {
+    permission_state(
+        chain,
+        &revocable.target,
+        entry_point(),
+        REVOCATION_LANE,
+        revocable.install_nonce >> 64,
+    )
+    .await
 }
 
 fn entry_point() -> Address {
@@ -606,23 +689,45 @@ pub async fn prepare_revocation(
     {
         return Err(RelayErrorCode::AlreadyDecided);
     }
-    let state = permission_state(chain, &revocable.target, entry_point(), REVOCATION_LANE).await?;
-    if !state.installed {
-        return view(grant_id, &revocable, record.as_ref(), "not_installed");
+    let state = chain_state(chain, &revocable).await?;
+    let Some(action) = required_action(&state, revocable.install_nonce)? else {
+        return view(grant_id, &revocable, None, "not_installed", None);
+    };
+    let account = format!("{:#x}", revocable.target.account);
+    let calls = match action {
+        RevocationAction::Uninstall => kernel_permission_uninstall_calls(&json!({
+            "account": account,
+            "packages": revocable.packages,
+        })),
+        RevocationAction::Invalidate => kernel_install_nonce_invalidation_call(&json!({
+            "account": account,
+            "installNonce": revocable.install_nonce.to_string(),
+        }))
+        .map(|call| vec![call]),
     }
-    let calls = kernel_permission_uninstall_calls(&json!({
-        "account": format!("{:#x}", revocable.target.account),
-        "packages": revocable.packages,
-    }))
     .map_err(|_| UNREADABLE)?;
+    // Only a derived account can be undeployed; the operation deploys it first.
+    let factory = match (&revocable.account, state.deployed) {
+        (_, true) => None,
+        (KernelAccountProfile::Derived(profile), false) => Some(
+            kernel_factory_deployment(profile, revocable.owner_validator.as_deref())
+                .map_err(|_| UNREADABLE)?,
+        ),
+        (KernelAccountProfile::Existing(_), false) => return Err(UNREADABLE),
+    };
 
     // The two bundler requests below are spent before they leave.
     let reserved = match &record {
-        Some(record) => spend(record, 2, now)?,
+        Some(record) => {
+            let mut reserved = spend(record, 2, now)?;
+            reserved.action = action;
+            reserved
+        }
         None => RevocationRecord {
             version: REVOCATION_RECORD_VERSION,
             grant_id: grant_id.to_owned(),
             delivery: revocable.delivery,
+            action,
             request: None,
             signature: None,
             signed_at: None,
@@ -652,7 +757,7 @@ pub async fn prepare_revocation(
         pre_verification_gas: "0".to_owned(),
         max_fee_per_gas: decimal(fast.get("maxFeePerGas"))?,
         max_priority_fee_per_gas: decimal(fast.get("maxPriorityFeePerGas"))?,
-        factory: None,
+        factory,
         paymaster: None,
     };
     let draft = compose_owner_operation_request(
@@ -679,7 +784,13 @@ pub async fn prepare_revocation(
     let mut prepared = reserved.next(now);
     prepared.request = Some(request.to_json().to_string());
     save(store, &prepared).await?;
-    view(grant_id, &revocable, Some(&prepared), "pending_signature")
+    view(
+        grant_id,
+        &revocable,
+        Some(&prepared),
+        "pending_signature",
+        None,
+    )
 }
 
 /// `POST /portal/grants/{id}/revocation/sign {signature, submit_from_oaath?}`:
@@ -767,7 +878,13 @@ pub async fn sign_revocation(
             Ok(_) | Err(BundlerFailure::Unavailable) => {}
         }
     }
-    view(grant_id, &revocable, Some(&signed), signed.stored_status())
+    view(
+        grant_id,
+        &revocable,
+        Some(&signed),
+        signed.stored_status(),
+        None,
+    )
 }
 
 /// `GET /oauth/grants/{id}/revocation`: the stored status, read without

@@ -1,6 +1,7 @@
 //! Closed Kernel v4 revocation calls (`kernel-v4-revocation.ts`). No
 //! submission, authority decision, chain observation or finality lives here.
 
+use alloy_primitives::aliases::U192;
 use alloy_primitives::{Bytes, U256, keccak256};
 use alloy_sol_types::SolValue;
 use serde_json::Value;
@@ -99,4 +100,34 @@ pub fn kernel_permission_uninstall_calls(value: &Value) -> ProtocolResult<Vec<Ow
             }
         })
         .collect())
+}
+
+/// An owner self-call that invalidates an unused install approval on one
+/// chain: `setNonce(key, sequence + 1)` for the approval's install nonce
+/// `key << 64 | sequence`. Kernel requires the stored sequence to increase, so
+/// an approval already consumed or invalidated needs observation, not this.
+/// Input: `{account, installNonce}`.
+pub fn kernel_install_nonce_invalidation_call(value: &Value) -> ProtocolResult<OwnerOperationCall> {
+    let record = exact_record(value, &["account", "installNonce"]).or_fail(CODE)?;
+    let account = lower_address(field(record, "account"))
+        .filter(|text| *text != ZERO_ADDRESS)
+        .or_fail(CODE)?
+        .to_owned();
+    let nonce = field(record, "installNonce")
+        .as_str()
+        .filter(|text| crate::capture::is_canonical_decimal(text, 78))
+        .and_then(|text| U256::from_str_radix(text, 10).ok())
+        .or_fail(CODE)?;
+    let max_u64 = U256::from(u64::MAX);
+    let sequence = nonce & max_u64;
+    ensure(sequence != max_u64, CODE)?;
+    let key = U192::from(nonce >> 64);
+    let selector = &keccak256("setNonce(uint192,uint64)".as_bytes())[..4];
+    let mut data = selector.to_vec();
+    data.extend((key, sequence + U256::from(1)).abi_encode_params());
+    Ok(OwnerOperationCall {
+        target: account,
+        value: "0".to_owned(),
+        data: format!("0x{}", hex::encode(data)),
+    })
 }

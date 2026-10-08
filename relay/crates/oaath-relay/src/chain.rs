@@ -65,6 +65,7 @@ sol! {
     function webAuthnValidatorStorage(address account) external view returns (uint256 x, uint256 y);
     function isModuleInstalled(uint256 moduleType, address module, bytes additionalContext) external view returns (bool);
     function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
+    function nonce(uint192 key) external view returns (uint256);
 }
 
 /// One configured chain endpoint. Its URL is a credential: never printed.
@@ -280,8 +281,13 @@ pub struct PermissionTarget {
 /// What a revocation is prepared from, read at one block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionState {
+    /// Whether the account has code; a counterfactual account can still be
+    /// deployed by an enable operation.
+    pub deployed: bool,
     /// Whether the permission's signer is installed; an undeployed account has none.
     pub installed: bool,
+    /// Kernel's stored install nonce for the approval's key; none while undeployed.
+    pub install_nonce: Option<U256>,
     /// The EntryPoint nonce of the root validator's standard-mode `lane`.
     pub nonce: U256,
 }
@@ -315,20 +321,43 @@ async fn installed_at(
     }
 }
 
-/// At the latest block: whether the permission is installed, and the root
-/// lane's EntryPoint nonce. Anything unreadable is `relay_chain_unavailable`.
+/// At the latest block: whether the account is deployed and the permission
+/// installed, Kernel's install nonce for `install_key`, and the root lane's
+/// EntryPoint nonce. Anything unreadable is `relay_chain_unavailable`.
 pub async fn permission_state(
     reader: &ChainReader,
     target: &PermissionTarget,
     entry_point: Address,
     lane: u16,
+    install_key: U256,
 ) -> RelayResult<PermissionState> {
     let mut reads = reader.session();
     if reads.quantity("eth_chainId").await? != reader.chain_id {
         return Err(UNAVAILABLE);
     }
     let block = format!("0x{:x}", reads.quantity("eth_blockNumber").await?);
-    let installed = installed_at(&mut reads, target, &block).await?;
+    let account = format!("{:#x}", target.account);
+    let deployed = !reads
+        .hex("eth_getCode", json!([account, block]))
+        .await?
+        .is_empty();
+    let installed = deployed && installed_at(&mut reads, target, &block).await?;
+    let install_nonce = if deployed {
+        let stored = reads
+            .call(
+                &account,
+                nonceCall {
+                    key: alloy_primitives::aliases::U192::from(install_key),
+                }
+                .abi_encode(),
+                &block,
+            )
+            .await?;
+        let stored: [u8; 32] = stored.try_into().map_err(|_| UNAVAILABLE)?;
+        Some(U256::from_be_bytes(stored))
+    } else {
+        None
+    };
     let nonce = reads
         .call(
             &format!("{entry_point:#x}"),
@@ -342,7 +371,9 @@ pub async fn permission_state(
         .await?;
     let nonce: [u8; 32] = nonce.try_into().map_err(|_| UNAVAILABLE)?;
     Ok(PermissionState {
+        deployed,
         installed,
+        install_nonce,
         nonce: U256::from_be_bytes(nonce),
     })
 }

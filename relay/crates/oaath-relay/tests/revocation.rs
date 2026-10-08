@@ -30,6 +30,7 @@ async fn the_root_signs_the_exact_uninstall_once_and_the_relay_submits_it_once()
     let prepared = prepare(&h, &granted).await.ok(200).clone();
     let request = prepared["request"].clone();
     assert_eq!(prepared["status"], "pending_signature");
+    assert_eq!(prepared["action"], "uninstall");
     assert_eq!(
         request["userOperation"]["sender"],
         granted.account["address"]
@@ -82,9 +83,10 @@ async fn the_root_signs_the_exact_uninstall_once_and_the_relay_submits_it_once()
 }
 
 #[tokio::test]
-async fn a_permission_that_is_not_installed_needs_nothing_submitted() {
+async fn a_permission_not_installed_whose_enable_is_consumed_needs_nothing_submitted() {
     let (url, shared) = stub(Send::Accept).await;
     shared.lock().unwrap().installed = false;
+    shared.lock().unwrap().install_sequence = 1;
     let h = harness_with(configure(&url));
     let granted = template_grant(&h).await;
     suspend(&h, &granted).await;
@@ -473,4 +475,64 @@ async fn the_root_may_submit_an_opted_in_dapps_revocation_from_oaath() {
     shared.lock().unwrap().receipt = Some(receipt(&request, true));
     assert_eq!(status(&h, &granted).await.ok(200)["status"], "included");
     assert_eq!(calls(&shared, "eth_sendUserOperation"), 1);
+}
+
+#[tokio::test]
+async fn an_unused_enable_is_invalidated_on_chain_with_one_root_signature() {
+    let (url, shared) = stub(Send::Accept).await;
+    shared.lock().unwrap().installed = false;
+    let h = harness_with(configure(&url));
+    let granted = template_grant(&h).await;
+    suspend(&h, &granted).await;
+    let shown = status(&h, &granted).await.ok(200).clone();
+    assert_eq!(shown["status"], "not_installed");
+    assert_eq!(shown["action"], "invalidate");
+
+    let prepared = prepare(&h, &granted).await.ok(200).clone();
+    assert_eq!(prepared["action"], "invalidate");
+    let request = &prepared["request"];
+    // One setNonce self-call past the enable's install nonce, on a deployed account.
+    let calls = request["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["target"], granted.account["address"]);
+    assert!(calls[0]["data"].as_str().unwrap().starts_with("0x"));
+    assert_eq!(request["userOperation"]["factory"], Value::Null);
+    let install_nonce: alloy_primitives::U256 =
+        prepared["install_nonce"].as_str().unwrap().parse().unwrap();
+    let selector = hex::encode(&alloy_primitives::keccak256(b"setNonce(uint192,uint64)")[..4]);
+    let expected = format!(
+        "0x{selector}{:064x}{:064x}",
+        install_nonce >> 64,
+        (install_nonce & alloy_primitives::U256::from(u64::MAX)) + alloy_primitives::U256::from(1)
+    );
+    assert_eq!(calls[0]["data"], json!(expected));
+
+    let signed = sign(&h, &granted, request).await.ok(200).clone();
+    assert_eq!(signed["status"], "submitted");
+    assert_eq!(calls_of(&shared), 1);
+    shared.lock().unwrap().receipt = Some(receipt(request, true));
+    shared.lock().unwrap().install_sequence = 1;
+    assert_eq!(status(&h, &granted).await.ok(200)["status"], "finalized");
+    assert_eq!(calls_of(&shared), 1);
+
+    // An undeployed account is deployed by the invalidation itself.
+    let (url, shared) = stub(Send::Accept).await;
+    {
+        let mut stub = shared.lock().unwrap();
+        stub.installed = false;
+        stub.deployed = false;
+    }
+    let h = harness_with(configure(&url));
+    let granted = template_grant(&h).await;
+    suspend(&h, &granted).await;
+    let prepared = prepare(&h, &granted).await.ok(200).clone();
+    assert_eq!(prepared["action"], "invalidate");
+    assert_eq!(
+        prepared["request"]["userOperation"]["factory"]["address"],
+        "0x3d6d678742e276b6388fd06c1b8ecd19e2d64c2d"
+    );
+}
+
+fn calls_of(shared: &Shared) -> usize {
+    calls(shared, "eth_sendUserOperation")
 }
