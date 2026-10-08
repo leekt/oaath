@@ -670,6 +670,10 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     expect(await text(root, "#account")).toBe(address);
     expect(await root.$eval("#sponsored", (node) => (node as HTMLElement).hidden)).toBe(false);
     expect(await text(root, "#send-badge")).toBe("Ready to send");
+    expect(await text(root, "#grant")).toBe("Request new permission");
+    expect(await root.$eval("#grant", (node) => node.classList.contains("button-outline"))).toBe(
+      true,
+    );
     await capture(root, "permission");
 
     // 4. The sponsored test call deploys, enables and executes with an unfunded account.
@@ -739,6 +743,8 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await rootPortal.waitForSelector("::-p-text(Signer added)");
     await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
     await outcome(member, "signed-in");
+    expect(await member.$eval("#s-join", (node) => (node as HTMLElement).hidden)).toBe(true);
+    expect(await text(member, "#login")).toBe("Sign in again");
     expect(JSON.parse(await text(member, "#identity"))).toMatchObject({
       account: address,
       role: "permission",
@@ -755,6 +761,9 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await click(popup, "::-p-text(Send request to the owner)");
     await outcome(member, "pending");
     expect(await text(member, "#grant-badge")).toBe("Waiting for owner");
+    expect(await member.$eval("#redeem", (node) => node.classList.contains("button-primary"))).toBe(
+      true,
+    );
     await capture(member, "pending");
     expect(await text(member, "#grant-state")).toContain(`${portal}/requests/`);
     expect(await member.$eval("#redeem", (node) => (node as HTMLElement).hidden)).toBe(false);

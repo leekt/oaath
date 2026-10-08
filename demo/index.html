@@ -75,7 +75,7 @@
             </dl>
             <details class="disclosure scope-details"><summary>Exactly what am I approving?</summary><div class="disclosure-body"><p>One permission across all chains, limited to zero-value calls to the target and function below. It allows at most two calls per chain for one hour. Gas costs are separate.</p><dl class="technical-list"><div><dt>Contract</dt><dd><code id="target"></code></dd></div><div><dt>Function selector</dt><dd><code id="selector"></code></dd></div></dl><p>One owner signature approves the permission. A member's request waits for the owner.</p></div></details>
             <div class="actions"><button id="grant" class="button button-primary" type="button" disabled>Request permission <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button><button id="redeem" class="button button-outline" type="button" hidden>Check approval</button></div>
-            <pre id="grant-state" class="inline-result" aria-live="polite"></pre>
+            <details id="permission-details" class="disclosure result-details" hidden><summary>Permission details</summary><pre id="grant-state"></pre></details>
             <a id="owner-review-link" href="https://oaath.taek.tech/accounts" class="text-link owner-review-link" target="_blank" rel="noopener" hidden>Open owner review</a>
           </section>
 
@@ -88,7 +88,8 @@
               <div id="funding" class="funding" hidden><p id="amount"></p><div class="actions"><button id="balance" class="button button-outline" type="button">Check balance</button><span id="balance-value" aria-live="polite"></span></div></div>
               <details id="call-details" class="disclosure"><summary>Account and submission details</summary><div class="disclosure-body"><code id="account"></code><p>The call is sent once. If an answer is lost, this page only observes the recorded operation. Reloading continues observation; it does not resend.</p></div></details>
               <div class="actions"><button id="send" class="button button-primary" type="button">Send test call <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button><span class="action-note">Uses your approved session key</span></div>
-              <pre id="operation" class="inline-result" aria-live="polite"></pre>
+              <a id="transaction-link" class="text-link result-link" target="_blank" rel="noopener" href="https://sepolia.arbiscan.io" hidden>View transaction on explorer</a>
+              <details id="operation-details" class="disclosure result-details" hidden><summary>Transaction details</summary><pre id="operation"></pre></details>
             </div>
           </section>
         </div>
@@ -107,7 +108,9 @@
           <section id="s-owner" class="extra-flow" aria-labelledby="owner-heading" hidden>
             <h3 id="owner-heading">Approve one exact operation</h3><p>Try an owner operation with the same zero-value call. The owner reviews and signs it in OAAth; this app submits it once. The account pays its own gas.</p>
             <div class="actions"><button id="owner-prepare" class="button button-outline" type="button">Prepare operation</button><button id="owner-approve" class="button button-primary" type="button" hidden>Approve in OAAth</button></div>
-            <pre id="owner-result" class="inline-result" aria-live="polite"></pre>
+            <p id="owner-cost" class="owner-cost" hidden></p>
+            <a id="owner-transaction-link" class="text-link result-link" target="_blank" rel="noopener" href="https://sepolia.arbiscan.io" hidden>View transaction on explorer</a>
+            <details id="owner-operation-details" class="disclosure result-details" hidden><summary>Operation details</summary><pre id="owner-result"></pre></details>
           </section>
           <section id="s-revoke" class="extra-flow revoke-flow" aria-labelledby="revoke-heading">
             <div><h3 id="revoke-heading">Your permission. Your off switch.</h3><p>Open your account in OAAth, find this app's access, and revoke or invalidate it on chain. Removing access requires a separate owner signature.</p></div>

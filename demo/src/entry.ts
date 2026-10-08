@@ -2,6 +2,8 @@
 try {
   await import("./app.js");
 } catch {
+  const gas = document.getElementById("gas-context");
+  if (gas) gas.textContent = "Connection unavailable";
   const status = document.getElementById("startup-message");
   if (status) {
     status.hidden = false;

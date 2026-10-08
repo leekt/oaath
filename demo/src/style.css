@@ -921,3 +921,20 @@ pre:empty {
   display: inline-block;
   margin-top: 12px;
 }
+
+.result-details {
+  margin-bottom: 0;
+}
+.result-details pre {
+  padding: 14px 16px;
+  background: var(--sunken);
+  border-radius: var(--control-radius);
+}
+.result-link {
+  display: inline-block;
+  margin-top: 20px;
+}
+.extra-flow .owner-cost {
+  margin: 16px 0 0;
+  color: var(--tint-ink);
+}

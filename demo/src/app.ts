@@ -157,6 +157,7 @@ $("status").textContent =
 // ---- 1. login, 2. invite ------------------------------------------------------
 
 let login: OaathLogin | null = null;
+const invited = new URLSearchParams(location.search).get("invite");
 
 function role(summary: Pick<OaathLogin, "account" | "accounts">) {
   return summary.accounts.find((entry) => entry.address === summary.account)?.role ?? "unknown";
@@ -183,6 +184,10 @@ function showIdentity(summary: Pick<OaathLogin, "account" | "signer" | "accounts
     : "Saved account · sign in again";
   $("identity-account").textContent = `${summary.account.slice(0, 8)}…${summary.account.slice(-6)}`;
   if (login) {
+    button("login").textContent = "Sign in again";
+    button("login").classList.replace("button-primary", "button-outline");
+    if (summary.account.toLowerCase() === invited?.toLowerCase() && current !== "unknown")
+      $("s-join").hidden = true;
     step("login", "done", "Signed in");
     step("grant", "current", "Review permission");
   }
@@ -237,7 +242,6 @@ button("copy-invite").addEventListener("click", () =>
   copy(button("copy-invite"), $("invite-url").textContent ?? ""),
 );
 
-const invited = new URLSearchParams(location.search).get("invite");
 if (invited && /^0x[0-9a-fA-F]{40}$/u.test(invited)) {
   $("s-join").hidden = false;
   $("join-account").textContent = invited.toLowerCase();
@@ -279,6 +283,11 @@ async function showAccount() {
   $("account").textContent = account;
   $("s-send").hidden = false;
   $("call-empty").hidden = true;
+  button("grant").classList.replace("button-primary", "button-outline");
+  button("grant").dataset.idleLabel = "Request new permission";
+  if (button("grant").getAttribute("aria-busy") !== "true")
+    button("grant").textContent = "Request new permission";
+  $("permission-details").hidden = false;
   step("grant", "done", `Permission ${grant.state}`);
   step("send", "current", "Ready to send");
   $("sponsored").hidden = !config.sponsored;
@@ -298,6 +307,7 @@ async function observe(operation: Operation) {
   feedbackHost = $("step-send");
   step("send", "current", "Observing call");
   button("send").textContent = "Call submitted";
+  $("operation-details").hidden = false;
   $("operation").textContent = `UserOperation ${operation.id}\nwaiting for inclusion…`;
   for (let poll = 0; poll < MAX_POLLS; poll += 1) {
     const outcome = await operation.wait({ attempts: 1 });
@@ -306,6 +316,11 @@ async function observe(operation: Operation) {
       (outcome.transactionHash
         ? `\ntransaction ${outcome.transactionHash}${explorer(outcome.transactionHash)}`
         : "");
+    if (outcome.transactionHash && config.explorerTxUrl) {
+      const link = $<HTMLAnchorElement>("transaction-link");
+      link.href = `${config.explorerTxUrl}${outcome.transactionHash}`;
+      link.hidden = false;
+    }
     if (["finalized", "dropped", "superseded", "abandoned"].includes(outcome.status)) {
       step("send", outcome.status === "finalized" ? "done" : "", `Call ${outcome.status}`);
       show(outcome.status, `Test call ${outcome.status}`);
@@ -321,8 +336,14 @@ async function observe(operation: Operation) {
 async function settle(result: Awaited<ReturnType<typeof connection.requestPermission>> | null) {
   if (result === null) return;
   feedbackHost = $("s-grant");
+  $("permission-details").hidden = false;
   if ("state" in result && result.state === "pending") {
     button("redeem").hidden = false;
+    button("redeem").classList.replace("button-outline", "button-primary");
+    button("grant").classList.replace("button-primary", "button-outline");
+    button("grant").dataset.idleLabel = "Request new permission";
+    if (button("grant").getAttribute("aria-busy") !== "true")
+      button("grant").textContent = "Request new permission";
     step("grant", "current", "Waiting for owner");
     const review = $<HTMLAnchorElement>("owner-review-link");
     review.href = `${issuer}/requests/${result.requestId}`;
@@ -330,7 +351,10 @@ async function settle(result: Awaited<ReturnType<typeof connection.requestPermis
     $("grant-state").textContent =
       `Waiting for the account owner.\nThe owner approves at ${issuer}/requests/${result.requestId}\n` +
       `(or under ${issuer}/accounts). Then click "Check approval".`;
-    show("pending", `Request ${result.requestId} is waiting for the account owner`);
+    show(
+      "pending",
+      "Your request is waiting for the account owner. Share the owner review link, then check approval.",
+    );
     return;
   }
   button("redeem").hidden = true;
@@ -338,7 +362,7 @@ async function settle(result: Awaited<ReturnType<typeof connection.requestPermis
   grant = result as Grant;
   $("grant-state").textContent = `Grant ${grant.state}`;
   await showAccount();
-  show("granted", `Grant ${grant.state}`);
+  show("granted", `Permission ${grant.state}. Your test call is ready below.`);
 }
 
 try {
@@ -477,9 +501,12 @@ button("owner-prepare").addEventListener("click", async () => {
     const fee = BigInt((await rpc("chain", "eth_gasPrice", [])) as string) * 2n;
     prepared = prepare(deployed, nonce & ((1n << 64n) - 1n), fee);
     const gas = (deployed ? 1_500_000n : 3_000_000n) + 1_200_000n;
+    const cost = `The account pays up to ${ether(gas * fee)}; fund it first if needed.`;
+    $("owner-cost").textContent = cost;
+    $("owner-cost").hidden = false;
+    $("owner-operation-details").hidden = false;
     $("owner-result").textContent =
-      `Operation ${prepared.request.userOperationHash}\nsender ${sender}\n` +
-      `The account pays up to ${ether(gas * fee)}; fund it first if needed.`;
+      `Operation ${prepared.request.userOperationHash}\nsender ${sender}\n${cost}`;
     button("owner-approve").hidden = false;
     show("owner-prepared", "Owner operation prepared");
   } catch (error) {
@@ -490,6 +517,7 @@ button("owner-prepare").addEventListener("click", async () => {
 
 async function observeOwner(hash: string) {
   feedbackHost = $("s-owner");
+  $("owner-operation-details").hidden = false;
   for (let poll = 0; poll < MAX_POLLS; poll += 1) {
     const receipt = (await rpc("bundler", "eth_getUserOperationReceipt", [hash])) as {
       success: boolean;
@@ -500,7 +528,15 @@ async function observeOwner(hash: string) {
       $("owner-result").textContent =
         `UserOperation ${hash}\n${receipt.success ? "included" : "reverted"}\n` +
         `transaction ${transaction}${explorer(transaction)}`;
-      show(receipt.success ? "owner-included" : "owner-reverted", `Owner operation ${hash}`);
+      if (config.explorerTxUrl) {
+        const link = $<HTMLAnchorElement>("owner-transaction-link");
+        link.href = `${config.explorerTxUrl}${transaction}`;
+        link.hidden = false;
+      }
+      show(
+        receipt.success ? "owner-included" : "owner-reverted",
+        receipt.success ? "Owner operation included." : "Owner operation reverted.",
+      );
       storage(STORAGE.owner, null);
       return;
     }
