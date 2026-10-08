@@ -6,7 +6,7 @@
 //! state and owner      PAR (immutable: client intent, state, nonce) ->
 //!                      request + decision (+ code) written together at decision
 //!                      -> code consumed once at /oauth/token
-//! persisted evidence   oauth_client_v2, oauth_par_v1, then the existing
+//! persisted evidence   oauth_client_v1, oauth_par_v1, then the existing
 //!                      authorization request/decision/code records keyed by the
 //!                      PAR id
 //! resource occupied?   one decision per PAR id; a consumed code is terminal

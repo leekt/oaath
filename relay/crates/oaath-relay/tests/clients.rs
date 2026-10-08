@@ -147,7 +147,7 @@ fn client_record_refuses_retired_missing_or_malformed_ownership() {
     let current = json!({"version": OAUTH_CLIENT_RECORD_VERSION, "clientId": "abc", "clientName": "App", "redirectUris": [REDIRECT_URI], "ownerSignerId": null, "revocationDelivery": "relay", "createdAt": CLOCK_START});
     assert!(OAuthClientRecord::parse(&current).is_ok());
     let mut old = current.clone();
-    old["version"] = json!("oaath.oauth-client-record/v1");
+    old["version"] = json!("oaath.oauth-client-record/v0");
     assert_eq!(OAuthClientRecord::parse(&old), Err(E::RecordUnreadable));
     let mut missing = current.clone();
     missing.as_object_mut().unwrap().remove("ownerSignerId");
