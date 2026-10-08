@@ -60,6 +60,8 @@ export function RevokeOnChain({
 }) {
   const [view, setView] = useState<RevocationView | null>(null);
   const [confirming, setConfirming] = useState(false);
+  /** For a dapp-delivered revocation: OAAth submits it now as well. */
+  const [submitFromOaath, setSubmitFromOaath] = useState(false);
   const [busy, setBusy] = useState(false);
   const [polls, setPolls] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +103,8 @@ export function RevokeOnChain({
         });
         if (JSON.stringify(request.calls) !== JSON.stringify(expected))
           throw new RootSigningError("calls-mismatch");
-        setView(await portalApi.signRevocation(grantId, await signOperation(request, signer)));
+        const signature = await signOperation(request, signer);
+        setView(await portalApi.signRevocation(grantId, signature, submitFromOaath));
         setPolls(0);
       }
     } catch (cause) {
@@ -131,8 +134,21 @@ export function RevokeOnChain({
         <>
           <p className="choice-detail">
             You sign one operation that removes this permission from the account.
-            {view.delivery === "dapp" ? " The app submits it." : " OAAth submits it."}
+            {view.delivery === "dapp" && !submitFromOaath
+              ? " The app submits it."
+              : " OAAth submits it."}
           </p>
+          {view.delivery === "dapp" && (
+            <label className="choice-detail">
+              <input
+                type="checkbox"
+                checked={submitFromOaath}
+                disabled={busy}
+                onChange={(event) => setSubmitFromOaath(event.target.checked)}
+              />{" "}
+              Submit this revocation from OAAth now
+            </label>
+          )}
           <button type="button" className="danger" disabled={busy} onClick={revoke}>
             Confirm and sign
           </button>
