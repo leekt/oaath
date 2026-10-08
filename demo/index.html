@@ -86,8 +86,20 @@
         <pre id="owner-result" aria-live="polite"></pre>
       </section>
 
+      <section id="s-automate" hidden>
+        <h2>6. Automate on a backend</h2>
+        <p>
+          An automation service calls <code>ping(plan, slot)</code> on
+          <code>0x000000000000000000000000000000000000dead</code> once a minute, three times, with
+          its own session key. The account owner approves exactly that call in OAAth; the service
+          sends each occurrence once and afterwards only observes it.
+        </p>
+        <button id="automate" type="button">Schedule three pings</button>
+        <pre id="automation" aria-live="polite"></pre>
+      </section>
+
       <section id="s-revoke">
-        <h2>6. Revoke</h2>
+        <h2>7. Revoke</h2>
         <p>
           Remove this app's access in
           <a id="revoke-link" href="https://oaath.taek.tech/accounts" target="_blank" rel="noopener">OAAth → accounts</a>: open

@@ -17,9 +17,12 @@
     "test:e2e": "vite build && bun run --filter @oaath/portal build && OAATH_DEMO_E2E=1 vitest run"
   },
   "dependencies": {
-    "@oaath/sdk": "workspace:*"
+    "@oaath/automation": "workspace:*",
+    "@oaath/sdk": "workspace:*",
+    "jose": "6.2.12"
   },
   "devDependencies": {
+    "@oaath/automation-server": "workspace:*",
     "@types/node": "22.13.0",
     "puppeteer-core": "25.5.0",
     "viem": "2.55.8",

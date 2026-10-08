@@ -1,6 +1,9 @@
+import { createPlanTerms, derivePlanPolicy, parseAutomation } from "@oaath/automation";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { concatHex, encodeAbiParameters, encodeFunctionData, toHex } from "viem";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import worker, { type Env } from "../worker/index.js";
+import pingDefinition from "../automation/demo-ping.automation.json" with { type: "json" };
+import worker, { DEMO_AUTOMATION, type Env } from "../worker/index.js";
 import { DEMO_SELECTOR, DEMO_TARGET, ENTRY_POINT_V09, isDemoCall } from "../worker/rpc.js";
 
 const ORIGIN = "https://oaath-demo.taek.tech";
@@ -342,5 +345,95 @@ describe("demo paymaster", () => {
     expect(lost.status).toBe(504);
     expect(await lost.text()).toBe("");
     expect(JSON.stringify(logged)).not.toContain(KEY);
+  });
+});
+
+describe("demo automation session", () => {
+  const SERVICE = "https://automation.test";
+  const APP_TOKEN = "automation-app-credential-secret";
+  const ACCOUNT = `0x${"ab".repeat(20)}`;
+
+  async function issuer() {
+    const { privateKey, publicKey } = await generateKeyPair("ES256");
+    const jwk = { ...(await exportJWK(publicKey)), kid: "k1", alg: "ES256" };
+    const token = (audience = "client-1") =>
+      new SignJWT({ signer: { id: "signer-1" } })
+        .setProtectedHeader({ alg: "ES256", kid: "k1" })
+        .setIssuer("https://oaath.taek.tech")
+        .setAudience(audience)
+        .setSubject(ACCOUNT)
+        .setIssuedAt()
+        .setExpirationTime("5m")
+        .sign(privateKey);
+    return { jwk, token };
+  }
+
+  const configured = () =>
+    environment({ AUTOMATION_URL: SERVICE, AUTOMATION_APP_TOKEN: APP_TOKEN });
+
+  it("schedules a definition that calls only the demo target", () => {
+    const definition = parseAutomation(pingDefinition);
+    expect(definition.id).toBe(DEMO_AUTOMATION);
+    expect(Object.values(definition.contracts).map((contract) => contract.address)).toEqual([
+      DEMO_TARGET,
+    ]);
+    const terms = createPlanTerms(definition, {
+      planId: `0x${"cd".repeat(32)}`,
+      account: ACCOUNT as `0x${string}`,
+      now: 1_800_000_000,
+      occurrences: 3,
+    });
+    const policy = derivePlanPolicy(definition, terms, 1_800_000_000);
+    expect(policy.calls).toHaveLength(1);
+    expect(policy.calls[0]).toMatchObject({ target: DEMO_TARGET, valueLimit: "0" });
+    expect(policy.perChainOperationLimit.count).toBe(3);
+  });
+
+  it("stays off without a service credential", async () => {
+    const config = await worker.fetch(new Request(`${ORIGIN}/config.json`), environment());
+    expect((await config.json()).automation).toBeNull();
+    expect((await post("/automation/session", { idToken: "x" })).status).toBe(503);
+    const page = await worker.fetch(new Request(`${ORIGIN}/`), environment());
+    expect(page.headers.get("content-security-policy")).not.toContain(SERVICE);
+  });
+
+  it("names the service in the config and the CSP, never the credential", async () => {
+    const config = await worker.fetch(new Request(`${ORIGIN}/config.json`), configured());
+    const text = await config.text();
+    expect(JSON.parse(text).automation).toEqual({ url: SERVICE, id: "demo.ping.v1" });
+    expect(text).not.toContain(APP_TOKEN);
+    const page = await worker.fetch(new Request(`${ORIGIN}/`), configured());
+    expect(page.headers.get("content-security-policy")).toContain(
+      `connect-src 'self' https://oaath.taek.tech ${SERVICE};`,
+    );
+  });
+
+  it("turns a verified login into a session for exactly that signer and account", async () => {
+    const { jwk, token } = await issuer();
+    const requests = upstream(async (request) => {
+      if (request.url === "https://oaath.taek.tech/oauth/jwks")
+        return Response.json({ keys: [jwk] });
+      return Response.json({ token: "session", expiresAt: 99, account: ACCOUNT, keyScope: "user" });
+    });
+    const response = await post("/automation/session", { idToken: await token() }, configured());
+    expect(await response.json()).toEqual({ token: "session", expiresAt: 99, account: ACCOUNT });
+    const created = requests.find((request) => request.url === `${SERVICE}/v1/sessions`);
+    expect(created?.headers.get("authorization")).toBe(`Bearer ${APP_TOKEN}`);
+    expect(await created?.json()).toEqual({ userId: "signer-1", account: ACCOUNT });
+  });
+
+  it("refuses another client's login, a forged token, and cross-site callers", async () => {
+    const { jwk, token } = await issuer();
+    const forged = await issuer();
+    const requests = upstream(async () => Response.json({ keys: [jwk] }));
+    for (const idToken of [await token("another-client"), await forged.token(), "not-a-jwt"]) {
+      const response = await post("/automation/session", { idToken }, configured());
+      expect(response.status).toBe(401);
+    }
+    expect(requests.some((request) => request.url.startsWith(SERVICE))).toBe(false);
+    const cross = await post("/automation/session", { idToken: await token() }, configured(), {
+      "sec-fetch-site": "cross-site",
+    });
+    expect(cross.status).toBe(403);
   });
 });

@@ -15,12 +15,18 @@
  * member redeems after a reload → member's sponsored test call executes.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  type AutomationService,
+  configFromEnv,
+  loadDefinitions,
+  startAutomationService,
+} from "@oaath/automation-server";
 import { kernelDeployment } from "@oaath/sdk/kernel";
 import puppeteer, { type Browser, type Page, type Protocol } from "puppeteer-core";
 import { decodeEventLog, encodeFunctionData, hashTypedData, toHex } from "viem";
@@ -32,6 +38,10 @@ import {
 } from "viem/account-abstraction";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  startCluster,
+  type TestCluster,
+} from "../../packages/automation-server/test/support/postgres.js";
 import portalWorker, {
   ORIGIN as PORTAL_ORIGIN,
   type Env as PortalEnv,
@@ -47,6 +57,7 @@ const ANVIL = fileURLToPath(
 const V33 = fileURLToPath(
   new URL("../../packages/sdk/test/fixtures/kernel-v33-deployments.json", import.meta.url),
 );
+const PING = fileURLToPath(new URL("../automation/demo-ping.automation.json", import.meta.url));
 const DEMO_ORIGIN = "https://oaath-demo.taek.tech";
 const PIMLICO_KEY = "e2e-fixture-key";
 const WALLET = privateKeyToAccount(`0x${"5a".repeat(32)}`);
@@ -521,6 +532,8 @@ const text = (page: Page, selector: string) =>
 
 let demo: string;
 let local: Awaited<ReturnType<typeof startLocalArbitrumSepolia>>;
+let automation: AutomationService | undefined;
+let cluster: TestCluster | undefined;
 
 beforeAll(async () => {
   await access(join(DEMO_DIST, "index.html"));
@@ -553,6 +566,42 @@ beforeAll(async () => {
     body: JSON.stringify({ client_name: "OAAth Demo", redirect_uris: [`${demo}/callback`] }),
   });
   env.OAATH_CLIENT_ID = ((await registered.json()) as { client_id: string }).client_id;
+
+  // The automation service the demo schedules on: its own OAuth client at the
+  // same issuer, a throwaway PostgreSQL, and the same chain, bundler and paymaster.
+  cluster = await startCluster();
+  const servicePort = await freePort();
+  const serviceUrl = `http://127.0.0.1:${servicePort}`;
+  const automationClient = await fetch(`${portal}/oauth/clients`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      client_name: "OAAth Automation",
+      redirect_uris: [`${serviceUrl}/v1/oauth/callback`],
+    }),
+  });
+  const appToken = randomBytes(32).toString("hex");
+  automation = await startAutomationService(
+    configFromEnv(
+      {
+        DATABASE_URL: await cluster.database(),
+        AUTOMATION_SEAL_KEY: randomBytes(32).toString("hex"),
+        AUTOMATION_PUBLIC_URL: serviceUrl,
+        AUTOMATION_LISTEN: `127.0.0.1:${servicePort}`,
+        OAATH_ISSUER: portal,
+        OAATH_CLIENT_ID: ((await automationClient.json()) as { client_id: string }).client_id,
+        AUTOMATION_APPLICATIONS: `demo:${createHash("sha256").update(appToken).digest("hex")}`,
+        AUTOMATION_ALLOWED_ORIGINS: demo,
+        AUTOMATION_RPC_URL_421614: local.chain.url,
+        AUTOMATION_BUNDLER_URL_421614: local.bundlerUrl,
+        AUTOMATION_PAYMASTER_URL_421614: local.paymasterUrl,
+      },
+      loadDefinitions([PING]),
+    ),
+  );
+  env.AUTOMATION_URL = serviceUrl;
+  env.AUTOMATION_APP_TOKEN = appToken;
+
   const executablePath = await firstExisting([
     process.env.PUPPETEER_EXECUTABLE_PATH,
     process.env.CHROME_PATH,
@@ -570,6 +619,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await browser?.close();
+  await automation?.close();
+  cluster?.stop();
   relay?.kill("SIGTERM");
   await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
   await Promise.all(closers.map((close) => close()));
@@ -727,6 +778,30 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await outcome(member, "finalized");
     expect(local.sent).toHaveLength(3);
     await device.close();
+
+    // The root schedules backend pings: it approves the automation service's
+    // own session key in OAAth, and the service sends the first ping, sponsored.
+    popup = await popupFrom(root, "#automate");
+    await click(popup, "#wallet-method");
+    await click(popup, "::-p-text(E2E Wallet)");
+    await click(popup, `button[aria-label^='Smart account ${address}']`);
+    await popup.waitForSelector("::-p-text(Approve and sign):not([disabled])");
+    expect(await text(popup, "main")).toContain("0x000000000000000000000000000000000000dead");
+    await click(popup, "::-p-text(Approve and sign)");
+    await popup.waitForSelector("::-p-text(Authorization authorized)");
+    await outcome(root, "automation-finalized", 180_000);
+    expect(await text(root, "#automation")).toMatch(
+      /ping 0: finalized · UserOperation 0x[0-9a-f]{64}/u,
+    );
+    expect(local.sent).toHaveLength(4);
+    expect(local.sent[3]?.sender.toLowerCase()).toBe(address);
+    expect(local.sent[3]?.paymaster?.toLowerCase()).toBe(local.paymaster);
+    // The service asked the paymaster itself; the demo's key never reached it.
+    expect(local.sponsorships.at(-1)).toMatchObject({
+      method: "pm_getPaymasterData",
+      apikey: null,
+    });
+    expect(await root.content()).not.toContain(PIMLICO_KEY);
     await root.close();
-  });
+  }, 600_000);
 });
