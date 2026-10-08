@@ -32,9 +32,8 @@
   "vpc_services": [
     {
       "binding": "PAYMASTER",
-      // Workers VPC service `oaath-paymaster`: 127.0.0.1:4338 on the OCI VM's loopback.
-      // Placeholder: replace with the service id once the VPC service exists.
-      "service_id": "PAYMASTER_VPC_SERVICE_ID"
+      // Workers VPC service `paymaster-rs`: 127.0.0.1:4338 on the OCI VM's loopback.
+      "service_id": "01a11b05-da4d-74c0-bdab-45b39c0074a1"
     }
   ],
   // Server-side calls to the hosted automation service go through its Worker directly.
