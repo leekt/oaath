@@ -89,6 +89,9 @@ function Landing() {
             Start from the app's “Login with OAAth” button. You'll return to the app after choosing
             your account.
           </p>
+          <p>
+            <a href="https://oaath-demo.taek.tech">Try the demo app</a>
+          </p>
           <p className="small">Signing in proves it's you. It approves nothing.</p>
         </aside>
       </section>
