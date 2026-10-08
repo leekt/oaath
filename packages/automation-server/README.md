@@ -42,19 +42,30 @@ Logs never include URLs, tokens, keys or provider errors.
 ```text
 plan  draft -> awaiting_consent -> authorized -> active <-> paused
       active|paused -> completed | expired; open plans -> cancelling -> cancelled
+      authorized -> active once setup is included and successful (not final)
+      authorized|active|paused -> failed when setup fails, reverts or drops
+      authorized -> expired (setup_not_included) at the Grant end
 run   due -> claimed -> prepared -> submitted -> observed -> finalized
       terminal: finalized | failed | skipped
 ```
 
+- Slot windows are the plan's terms: slot N opens at `startAt + N*every` and
+  closes `grace` later, exactly as the setup's on-chain plan and the Grant
+  policy were signed, capped at the Grant end. Activation gates admission
+  without moving a window: slot N is due at max(its opening, activation) and is
+  skipped once its window closes, or at once if it opens after the Grant ends.
+  An authorized plan never expires before the Grant end while it waits for its
+  setup.
 - Each run has one Kernel nonce lane, assigned once at admission: setup and
-  cancel use the default lane, occurrence slot N uses lane N. One open run per
-  plan and lane (a unique index), so one unresolved operation per Grant, chain
-  and lane.
-- A slot does not wait for an earlier slot's finality: once one of the plan's
-  operations is included (the permission install is on chain), up to
-  `AUTOMATION_MAX_OPEN_SLOTS` occurrences run side by side. Before that, and
-  always before setup finalizes, slots open one at a time. A slot that cannot
-  open is skipped once its window closes. Cancel waits until no run is open.
+  cancel use the default lane; occurrence slot N uses lane N + 1 when the plan
+  has a setup (still observed on lane 0 until final), else lane N. One open run
+  per plan and lane (a unique index), so one unresolved operation per Grant,
+  chain and lane.
+- A slot does not wait for an earlier operation's finality: once one of the
+  plan's operations is included (the permission install is on chain), up to
+  `AUTOMATION_MAX_OPEN_SLOTS` occurrences run side by side. Before that, slots
+  open one at a time. A slot that cannot open is skipped once its window
+  closes. Cancel waits until no run is open.
 - Runs are claimed with `SELECT … FOR UPDATE SKIP LOCKED` and a lease; every
   write is fenced by the claim's generation.
 - The calls are persisted before sending. The SDK journals each operation
@@ -84,6 +95,7 @@ The PostgreSQL suites start a throwaway local cluster (or use
 `OAATH_REQUIRE_POSTGRES=1`. The end-to-end run builds the relay with cargo,
 approves a [DCA plan](../../examples/dca) through the portal API as its account
 root, and checks that the setup and two due occurrences each send exactly once,
-including while a held operation is observed repeatedly and while the first
-occurrence is included but held short of finality as the second comes due. Its bundler is a
+with finality held so that the plan activates on setup inclusion, a held
+operation is observed repeatedly, and the second occurrence comes due while the
+first is included but not final. Its bundler is a
 loopback fixture over `EntryPoint.handleOps`; no public network is contacted.

@@ -218,6 +218,7 @@ describe("watching a plan", () => {
       ],
       schedule,
       "https://sepolia.arbiscan.io/tx/",
+      false,
     );
     expect(rows.map((row) => [row.label, row.status, row.tone, row.transactionUrl])).toEqual([
       [
@@ -243,12 +244,28 @@ describe("watching a plan", () => {
       ],
       schedule,
       null,
+      false,
     );
     expect(rows.slice(1).map((row) => [row.status, row.tone, row.transactionUrl])).toEqual([
       ["Submitted", "active", null],
       ["Missed its window", "failed", null],
       ["Failed", "failed", null],
       ["Due", "active", null],
+    ]);
+  });
+
+  it("shows buys the service never scheduled as not run once the plan has ended", () => {
+    const rows = runRows(
+      [run({ kind: "setup", slot: null, status: "observed" })],
+      schedule,
+      null,
+      true,
+    );
+    expect(rows.map((row) => [row.status, row.tone])).toEqual([
+      ["Included", "done"],
+      ["Not run", "failed"],
+      ["Not run", "failed"],
+      ["Not run", "failed"],
     ]);
   });
 
