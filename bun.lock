@@ -19,7 +19,7 @@
         "@fontsource-variable/geist": "5.3.0",
         "@oaath/automation": "workspace:*",
         "@oaath/sdk": "workspace:*",
-        "cetane": "0.0.4",
+        "cetane": "0.0.6",
         "jose": "6.2.12",
       },
       "devDependencies": {
@@ -58,7 +58,7 @@
         "@uniswap/swap-router-contracts": "1.1.0",
         "@uniswap/v3-core": "1.0.1",
         "@uniswap/v3-periphery": "1.4.4",
-        "cetane": "0.0.4",
+        "cetane": "0.0.6",
         "esbuild": "0.25.12",
       },
     },
@@ -67,7 +67,7 @@
       "version": "0.3.5",
       "dependencies": {
         "@oaath/protocol": "workspace:*",
-        "cetane": "0.0.4",
+        "cetane": "0.0.6",
       },
       "devDependencies": {
         "@types/node": "22.13.0",
@@ -83,7 +83,7 @@
         "@oaath/automation": "workspace:*",
         "@oaath/protocol": "workspace:*",
         "@oaath/sdk": "workspace:*",
-        "cetane": "0.0.4",
+        "cetane": "0.0.6",
         "pg": "8.22.0",
       },
       "devDependencies": {
@@ -100,7 +100,7 @@
       },
       "dependencies": {
         "@oaath/sdk": "workspace:*",
-        "cetane": "0.0.4",
+        "cetane": "0.0.6",
       },
       "devDependencies": {
         "@account-abstraction/contracts": "0.7.0",
@@ -121,7 +121,7 @@
       "dependencies": {
         "@noble/curves": "1.9.1",
         "@noble/hashes": "1.8.0",
-        "cetane": "0.0.4",
+        "cetane": "0.0.6",
       },
       "devDependencies": {
         "@types/node": "22.13.0",
@@ -136,7 +136,7 @@
         "@noble/curves": "1.9.1",
         "@noble/hashes": "1.8.0",
         "@oaath/protocol": "workspace:*",
-        "cetane": "0.0.4",
+        "cetane": "0.0.6",
         "jose": "6.2.12",
       },
       "devDependencies": {
@@ -155,7 +155,7 @@
         "@noble/curves": "1.9.1",
         "@oaath/protocol": "workspace:*",
         "@oaath/sdk": "workspace:*",
-        "cetane": "0.0.4",
+        "cetane": "0.0.6",
         "fake-indexeddb": "6.2.5",
       },
       "devDependencies": {
@@ -173,7 +173,7 @@
         "@noble/curves": "1.9.1",
         "@oaath/protocol": "workspace:*",
         "@oaath/sdk": "workspace:*",
-        "cetane": "0.0.4",
+        "cetane": "0.0.6",
         "class-variance-authority": "0.7.1",
         "lucide-react": "1.52.0",
         "react": "19.2.0",
@@ -699,7 +699,7 @@
 
     "camelcase": ["camelcase@6.3.0", "", {}, "sha512-Gmy6FhYlCY7uOElZUSbxo2UCDH8owEk996gkbrpsgGtrJLM3J7jGxl9Ic7Qwwj4ivOE5AWZWRMecDdF7hqGjFA=="],
 
-    "cetane": ["cetane@0.0.4", "", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.4.0", "abitype": "1.2.3" } }, "sha512-dEmW/sKS18XIgBESFaEPGoKKW6zmx7jpNn2lQcDXh7HpB/hbPaX8k2ntiG+SoV3TBxaUzQm9DGt6k4MA0IFL7A=="],
+    "cetane": ["cetane@0.0.6", "", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.4.0", "abitype": "1.2.3" } }, "sha512-gMXkBcCD3IGLo+EPR1v1BahGC1qfeTGNW6P5rk315Ns+o5eP2AeS0quUBBuSewf0c3aBZV37y2t7GgmXKMgVAQ=="],
 
     "chai": ["chai@6.2.2", "", {}, "sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg=="],
 

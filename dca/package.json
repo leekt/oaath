@@ -19,7 +19,7 @@
     "@fontsource-variable/geist": "5.3.0",
     "@oaath/automation": "workspace:*",
     "@oaath/sdk": "workspace:*",
-    "cetane": "0.0.4",
+    "cetane": "0.0.6",
     "jose": "6.2.12"
   },
   "devDependencies": {

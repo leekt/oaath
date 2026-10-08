@@ -97,10 +97,20 @@ export function ecdsaKey(value: EcdsaKeyInput): Readonly<KeyProfile> {
   const record = exactInput(value, ["account", "validator"], "ECDSA key", context);
   const validator = inputAddress(record.validator, "ECDSA key validator");
   // Exactness stops at the supplied account: it legitimately carries extra signing
-  // members. Only address and sign are captured and used.
-  const account = captureRecord(record.account, "ECDSA key account", context, inputInvalid);
-  const owner = inputAddress(account.address, "ECDSA key address");
-  const sign = inputCapability<EcdsaKeyAccount["sign"]>(account.sign, "ECDSA key sign capability");
+  // members, and Cetane computes `address` in a getter on first read. Only address
+  // and sign are read, each exactly once, and only the captured values are used.
+  const supplied = record.account;
+  if (!supplied || typeof supplied !== "object")
+    return inputInvalid("ECDSA key account is invalid");
+  let read: { address: unknown; sign: unknown };
+  try {
+    const { address, sign } = supplied as Record<string, unknown>;
+    read = { address, sign };
+  } catch {
+    return inputInvalid("ECDSA key account is invalid");
+  }
+  const owner = inputAddress(read.address, "ECDSA key address");
+  const sign = inputCapability<EcdsaKeyAccount["sign"]>(read.sign, "ECDSA key sign capability");
 
   return profile(owner, validator, sign, (hash) => hash);
 }
