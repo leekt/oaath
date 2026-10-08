@@ -178,6 +178,7 @@ async fn logs_in_and_issues_a_verifiable_id_token() {
             "redirect_origin": "https://app.example",
             "authorization_details": [],
             "expires_at": CLOCK_SECONDS + 300,
+            "bound": null,
         })
     );
 

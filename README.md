@@ -49,7 +49,7 @@ it from the account's pending requests in the portal.
 | `GET /.well-known/openid-configuration` | Discovery. |
 | `GET /oauth/jwks` | The ES256 id_token keys. |
 | `POST /oauth/clients` | Open registration of a public client (`client_name`, `redirect_uris`). |
-| `POST /oauth/par` | Pushed authorization request: PKCE S256, `scope=openid`, and optionally one `authorization_details` entry, `oaath_grant` (signer, policy, chains, expiry, device) or `oaath_operation` (one exact owner-operation request). |
+| `POST /oauth/par` | Pushed authorization request: PKCE S256, `scope=openid`, and optionally one `authorization_details` entry, `oaath_grant` (signer, policy, chains, expiry, device) or `oaath_operation` (one exact owner-operation request), and an optional `id_token_hint`: this issuer's id_token for the same client, at most an hour old, whose account and signer the portal then opens on (a hint that does not verify is `relay_id_token_hint_invalid`). |
 | `GET /authorize?client_id&request_uri` | The portal page where the user chooses a signer and account, and the root reviews. |
 | `POST /oauth/token` | The code exchange. The id_token carries `sub` (the account), `oaath_account`, `oaath_accounts`, `signer` and `verified`; `authorization_details` carries the approved Grant or the signed operation. A member's Grant answers `400 authorization_pending` until the root decides, then the Grant or `access_denied`. |
 | `POST /oauth/revoke` | RFC 7009 revocation of the client's own access token. |

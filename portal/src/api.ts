@@ -56,6 +56,11 @@ export interface PortalTransaction {
   readonly authorization_details: readonly (GrantDetail | OperationDetail)[];
   /** Unix seconds after which the request is no longer usable. */
   readonly expires_at: number;
+  /**
+   * The signer and account the app's login (`id_token_hint`) bound, with the
+   * signer's current membership; null when the app sent no hint.
+   */
+  readonly bound: { readonly signer_id: string; readonly account: PortalAccount } | null;
 }
 
 /** `POST /portal/signers`: register a public credential (idempotent). */

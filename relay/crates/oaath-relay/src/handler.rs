@@ -60,8 +60,8 @@ use crate::member_grant::{assign_grant, member_grant_view, prepare_assignment};
 use crate::oauth::OAuthFailure;
 use crate::oauth::{
     LoginDecision, OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, grant,
-    login_decision, operation, parse_form, pending, prepare_grant, push_authorization_request,
-    read_transaction, recover_redirect, register_client,
+    is_bound_selection, login_decision, operation, parse_form, pending, prepare_grant,
+    push_authorization_request, read_transaction, recover_redirect, register_client,
 };
 use crate::policy::{delete_template, list_templates, save_template};
 use crate::portal::{
@@ -370,7 +370,8 @@ impl Relay {
                 require_method(method, &Method::POST)?;
                 let form = form(body).await?;
                 let pushed =
-                    push_authorization_request(store, clock, self.request_ttl_ms, &form).await?;
+                    push_authorization_request(store, clock, oauth, self.request_ttl_ms, &form)
+                        .await?;
                 Ok(reply(201, &pushed)?)
             }
             ["oauth", "token"] => {
@@ -719,9 +720,21 @@ impl Relay {
                         require_method(method, &Method::POST)?;
                         let body = body_record(headers, body, self.max_body_bytes).await?;
                         let decision = login_decision(&body)?;
+                        // A root-signed decision for the signer and account the
+                        // id_token_hint bound needs no session: the root's
+                        // signature, verified below, proves the signer.
+                        let signed_and_bound = match &decision {
+                            LoginDecision::Grant {
+                                signer_id,
+                                account_id,
+                                ..
+                            } => is_bound_selection(store, id, signer_id, account_id).await?,
+                            _ => false,
+                        };
                         if let LoginDecision::Approved { signer_id, .. }
                         | LoginDecision::Grant { signer_id, .. }
                         | LoginDecision::RequestApproval { signer_id, .. } = &decision
+                            && !signed_and_bound
                         {
                             require_signer(store, clock, headers, signer_id).await?;
                         }
@@ -791,9 +804,15 @@ impl Relay {
                     }
                     Some("prepare") => {
                         require_method(method, &Method::POST)?;
-                        let session = session_signer(store, clock, headers).await?;
+                        // A request bound by its id_token_hint prepares without a session.
+                        let session = match session_signer(store, clock, headers).await {
+                            Ok(signer) => Some(signer),
+                            Err(RelayErrorCode::Unauthenticated) => None,
+                            Err(code) => return Err(code),
+                        };
                         let body = body_record(headers, body, self.max_body_bytes).await?;
-                        let prepared = prepare_grant(store, clock, id, &body, &session).await?;
+                        let prepared =
+                            prepare_grant(store, clock, id, &body, session.as_deref()).await?;
                         return reply(200, &prepared);
                     }
                     Some("redirect") => {

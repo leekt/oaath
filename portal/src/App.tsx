@@ -26,8 +26,14 @@ import { GrantReview } from "./GrantReview.js";
 import { LinkApproval, LinkRequest, ManageAccounts } from "./Links.js";
 import { OperationReview } from "./OperationReview.js";
 import { AskOwner, RequestPage } from "./Requests.js";
+import { signInPasskey, signInWallet } from "./session.js";
 import { CancelButton, Frame, message, Notice, SignerStep } from "./shared.js";
-import { type RememberedSigner, rememberSigner, shortAddress } from "./signers.js";
+import {
+  type RememberedSigner,
+  rememberedSigners,
+  rememberSigner,
+  shortAddress,
+} from "./signers.js";
 
 /** Module discovery loads only when an account is imported. */
 const ImportAccount = lazy(() =>
@@ -37,11 +43,48 @@ const ImportAccount = lazy(() =>
 type Step =
   | { readonly name: "signer" }
   | { readonly name: "account"; readonly signer: RememberedSigner }
-  /** A grant transaction: the account root reviews and signs the dapp's request. */
-  | { readonly name: "review"; readonly signer: RememberedSigner; readonly account: PortalAccount }
+  /**
+   * A grant transaction: the account root reviews and signs the dapp's request.
+   * `bound`: the app's login chose the signer and account; nothing else is asked.
+   */
+  | {
+      readonly name: "review";
+      readonly signer: RememberedSigner;
+      readonly account: PortalAccount;
+      readonly bound?: true;
+    }
   /** A grant chosen by a member that is not the root: the root decides later. */
-  | { readonly name: "ask"; readonly signer: RememberedSigner; readonly account: PortalAccount }
+  | {
+      readonly name: "ask";
+      readonly signer: RememberedSigner;
+      readonly account: PortalAccount;
+      readonly bound?: true;
+    }
+  /** The login's signer cannot sign this here, e.g. a passkey on another device. */
+  | { readonly name: "unavailable"; readonly signer: RememberedSigner | null }
   | { readonly name: "returning" };
+
+/**
+ * Where a request the app's login bound opens: straight on the signature for
+ * that signer and account, or on why it cannot be signed in this browser.
+ * Null when nothing is bound and the user chooses as usual.
+ */
+function boundStep(transaction: PortalTransaction): Step | null {
+  const { bound } = transaction;
+  const grant = transaction.authorization_details.some((detail) => detail.type === "oaath_grant");
+  const operation = transaction.authorization_details.some(
+    (detail) => detail.type === "oaath_operation",
+  );
+  if (!bound || (!grant && !operation)) return null;
+  // Signing needs this browser's own record of the signer: its passkey or wallet.
+  const signer = rememberedSigners().find((entry) => entry.signer_id === bound.signer_id) ?? null;
+  const { account } = bound;
+  if (!signer || account.status !== "active") return { name: "unavailable", signer };
+  if (account.role === "root") return { name: "review", signer, account, bound: true };
+  // Only an account's root signs an owner operation.
+  if (operation) return { name: "unavailable", signer };
+  return { name: "ask", signer, account, bound: true };
+}
 
 export function App() {
   const params = new URLSearchParams(location.search);
@@ -137,15 +180,18 @@ function Authorize({ transactionId }: { transactionId: string }) {
   const [step, setStep] = useState<Step>({ name: "signer" });
 
   useEffect(() => {
-    portalApi
-      .transaction(transactionId)
-      .then(setTransaction, (error: unknown) =>
+    portalApi.transaction(transactionId).then(
+      (loaded) => {
+        setTransaction(loaded);
+        setStep(boundStep(loaded) ?? { name: "signer" });
+      },
+      (error: unknown) =>
         setFailure(
           error instanceof PortalApiError && error.status === 404
             ? "This sign-in request has expired or was already used."
             : message(error),
         ),
-      );
+    );
   }, [transactionId]);
 
   async function decide(decision: DecisionRequest) {
@@ -174,6 +220,23 @@ function Authorize({ transactionId }: { transactionId: string }) {
   // The dapp's redirect then carries error=access_denied.
   const cancel = () => decide({ outcome: "cancelled" });
 
+  function ask(signer: RememberedSigner, account: PortalAccount) {
+    rememberSigner({ ...signer, lastUsedAt: Date.now() });
+    return decide({
+      outcome: "request_approval",
+      signer_id: signer.signer_id,
+      account_id: account.account_id,
+    });
+  }
+
+  /** A bound member's request is not signed, so its signer signs in to send it. */
+  async function signInAndAsk(signer: RememberedSigner, account: PortalAccount) {
+    if (signer.profile.kind === "ecdsa")
+      await signInWallet(signer.signer_id, signer.profile.address, null, signer.rdns);
+    else await signInPasskey(signer.signer_id, signer);
+    await ask(signer, account);
+  }
+
   if (failure)
     return (
       <Frame>
@@ -194,6 +257,7 @@ function Authorize({ transactionId }: { transactionId: string }) {
   const operation = transaction.authorization_details.find(
     (detail): detail is OperationDetail => detail.type === "oaath_operation",
   );
+  const bound = "bound" in step && step.bound === true;
   if (transaction.expires_at * 1000 <= Date.now())
     return (
       <Frame>
@@ -206,19 +270,21 @@ function Authorize({ transactionId }: { transactionId: string }) {
     <Frame>
       <header className="client">
         <KeyRound className="intro-icon" size={32} aria-hidden="true" />
-        <p className="context-title">Sign in with OAAth</p>
+        <p className="context-title">{bound ? "Approve with OAAth" : "Sign in with OAAth"}</p>
         <p>
           to continue to <strong>{transaction.client_name}</strong>
         </p>
-        <ol className="flow-progress" aria-label="Sign-in progress">
-          <li aria-current={step.name === "signer" ? "step" : undefined}>Sign-in method</li>
-          <li aria-current={step.name === "account" ? "step" : undefined}>Account</li>
-          {(grant || operation) && (
-            <li aria-current={step.name === "review" || step.name === "ask" ? "step" : undefined}>
-              Review
-            </li>
-          )}
-        </ol>
+        {!bound && (
+          <ol className="flow-progress" aria-label="Sign-in progress">
+            <li aria-current={step.name === "signer" ? "step" : undefined}>Sign-in method</li>
+            <li aria-current={step.name === "account" ? "step" : undefined}>Account</li>
+            {(grant || operation) && (
+              <li aria-current={step.name === "review" || step.name === "ask" ? "step" : undefined}>
+                Review
+              </li>
+            )}
+          </ol>
+        )}
         <details className="connection-details">
           <summary>Connection details</summary>
           <p className="quiet small">
@@ -265,16 +331,27 @@ function Authorize({ transactionId }: { transactionId: string }) {
           detail={grant}
           signer={step.signer}
           account={step.account}
-          onAsk={() => {
-            rememberSigner({ ...step.signer, lastUsedAt: Date.now() });
-            decide({
-              outcome: "request_approval",
-              signer_id: step.signer.signer_id,
-              account_id: step.account.account_id,
-            });
-          }}
+          onAsk={() =>
+            step.bound ? signInAndAsk(step.signer, step.account) : ask(step.signer, step.account)
+          }
           onCancel={cancel}
         />
+      )}
+      {step.name === "unavailable" && (
+        <section aria-labelledby="unavailable-heading">
+          <h1 id="unavailable-heading">Use another signer</h1>
+          <p className="quiet">
+            {step.signer
+              ? `${step.signer.label} can't sign this request for the account you signed in with.`
+              : "The signer you signed in with isn't available in this browser, for example a passkey on another device."}
+          </p>
+          <div className="actions">
+            <button type="button" className="primary" onClick={() => setStep({ name: "signer" })}>
+              Use a different signer
+            </button>
+          </div>
+          <CancelButton onCancel={cancel} disabled={false} />
+        </section>
       )}
       {step.name === "review" && operation && (
         <OperationReview

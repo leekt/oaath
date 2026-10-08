@@ -3,7 +3,8 @@
 //! in a later stage).
 //!
 //! ```text
-//! state and owner      PAR (immutable: client intent, state, nonce) ->
+//! state and owner      PAR (immutable: client intent, state, nonce, and the
+//!                      signer and account a verified id_token_hint bound) ->
 //!                      request + decision (+ code) written together at decision
 //!                      -> code consumed once at /oauth/token
 //! persisted evidence   oauth_client_v1, oauth_par_v1, then the existing
@@ -57,6 +58,7 @@ use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::details::{Composition, compose, parse_grant_details};
 use crate::grant::grant_signing_request;
 use crate::kms::{RelayKms, open_artifact, seal_artifact};
+use crate::portal::SignerAccount;
 use crate::records::{
     AUTHORIZATION_CODE_RECORD_VERSION, AUTHORIZATION_DECISION_RECORD_VERSION,
     AUTHORIZATION_REQUEST_RECORD_VERSION, AuthorizationCodeRecord, AuthorizationDecisionRecord,
@@ -74,6 +76,13 @@ pub const LOGIN_SELECTION_SCOPE: &str = r#"{"version":"oaath.login-selection/v1"
 /// Subject and owner of a cancelled login, which selected nothing.
 const CANCELLED_SUBJECT: &str = "oaath-portal-cancelled";
 const ID_TOKEN_TTL_SECONDS: u64 = 600;
+/// How long after its issue an id_token still binds a PAR as `id_token_hint`.
+/// Longer than the token's own ten minutes, so a dapp's later request still
+/// skips the pickers; bounded, because the hint only preselects: the root's
+/// signature (or a fresh portal session for a member) still proves the signer.
+pub const ID_TOKEN_HINT_MAX_AGE_SECONDS: u64 = 3_600;
+/// Clock skew tolerated on a hint's `iat`.
+const ID_TOKEN_HINT_SKEW_SECONDS: u64 = 60;
 const INVALID: RelayErrorCode = RelayErrorCode::RequestInvalid;
 
 pub struct OAuthConfiguration {
@@ -105,9 +114,9 @@ impl OAuthFailure {
     /// The default projection of a relay code onto an OAuth error.
     pub fn from_code(code: RelayErrorCode) -> Self {
         match code {
-            RelayErrorCode::RequestInvalid | RelayErrorCode::Forbidden => {
-                Self::new(400, "invalid_request", code)
-            }
+            RelayErrorCode::RequestInvalid
+            | RelayErrorCode::Forbidden
+            | RelayErrorCode::IdTokenHintInvalid => Self::new(400, "invalid_request", code),
             RelayErrorCode::NotFound | RelayErrorCode::MethodNotAllowed => {
                 Self::new(code.status(), "invalid_request", code)
             }
@@ -312,9 +321,16 @@ pub struct PushedRequest {
 pub const REQUEST_URI_PREFIX: &str = "urn:ietf:params:oauth:request_uri:";
 
 /// RFC 9126 pushed authorization request for an OpenID login.
+///
+/// An optional OIDC `id_token_hint` (the relay's own id_token for this client,
+/// issued within [`ID_TOKEN_HINT_MAX_AGE_SECONDS`]) binds its account (`sub`)
+/// and signer (`signer.id`) to the request, so the portal opens on them. A
+/// hint that does not verify, or whose signer is no longer an active member of
+/// its account, refuses the request with `relay_id_token_hint_invalid`.
 pub async fn push_authorization_request(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
+    oauth: &OAuthConfiguration,
     request_ttl_ms: u64,
     form: &Map<String, Value>,
 ) -> OAuthResult<PushedRequest> {
@@ -341,6 +357,10 @@ pub async fn push_authorization_request(
         return Err(OAuthFailure::new(400, "invalid_scope", INVALID));
     }
     let created_at = relay_now(clock)?;
+    let hint = match param(form, "id_token_hint") {
+        None | Some("") => None,
+        Some(token) => Some(id_token_hint(oauth, token, client_id, created_at / 1_000)?),
+    };
     let par_id = random_identifier();
     let invalid_details = || OAuthFailure::new(400, "invalid_authorization_details", INVALID);
     let operation = match param(form, "authorization_details") {
@@ -368,33 +388,111 @@ pub async fn push_authorization_request(
         nonce: optional_bounded(form, "nonce")?,
         scope: scope.to_owned(),
         authorization_details,
+        bound_signer_id: None,
+        bound_account_id: None,
         created_at,
         expires_at: created_at + request_ttl_ms,
     };
     let mut transaction = store.begin().await?;
-    // An owner operation names its account: it must be a registry account.
-    let bound = match &operation {
-        Some(request) => operation::bound_account(&mut *transaction, request)
-            .await
-            .map(|_| ())
-            .map_err(|_| invalid_details()),
-        None => Ok(()),
-    };
-    let pushed = match bound {
-        Ok(()) => push(&mut *transaction, &record).await,
-        Err(failure) => Err(failure),
-    };
-    match pushed {
-        Ok(()) => transaction.commit().await?,
+    let pushed = async {
+        // An owner operation names its account: it must be a registry account.
+        let operation_account = match &operation {
+            Some(request) => Some(
+                operation::bound_account(&mut *transaction, request)
+                    .await
+                    .map_err(|_| invalid_details())?,
+            ),
+            None => None,
+        };
+        let mut record = record;
+        if let Some(hint) = &hint {
+            let account_id = bind_hint(&mut *transaction, hint).await?;
+            // An operation's hint must name the account the operation runs on.
+            if operation_account.is_some_and(|account| account.account_id != account_id) {
+                return Err(RelayErrorCode::IdTokenHintInvalid.into());
+            }
+            record.bound_signer_id = Some(hint.signer_id.clone());
+            record.bound_account_id = Some(account_id);
+        }
+        push(&mut *transaction, &record).await?;
+        Ok(record)
+    }
+    .await;
+    let record = match pushed {
+        Ok(record) => {
+            transaction.commit().await?;
+            record
+        }
         Err(failure) => {
             transaction.rollback().await;
             return Err(failure);
         }
-    }
+    };
     Ok(PushedRequest {
         request_uri: format!("{REQUEST_URI_PREFIX}{}", record.par_id),
         expires_in: request_ttl_ms / 1_000,
     })
+}
+
+/// What a verified `id_token_hint` names: the account address and the signer.
+struct IdTokenHint {
+    account: String,
+    signer_id: String,
+}
+
+/// Verifies the relay's own id_token for `client_id`: ES256 under the current
+/// key, `iss`, `aud`, and issued within the bounded hint age.
+fn id_token_hint(
+    oauth: &OAuthConfiguration,
+    token: &str,
+    client_id: &str,
+    now_seconds: u64,
+) -> OAuthResult<IdTokenHint> {
+    let refused = || OAuthFailure::from_code(RelayErrorCode::IdTokenHintInvalid);
+    if token.len() > limits::ARTIFACT_PLAINTEXT {
+        return Err(refused());
+    }
+    let claims = oauth
+        .key
+        .verify(token, &oauth.issuer, client_id)
+        .ok_or_else(refused)?;
+    let iat = claims
+        .get("iat")
+        .and_then(Value::as_u64)
+        .ok_or_else(refused)?;
+    if iat > now_seconds + ID_TOKEN_HINT_SKEW_SECONDS
+        || now_seconds >= iat + ID_TOKEN_HINT_MAX_AGE_SECONDS
+    {
+        return Err(refused());
+    }
+    let text = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_str)
+            .and_then(|text| canonical_str(text, INVALID).ok())
+            .map(str::to_owned)
+            .ok_or_else(refused)
+    };
+    Ok(IdTokenHint {
+        account: text(claims.get("sub"))?,
+        signer_id: text(claims.get("signer").and_then(|signer| signer.get("id")))?,
+    })
+}
+
+/// The hinted account's id, once its signer is proven an active member of it.
+async fn bind_hint(
+    transaction: &mut dyn RelayTransaction,
+    hint: &IdTokenHint,
+) -> OAuthResult<String> {
+    let refused = || OAuthFailure::from_code(RelayErrorCode::IdTokenHintInvalid);
+    let account = transaction
+        .lock_account_by_address(&hint.account)
+        .await?
+        .ok_or_else(refused)?;
+    match require_active_member(transaction, &hint.signer_id, &account.account_id).await {
+        Ok(()) => Ok(account.account_id),
+        Err(RelayErrorCode::Forbidden | RelayErrorCode::MembershipSuspended) => Err(refused()),
+        Err(code) => Err(code.into()),
+    }
 }
 
 /// The redirect URI's `URL.origin`, as the grant's application origin.
@@ -471,6 +569,60 @@ pub struct PortalTransaction {
     pub authorization_details: Vec<Value>,
     /// Unix seconds.
     pub expires_at: u64,
+    /// The signer and account an `id_token_hint` bound, with the signer's
+    /// current membership in it; null when the request carried no hint.
+    pub bound: Option<BoundSelection>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BoundSelection {
+    pub signer_id: String,
+    pub account: SignerAccount,
+}
+
+/// The bound signer's membership in the bound account, the root one first.
+async fn bound_selection(
+    transaction: &mut dyn RelayTransaction,
+    par: &ParRecord,
+) -> RelayResult<Option<BoundSelection>> {
+    let Some((signer_id, account_id)) = par.binding() else {
+        return Ok(None);
+    };
+    let mut memberships: Vec<_> = transaction
+        .list_signer_accounts(signer_id)
+        .await?
+        .into_iter()
+        .filter(|(account, _)| account.account_id == account_id)
+        .collect();
+    memberships.sort_by_key(|(_, membership)| membership.role != MembershipRole::Root);
+    let (account, membership) = memberships
+        .into_iter()
+        .next()
+        .ok_or(RelayErrorCode::RecordUnreadable)?;
+    Ok(Some(BoundSelection {
+        signer_id: signer_id.to_owned(),
+        account: SignerAccount {
+            account_id: account.account_id.clone(),
+            address: account.address.clone(),
+            role: membership.role,
+            status: membership.status,
+            profile: account.account_profile()?.to_json(),
+        },
+    }))
+}
+
+/// Whether `transaction_id` bound exactly this signer and account through a
+/// verified `id_token_hint`.
+pub async fn is_bound_selection(
+    store: &dyn RelayStore,
+    transaction_id: &str,
+    signer_id: &str,
+    account_id: &str,
+) -> RelayResult<bool> {
+    let mut transaction = store.begin().await?;
+    let result = transaction.lock_par(transaction_id).await;
+    let par = settle(transaction, result).await?;
+    Ok(par.is_some_and(|par| par.binding() == Some((signer_id, account_id))))
 }
 
 /// What the portal shows before the selection.
@@ -490,10 +642,11 @@ pub async fn read_transaction(
             .lock_oauth_client(&par.client_id)
             .await?
             .ok_or(RelayErrorCode::RecordUnreadable)?;
-        Ok((par, client))
+        let bound = bound_selection(&mut *transaction, &par).await?;
+        Ok((par, client, bound))
     }
     .await;
-    let (par, client) = settle(transaction, result).await?;
+    let (par, client, bound) = settle(transaction, result).await?;
     if now >= par.expires_at {
         return Err(RelayErrorCode::Expired);
     }
@@ -514,6 +667,7 @@ pub async fn read_transaction(
             },
         },
         expires_at: par.expires_at / 1_000,
+        bound,
     })
 }
 
@@ -1111,17 +1265,24 @@ pub(crate) fn compose_par_grant(
 }
 
 /// What the account root must sign for this grant; nothing is persisted.
-/// `session` is the request's proven signer; only it may prepare.
+/// `session` is the request's proven signer; only it may prepare, or, without
+/// a session, the signer and account the request's `id_token_hint` bound: the
+/// root's signature over what is prepared is the proof that decides.
 pub async fn prepare_grant(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
     transaction_id: &str,
     body: &Map<String, Value>,
-    session: &str,
+    session: Option<&str>,
 ) -> RelayResult<PreparedGrant> {
     let (signer_id, account_id, approved) = prepare_selection(body)?;
-    if signer_id != session {
-        return Err(RelayErrorCode::Forbidden);
+    // The PAR is immutable: its binding read here cannot change.
+    if !is_bound_selection(store, transaction_id, &signer_id, &account_id).await? {
+        match session {
+            None => return Err(RelayErrorCode::Unauthenticated),
+            Some(session) if session != signer_id => return Err(RelayErrorCode::Forbidden),
+            Some(_) => {}
+        }
     }
     let now = relay_now(clock)?;
     let mut transaction = store.begin().await?;

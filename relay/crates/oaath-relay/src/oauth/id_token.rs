@@ -4,10 +4,11 @@
 //! by default, its RFC 7638 JWK thumbprint.
 //! `jsonwebtoken` signs; the JWKS is derived from the same key, so the
 //! published key can never drift from the signing key. Rotation is deferred.
+//! The same key verifies an `id_token_hint` the relay itself issued.
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use p256::SecretKey;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::DecodePrivateKey;
@@ -21,6 +22,7 @@ use crate::records::canonical_str;
 pub struct IdTokenKey {
     kid: String,
     encoding: EncodingKey,
+    decoding: DecodingKey,
     jwks: Value,
 }
 
@@ -37,6 +39,7 @@ impl IdTokenKey {
         let thumbprint = URL_SAFE_NO_PAD.encode(Sha256::digest(
             format!(r#"{{"crv":"P-256","kty":"EC","x":"{x}","y":"{y}"}}"#).as_bytes(),
         ));
+        let decoding = DecodingKey::from_ec_components(&x, &y).ok()?;
         let kid = kid.map_or(thumbprint, str::to_owned);
         canonical_str(&kid, RelayErrorCode::Internal).ok()?;
         let jwks = json!({ "keys": [{
@@ -51,6 +54,7 @@ impl IdTokenKey {
         Some(Self {
             kid,
             encoding,
+            decoding,
             jwks,
         })
     }
@@ -67,6 +71,23 @@ impl IdTokenKey {
         let mut header = Header::new(Algorithm::ES256);
         header.kid = Some(self.kid.clone());
         encode(&header, claims, &self.encoding).map_err(|_| RelayErrorCode::Internal)
+    }
+
+    /// The claims of an ES256 id_token this key signed for `issuer` and
+    /// `audience`, or `None`. Expiry is the caller's: a hint outlives `exp`.
+    pub fn verify(&self, token: &str, issuer: &str, audience: &str) -> Option<Value> {
+        let header = jsonwebtoken::decode_header(token).ok()?;
+        if header.alg != Algorithm::ES256 || header.kid.as_deref() != Some(&self.kid) {
+            return None;
+        }
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.set_issuer(&[issuer]);
+        validation.set_audience(&[audience]);
+        validation.set_required_spec_claims(&["iss", "aud", "sub", "iat", "exp"]);
+        validation.validate_exp = false;
+        decode::<Value>(token, &self.decoding, &validation)
+            .ok()
+            .map(|data| data.claims)
     }
 }
 

@@ -141,6 +141,10 @@ pub struct ParRecord {
     pub scope: String,
     /// Canonical JSON of the captured `authorization_details`, if any.
     pub authorization_details: Option<String>,
+    /// The signer and account a verified `id_token_hint` named: the portal
+    /// opens on them. Both or neither.
+    pub bound_signer_id: Option<String>,
+    pub bound_account_id: Option<String>,
     pub created_at: u64,
     pub expires_at: u64,
 }
@@ -159,12 +163,23 @@ impl ParRecord {
                 "nonce",
                 "scope",
                 "authorizationDetails",
+                "boundSignerId",
+                "boundAccountId",
                 "createdAt",
                 "expiresAt",
             ],
             UNREADABLE,
         )?;
         version(r.get("version"), OAUTH_PAR_RECORD_VERSION)?;
+        let bound = |key| match r.get(key) {
+            Some(Value::Null) => Ok(None),
+            value => canonical_identifier(value, UNREADABLE).map(|id| Some(id.to_owned())),
+        };
+        let (bound_signer_id, bound_account_id) =
+            (bound("boundSignerId")?, bound("boundAccountId")?);
+        if bound_signer_id.is_some() != bound_account_id.is_some() {
+            return Err(UNREADABLE);
+        }
         let redirect_uri = bounded_text(r.get("redirectUri"), limits::REDIRECT_URI, UNREADABLE)?;
         if !redirect_uri_allowed(redirect_uri) {
             return Err(UNREADABLE);
@@ -200,9 +215,19 @@ impl ParRecord {
                 }
                 _ => return Err(UNREADABLE),
             },
+            bound_signer_id,
+            bound_account_id,
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
             expires_at: timestamp(r.get("expiresAt"), UNREADABLE)?,
         })
+    }
+
+    /// The `(signer_id, account_id)` a verified `id_token_hint` bound, if any.
+    pub fn binding(&self) -> Option<(&str, &str)> {
+        Some((
+            self.bound_signer_id.as_deref()?,
+            self.bound_account_id.as_deref()?,
+        ))
     }
 }
 

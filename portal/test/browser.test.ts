@@ -173,6 +173,12 @@ function grantTransaction(id: string): PortalTransaction {
     redirect_origin: origin,
     authorization_details: [GRANT_DETAIL],
     expires_at: NOW + 600,
+    // The dapp's login bound its signer and account (`id_token_hint`).
+    bound: id.endsWith("-bound")
+      ? { signer_id: GRANT_SIGNER.signer_id, account: ROOT_ACCOUNT }
+      : id.endsWith("-elsewhere")
+        ? { signer_id: "signer-other-device", account: ROOT_ACCOUNT }
+        : null,
   };
 }
 
@@ -260,7 +266,8 @@ async function stubRelay(path: string, method: string, body: unknown) {
   // A relay that prepares the dapp's grant instead of the member's.
   if (path === "/portal/links/link-template/prepare" && method === "POST")
     return grantPreparation(ROOT_ACCOUNT);
-  const grant = /^\/portal\/transactions\/(par-grant(?:-tampered)?)(\/prepare)?$/u.exec(path);
+  const grant =
+    /^\/portal\/transactions\/(par-grant(?:-tampered|-bound|-elsewhere)?)(\/prepare)?$/u.exec(path);
   if (grant?.[1] && !grant[2] && method === "GET") return grantTransaction(grant[1]);
   if (grant?.[1] && grant[2] && method === "POST") {
     const prepared = grantPreparation(ROOT_ACCOUNT);
@@ -279,6 +286,7 @@ async function stubRelay(path: string, method: string, body: unknown) {
       redirect_origin: origin,
       authorization_details: [],
       expires_at: Math.floor(Date.now() / 1000) + 600,
+      bound: null,
     } satisfies PortalTransaction;
   if (path === "/portal/sessions/challenge" && method === "POST")
     return {
@@ -483,6 +491,7 @@ async function openPortal(
   seed: readonly RememberedSigner[],
   transaction = "par-1",
   wallet = true,
+  ready = "#signer-heading",
 ): Promise<Page> {
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 844 });
@@ -493,7 +502,7 @@ async function openPortal(
   await page.goto(
     `${origin}/authorize?client_id=client-1&request_uri=urn:ietf:params:oauth:request_uri:${transaction}`,
   );
-  await page.waitForSelector("#signer-heading");
+  await page.waitForSelector(ready);
   return page;
 }
 
@@ -852,6 +861,42 @@ describe("portal in Chrome", () => {
       path: "/portal/transactions/par-grant/prepare",
       body: { signer_id: "signer-grant", account_id: "account-grant-root" },
     });
+    await page.close();
+  });
+
+  it("opens a request the dapp's login bound on the review, with no signer or account picker", async () => {
+    calls.length = 0;
+    const page = await openPortal([GRANT_SIGNER], "par-grant-bound", true, "#review-heading");
+    const review = await page.waitForSelector(".review");
+    expect(await review?.evaluate((node) => (node as HTMLElement).innerText)).toContain("transfer");
+    await page.waitForSelector("::-p-text(Approve and sign):not([disabled])");
+    expect(await page.$("#signer-heading")).toBeNull();
+    expect(await page.$("#account-heading")).toBeNull();
+    expect(await page.$(".flow-progress")).toBeNull();
+    await capture(page, "6b-grant-bound-review");
+    // Nothing was signed in: the root's one signature is the whole proof.
+    expect(calls.map((call) => call.path)).toEqual([
+      "/portal/transactions/par-grant-bound",
+      "/portal/transactions/par-grant-bound/prepare",
+    ]);
+    expect(calls.at(-1)?.body).toEqual({
+      signer_id: "signer-grant",
+      account_id: "account-grant-root",
+    });
+    expect(await walletMethods(page)).toEqual([]);
+    await page.close();
+  });
+
+  it("explains a bound signer this browser cannot use and offers another signer", async () => {
+    const page = await openPortal(
+      [GRANT_SIGNER],
+      "par-grant-elsewhere",
+      true,
+      "#unavailable-heading",
+    );
+    expect(await page.$("::-p-text(isn't available in this browser)")).not.toBeNull();
+    await clickText(page, "Use a different signer");
+    await page.waitForSelector("#signer-heading");
     await page.close();
   });
 

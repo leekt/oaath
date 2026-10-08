@@ -511,8 +511,12 @@ async function openDemo(url: string, context: Pick<Browser, "newPage"> = browser
   return page;
 }
 
-/** Clicks `button` on the demo and returns the SDK's popup with the fixture wallet. */
-async function popupFrom(page: Page, button: string) {
+/**
+ * Clicks `button` on the demo and returns the SDK's popup with the fixture
+ * wallet, once `ready` shows: the signer screen, or for a request after the
+ * page's login, the screen that asks only for the signature.
+ */
+async function popupFrom(page: Page, button: string, ready = "#signer-heading") {
   (page as Page & { hold(): void }).hold();
   const opened = browser.waitForTarget((target) => target.opener() === page.target());
   await click(page, button);
@@ -521,7 +525,7 @@ async function popupFrom(page: Page, button: string) {
   await popup.setViewport({ width: 390, height: 844 });
   await installWallet(popup);
   releases.get(page)?.();
-  await popup.waitForSelector("#signer-heading");
+  await popup.waitForSelector(ready);
   return popup;
 }
 
@@ -707,11 +711,12 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     // 2. The invite link names this demo and the account.
     expect(await text(root, "#invite-url")).toBe(`${demo}/?invite=${address}`);
 
-    // 3. The root's Grant: one signature in the popup.
-    popup = await popupFrom(root, "#grant");
-    await click(popup, "#wallet-method");
-    await click(popup, "::-p-text(E2E Wallet)");
-    await click(popup, `button[aria-label^='Smart account ${address}']`);
+    // 3. The root's Grant: the popup opens on the review for the signer and
+    // account the login chose, and asks for one signature only.
+    popup = await popupFrom(root, "#grant", "#review-heading");
+    expect(await popup.$("#signer-heading")).toBeNull();
+    expect(await popup.$("#account-heading")).toBeNull();
+    expect(await text(popup, "main")).toContain(`${address.slice(0, 6)}…${address.slice(-4)}`);
     await popup.waitForSelector("::-p-text(Approve and sign):not([disabled])");
     expect(await text(popup, "main")).toContain("0x000000000000000000000000000000000000dead");
     const signatures = walletSignatures;
@@ -753,11 +758,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await click(root, "#owner-prepare");
     await outcome(root, "owner-prepared");
     await capture(root, "owner-prepared");
-    popup = await popupFrom(root, "#owner-approve:not([hidden])");
-    await click(popup, "#wallet-method");
-    await click(popup, "::-p-text(E2E Wallet)");
-    await click(popup, `button[aria-label='Smart account ${address}, Owner']`);
-    await popup.waitForSelector("#operation-heading");
+    popup = await popupFrom(root, "#owner-approve:not([hidden])", "#operation-heading");
     await click(popup, "::-p-text(Approve and sign)");
     await outcome(root, "owner-included");
     expect(local.sent).toHaveLength(2);
@@ -803,12 +804,9 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     expect(await member.$eval("#s-invite", (node) => (node as HTMLElement).hidden)).toBe(true);
 
     // The member's Grant waits for the root.
-    popup = await popupFrom(member, "#grant");
+    // Bound to the member's login: no pickers; sending signs the member in.
+    popup = await popupFrom(member, "#grant", "#ask-heading");
     await withCredential(popup, credentials);
-    await click(popup, "#passkey-method");
-    await click(popup, "[data-signer-kind=passkey]");
-    await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
-    await popup.waitForSelector("#ask-heading");
     await click(popup, "::-p-text(Send request to the owner)");
     await outcome(member, "pending");
     expect(await text(member, "#grant-badge")).toBe("Waiting for owner");
