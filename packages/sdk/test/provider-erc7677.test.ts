@@ -152,7 +152,13 @@ describe("ERC-7677 sponsorship adapter", () => {
             paymasterData: "0x01020304",
           });
           expect(Object.hasOwn(request.params[0], "signature")).toBe(false);
-          return { paymaster: PAYMASTER, paymasterData: "0x01020305" };
+          // paymaster-rs echoes the gas limits its signature binds.
+          return {
+            paymaster: PAYMASTER,
+            paymasterData: "0x01020305",
+            paymasterVerificationGasLimit: "0x32",
+            paymasterPostOpGasLimit: "0x3c",
+          };
         },
       },
       estimator: {
