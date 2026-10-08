@@ -1,0 +1,62 @@
+# @oaath/automation-server
+
+A self-hostable automation service: one Node process with the HTTP API, the
+scheduler and the executors, and PostgreSQL as its only dependency. It runs
+declarative automations from [`@oaath/automation`](../automation) with Grants
+it obtains as an ordinary OAuth client of an OAAth issuer.
+
+```sh
+npx @oaath/automation-server   # the `oaath-automation` bin; configure with the variables below
+```
+
+Run any number of replicas against one database. The schema is created on
+first start; an older schema is refused and must be dropped and recreated
+(there are no migrations).
+
+## Configuration
+
+| Variable | Meaning |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection URL. Required. |
+| `AUTOMATION_SEAL_KEY` | 64 hex characters: the AES-256-GCM key sealing session keys and OAuth verifiers at rest. Required; keep it with the database. |
+| `AUTOMATION_PUBLIC_URL` | The service's external base URL. The OAuth redirect URI is `<url>/v1/oauth/callback`. Required. |
+| `AUTOMATION_LISTEN` | `host:port`; default `127.0.0.1:4317`. |
+| `OAATH_ISSUER` | The OAAth issuer URL, e.g. `https://oaath.taek.tech`. Required. |
+| `OAATH_CLIENT_ID` | This service's client, registered at the issuer with the redirect URI above. Required. |
+| `AUTOMATION_APPLICATIONS` | Comma-separated `id:sha256hex` application credentials (SHA-256 of each bearer token). Required. |
+| `AUTOMATION_ALLOWED_ORIGINS` | Comma-separated browser origins allowed to call the API and to be `returnTo` targets. |
+| `AUTOMATION_DEFINITIONS` | Comma-separated JSON files, each one definition or an array. Required. |
+| `AUTOMATION_RPC_URL_<chainId>` | Chain RPC for every chain a definition names. Required. |
+| `AUTOMATION_BUNDLER_URL_<chainId>` | ERC-4337 bundler for that chain. Required. |
+| `AUTOMATION_PAYMASTER_URL_<chainId>` | Optional ERC-7677 paymaster; operations are self-funded without it. |
+| `AUTOMATION_RPC_BUDGET`, `AUTOMATION_BUNDLER_BUDGET`, `AUTOMATION_PAYMASTER_BUDGET` | Hard request budgets per window; defaults 3000, 300 and 100. |
+| `AUTOMATION_BUDGET_WINDOW_SECONDS` | Budget window; default 600. Exhausted work waits for the next window. |
+
+Logs never include URLs, tokens, keys or provider errors.
+
+## Execution
+
+```text
+plan  draft -> awaiting_consent -> authorized -> active <-> paused
+      active|paused -> completed | expired; open plans -> cancelling -> cancelled
+run   due -> claimed -> prepared -> submitted -> observed -> finalized
+      terminal: finalized | failed | skipped
+```
+
+- One open run per plan, so one unresolved operation per Grant, chain and lane.
+- Runs are claimed with `SELECT … FOR UPDATE SKIP LOCKED` and a lease; every
+  write is fenced by the claim's generation.
+- The calls are persisted before sending. The SDK journals each operation
+  before signing it, and the same transaction records its hash and nonce on the
+  run; an identity no prepared run claims is refused.
+- A run with an operation hash is only ever observed again. A timeout, missing
+  receipt, drop or unreadable observation never resubmits.
+- Session keys are generated per user (default) or per application
+  (`POST /v1/application {"keyScope":"application"}`) and sealed at rest.
+
+Authorization pushes an `oaath_grant` request (PKCE, the session key as the
+Grant's signer, the policy derived from the plan) to the issuer. The account
+root approves it in the portal; the first operation installs the permission in
+enable mode. Cancellation stops admission and runs the definition's cancel
+calls; uninstalling the permission on chain remains the account root's action
+in the portal.

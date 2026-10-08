@@ -1,289 +1,391 @@
-import { isDeepStrictEqual } from "node:util";
-import { executeKeyed } from "@oaath/sdk/headless";
-import { decodeEventLog } from "cetane/utils";
-import { captureDcaTerms, hashDcaSlot } from "../../protocol/dca.js";
-import { openGrant } from "./authority.js";
-import { budget, encode, executor } from "./chain.js";
-import { now, plan, pool } from "./store.js";
+/**
+ * The run executor: claims one open run at a time with a lease and drives it
+ * through exactly one Operation.
+ *
+ * ```text
+ * state and owner      run.status, by this module (op_hash/op_nonce: the journal adapter)
+ *                      due -> claimed -> prepared -> submitted -> observed -> finalized
+ *                      terminal: finalized | failed | skipped
+ * persisted evidence   calls before send; op hash + nonce journaled before any
+ *                      signature or send (see ./store.ts); transaction hash on inclusion
+ * resource occupied?   one open run per plan, so one unresolved operation per
+ *                      (grantId, chainId, lane)
+ * retry positively     send: only while op_hash is null (never journaled) or the SDK
+ *   safe?              proved the identity abandoned before submission;
+ *                      observation: always, and it submits nothing
+ * forbidden            sending for a run that has an op_hash; resending after a
+ *                      timeout, missing receipt, drop or unreadable observation
+ * crash/reload         leases expire; any replica resumes from PostgreSQL; every
+ *                      write is fenced by the claim's generation
+ * cleanup owner        the claiming replica closes its Grant handle; a failed close
+ *                      never changes the run's outcome
+ * ```
+ *
+ * @author taek <leekt216@gmail.com>
+ */
+import { type ResolvedCall, resolveCalls } from "@oaath/automation";
+import { BudgetError } from "./budget.js";
+import { type PlanRow, readPlan, type ServiceContext } from "./context.js";
+import type { Pool } from "./db.js";
+import { openGrant } from "./grant.js";
 
-export async function claim() {
-	const c = await pool.connect();
-	try {
-		await c.query("BEGIN");
-		const { rows } = await c.query(
-			"SELECT r.plan_id,r.slot FROM automation_runs r WHERE r.status IN ('reserved','observing','unresolved') AND r.next_observe_at<=$1 AND r.lease_until<=$1 ORDER BY r.next_observe_at,r.plan_id LIMIT 1 FOR UPDATE SKIP LOCKED",
-			[now()],
-		);
-		if (!rows[0]) {
-			await c.query("COMMIT");
-			return null;
-		}
-		const result = await c.query(
-			"UPDATE automation_runs SET generation=generation+1,lease_until=$3 WHERE plan_id=$1 AND slot=$2 RETURNING *",
-			[rows[0].plan_id, rows[0].slot, now() + 60],
-		);
-		await c.query("COMMIT");
-		return result.rows[0];
-	} catch (e) {
-		await c.query("ROLLBACK");
-		throw e;
-	} finally {
-		c.release();
-	}
+export const LEASE_SECONDS = 120;
+const MAX_SEND_ATTEMPTS = 3;
+
+export interface RunRow {
+  readonly plan_id: string;
+  readonly run_key: string;
+  readonly kind: "setup" | "occurrence" | "cancel";
+  readonly slot: number | null;
+  readonly scheduled_at: number;
+  readonly closes_at: number | null;
+  readonly status: string;
+  readonly calls: readonly ResolvedCall[] | null;
+  readonly op_hash: `0x${string}` | null;
+  readonly op_nonce: string | null;
+  readonly attempts: number;
+  readonly observations: number;
+  readonly generation: number;
 }
-async function update(run: any, sql: string, args: unknown[] = []) {
-	return pool.query(
-		`UPDATE automation_runs SET ${sql} WHERE plan_id=$1 AND slot=$2 AND generation=$3`,
-		[run.plan_id, run.slot, run.generation, ...args],
-	);
+
+export type Observation = Readonly<{
+  status: "finalized" | "dropped" | "superseded" | "abandoned" | "pending" | "unreadable";
+  transactionHash: `0x${string}` | null;
+  /** Finalized execution facts, only for `finalized`. */
+  execution: Readonly<{
+    sender: string;
+    calls: readonly Readonly<{ target: string; value: string; data: string }>[];
+    outcome: "success" | "reverted";
+  }> | null;
+}>;
+
+/** The one boundary to OAAth for a run: start calls, or observe a journaled operation. */
+export interface OperationGateway {
+  send(calls: readonly ResolvedCall[]): Promise<`0x${string}`>;
+  /** null: the journal holds no such operation (unreadable, never "absent"). */
+  observe(id: `0x${string}`): Promise<Observation | null>;
+  close(): Promise<void>;
 }
-export async function reconcile(run: any) {
-	let grant: Awaited<ReturnType<typeof openGrant>> | undefined;
-	try {
-		const p = await plan(run.plan_id),
-			t = captureDcaTerms(p.terms);
-		if (run.digest !== hashDcaSlot(t, run.slot))
-			throw new Error("input_digest_conflict");
-		if (!run.operation) {
-			if (
-				now() >= Number(run.closes_at) ||
-				["cancelling", "cancelled", "expired", "completed"].includes(p.status)
-			) {
-				await update(
-					run,
-					"status='skipped',lease_until=0,reason='admission_closed'",
-				);
-				return;
-			}
-			if (p.status !== "active") {
-				await update(
-					run,
-					"lease_until=0,next_observe_at=$4,reason='admission_closed'",
-					[now() + 10],
-				);
-				return;
-			}
-		}
-		grant = await openGrant(p.id);
-		const result = await executeKeyed(grant, {
-			chain: t.chainId,
-			calls: [
-				{
-					target: p.executor,
-					value: "0",
-					data: encode(executor.abi, "execute", [run.slot]),
-				},
-			],
-			intent: {
-				digest: run.digest,
-				read: async () => {
-					const row = (
-						await pool.query(
-							"SELECT * FROM automation_runs WHERE plan_id=$1 AND slot=$2",
-							[p.id, run.slot],
-						)
-					).rows[0];
-					if (
-						!row ||
-						row.digest !== run.digest ||
-						String(row.generation) !== String(run.generation)
-					)
-						return { status: "unresolved" };
-					return row.operation
-						? { status: "reserved", identity: row.operation.identity }
-						: { status: "fresh" };
-				},
-				publication: {
-					reserve: async (reservation) => {
-						const c = await pool.connect();
-						try {
-							await c.query("BEGIN");
-							const latest = (
-								await c.query(
-									"SELECT status,revision FROM automation_plans WHERE id=$1 FOR UPDATE",
-									[p.id],
-								)
-							).rows[0];
-							if (
-								latest.status !== "active" ||
-								String(latest.revision) !== String(p.revision) ||
-								now() >= Number(run.closes_at)
-							)
-								throw new Error("admission_closed");
-							const result = await c.query(
-								"UPDATE automation_runs SET operation=$4 WHERE plan_id=$1 AND slot=$2 AND generation=$3 AND operation IS NULL AND digest=$5 AND lease_until>$6",
-								[
-									p.id,
-									run.slot,
-									run.generation,
-									reservation.operation,
-									run.digest,
-									now(),
-								],
-							);
-							if (result.rowCount !== 1)
-								throw new Error("reservation_conflict");
-							await c.query("COMMIT");
-						} catch (e) {
-							await c.query("ROLLBACK");
-							throw e;
-						} finally {
-							c.release();
-						}
-					},
-					confirm: async (pointer) => {
-						const r = await update(run, "status='observing',reason=NULL");
-						if (r.rowCount !== 1) throw new Error("stale_claim");
-						const current = (
-							await pool.query(
-								"SELECT operation FROM automation_runs WHERE plan_id=$1 AND slot=$2",
-								[p.id, run.slot],
-							)
-						).rows[0];
-						if (
-							!isDeepStrictEqual(current.operation.identity, pointer.identity)
-						)
-							throw new Error("operation_conflict");
-					},
-					abandon: async () => {
-						await update(
-							run,
-							"status='unresolved',reason='publication_incomplete'",
-						);
-					},
-				},
-			},
-		});
-		if (result.status === "unresolved") {
-			await update(
-				run,
-				"status='unresolved',lease_until=0,next_observe_at=$4,reason='operation_unresolved'",
-				[now() + 30],
-			);
-			return;
-		}
-		const op = result.operation;
-		const outcome = await op.observe();
-		if (outcome.status !== "finalized") {
-			if (["dropped", "superseded", "abandoned"].includes(outcome.status)) {
-				await update(run, "status='failed',reason=$4,lease_until=0", [
-					outcome.status,
-				]);
-				return;
-			}
-			await update(
-				run,
-				"status='observing',lease_until=0,observations=observations+1,next_observe_at=$4,reason=$5",
-				[
-					now() + Math.min(60, 2 ** Math.min(Number(run.observations) + 1, 6)),
-					outcome.reason ?? "pending",
-				],
-			);
-			return;
-		}
-		const evidence = await op.execution();
-		if (
-			evidence.sender !== t.account ||
-			evidence.chainId !== t.chainId ||
-			evidence.grantId !== p.id ||
-			evidence.calls.length !== 1 ||
-			evidence.calls[0]?.target !== p.executor ||
-			evidence.calls[0]?.data !== encode(executor.abi, "execute", [run.slot]) ||
-			evidence.calls[0]?.value !== "0"
-		)
-			throw new Error("result_binding_invalid");
-		if (evidence.outcome === "reverted") {
-			await update(
-				run,
-				"status='failed',lease_until=0,evidence=$4,reason='finalized_revert'",
-				[evidence],
-			);
-			return;
-		}
-		const receipt = await op.receipt();
-		const logs = receipt.logs
-			.filter((log) => log.address === p.executor)
-			.flatMap((log) => {
-				try {
-					const decoded: any = decodeEventLog({
-						abi: executor.abi,
-						data: log.data,
-						topics: [...log.topics] as never,
-					});
-					return decoded.eventName === "Purchased" ? [decoded.args as any] : [];
-				} catch {
-					return [];
-				}
-			});
-		if (logs.length !== 1) throw new Error("purchase_evidence_invalid");
-		const event = logs[0];
-		if (
-			event.planId !== p.id ||
-			Number(event.slot) !== run.slot ||
-			event.account.toLowerCase() !== t.account ||
-			event.sellToken.toLowerCase() !== t.sellToken ||
-			event.buyToken.toLowerCase() !== t.buyToken ||
-			event.amountIn !== BigInt(t.amountIn) ||
-			event.amountOut <= 0n
-		)
-			throw new Error("purchase_evidence_invalid");
-		await update(
-			run,
-			"status='succeeded',lease_until=0,reason=NULL,evidence=$4",
-			[
-				{
-					...evidence,
-					amountIn: event.amountIn.toString(),
-					amountOut: event.amountOut.toString(),
-				},
-			],
-		);
-	} catch (error) {
-		const raw =
-			(error as { code?: string })?.code ??
-			(error instanceof Error ? error.message : "");
-		const code = /^[a-z0-9_]{1,80}$/.test(raw)
-			? raw
-			: "reconciliation_unavailable";
-		console.error(
-			JSON.stringify({
-				event: "reconcile_deferred",
-				code,
-				source: /^[a-z0-9_]{1,80}$/.test((error as any)?.source)
-					? (error as any).source
-					: null,
-			}),
-		);
-		await update(
-			run,
-			"lease_until=0,observations=observations+1,next_observe_at=$4,reason=$5",
-			[
-				budget.snapshot().used >= budget.limit
-					? Math.ceil(budget.retryAt / 1000)
-					: now() + 30,
-				code,
-			],
-		);
-	} finally {
-		if (grant) {
-			try {
-				await grant.close();
-			} catch {
-				await update(run, "cleanup_diagnostic='grant_close_pending'");
-				try {
-					await grant.close();
-					await update(run, "cleanup_diagnostic=NULL");
-				} catch {
-					/* Retain cleanup diagnostic separately from the primary operation result. */
-				}
-			}
-		}
-	}
+
+export type OpenGateway = (plan: PlanRow) => Promise<OperationGateway>;
+
+/** The default gateway: the plan's Grant handle over the budgeted chain ports. */
+export function grantGateway(context: ServiceContext): OpenGateway {
+  return async (plan) => {
+    const opened = await openGrant(context, plan);
+    const chain = plan.terms.chainId;
+    const paymasterUrl = context.config.chains.get(chain)?.paymasterUrl ?? null;
+    return {
+      async send(calls) {
+        const operation = await opened.grant.sendCalls({
+          chain,
+          calls: calls.map((call) => ({ target: call.target, value: call.value, data: call.data })),
+          ...(paymasterUrl === null
+            ? {}
+            : { payer: { kind: "paymaster-service", url: paymasterUrl, context: {} } }),
+        });
+        await operation.close().catch(() => undefined);
+        return operation.id;
+      },
+      async observe(id) {
+        const operation = await opened.grant.getOperation({ chain, id });
+        if (operation === null) return null;
+        try {
+          const outcome = await operation.observe();
+          const execution = outcome.status === "finalized" ? await operation.execution() : null;
+          return {
+            status: outcome.status,
+            transactionHash: outcome.transactionHash,
+            execution:
+              execution === null
+                ? null
+                : { sender: execution.sender, calls: execution.calls, outcome: execution.outcome },
+          };
+        } finally {
+          await operation.close().catch(() => undefined);
+        }
+      },
+      close: opened.close,
+    };
+  };
 }
-export async function worker(signal: AbortSignal) {
-	while (!signal.aborted) {
-		const run = await claim();
-		if (run) await reconcile(run);
-		else await new Promise((resolve) => setTimeout(resolve, 1000));
-	}
+
+/** Claims the next open run whose time has come, fencing it with a new generation. */
+export async function claimRun(context: ServiceContext): Promise<RunRow | null> {
+  const now = context.now();
+  const result = await context.pool.query(
+    `WITH next AS (
+       SELECT plan_id, run_key FROM automation_runs
+       WHERE status IN ('due','claimed','prepared','submitted','observed')
+         AND next_attempt_at<=$1 AND lease_until<=$1
+       ORDER BY next_attempt_at, plan_id, run_key LIMIT 1 FOR UPDATE SKIP LOCKED)
+     UPDATE automation_runs r SET generation=r.generation+1, lease_until=$2, lease_owner=$3,
+       status=CASE WHEN r.status='due' THEN 'claimed' ELSE r.status END
+     FROM next WHERE r.plan_id=next.plan_id AND r.run_key=next.run_key
+     RETURNING r.*`,
+    [now, now + LEASE_SECONDS, context.replicaId],
+  );
+  return (result.rows[0] as RunRow | undefined) ?? null;
+}
+
+/** A fenced write: it changes nothing once another claim superseded this one. */
+async function update(
+  pool: Pool,
+  run: RunRow,
+  assignments: string,
+  values: readonly unknown[] = [],
+): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE automation_runs SET ${assignments} WHERE plan_id=$1 AND run_key=$2 AND generation=$3`,
+    [run.plan_id, run.run_key, run.generation, ...values],
+  );
+  return result.rowCount === 1;
+}
+
+const release = "lease_until=0, lease_owner=NULL";
+
+function backoff(observations: number): number {
+  return Math.min(60, 2 ** Math.min(observations + 1, 6));
+}
+
+/** Plan effects of a terminal run, fenced on the plan's own state. */
+async function settlePlan(pool: Pool, run: RunRow, finalized: boolean): Promise<void> {
+  if (run.kind === "setup")
+    await pool.query(
+      finalized
+        ? "UPDATE automation_plans SET status='active', revision=revision+1, diagnostic=NULL WHERE id=$1 AND status='authorized'"
+        : "UPDATE automation_plans SET status='failed', revision=revision+1, diagnostic='setup_failed' WHERE id=$1 AND status='authorized'",
+      [run.plan_id],
+    );
+  if (run.kind === "cancel")
+    await pool.query(
+      `UPDATE automation_plans SET status='cancelled', revision=revision+1,
+         diagnostic=$2 WHERE id=$1 AND status='cancelling'`,
+      [run.plan_id, finalized ? null : "cancel_calls_failed"],
+    );
+}
+
+function admitted(plan: PlanRow, run: RunRow, now: number): "run" | "wait" | "skip" {
+  if (run.kind === "setup") return plan.status === "authorized" ? "run" : "skip";
+  if (run.kind === "cancel") return plan.status === "cancelling" ? "run" : "skip";
+  if (run.closes_at !== null && now >= run.closes_at) return "skip";
+  if (plan.status === "active") return "run";
+  return plan.status === "paused" ? "wait" : "skip";
+}
+
+function sameCalls(
+  left: readonly Readonly<{ target: string; value: string; data: string }>[],
+  right: readonly ResolvedCall[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (call, index) =>
+        call.target.toLowerCase() === right[index]?.target &&
+        call.value === right[index]?.value &&
+        call.data.toLowerCase() === right[index]?.data.toLowerCase(),
+    )
+  );
+}
+
+/** Observation only: it never sends, whatever it reads. */
+async function observe(
+  context: ServiceContext,
+  plan: PlanRow,
+  run: RunRow & { op_hash: `0x${string}` },
+  gateway: OperationGateway,
+): Promise<void> {
+  const now = context.now();
+  const seen = await gateway.observe(run.op_hash);
+  if (seen === null || seen.status === "pending" || seen.status === "unreadable") {
+    await update(
+      context.pool,
+      run,
+      `status=$4, observations=observations+1, next_attempt_at=$5, reason=$6, transaction_hash=COALESCE($7::text, transaction_hash), ${release}`,
+      [
+        seen?.transactionHash ? "observed" : run.status,
+        now + backoff(run.observations),
+        seen === null ? "operation_unreadable" : `observation_${seen.status}`,
+        seen?.transactionHash ?? null,
+      ],
+    );
+    return;
+  }
+  if (seen.status === "abandoned") {
+    // Proven never submitted: the identity may be replaced by a fresh send.
+    const exhausted = run.attempts + 1 >= MAX_SEND_ATTEMPTS;
+    await update(
+      context.pool,
+      run,
+      `status=$4, op_hash=NULL, op_nonce=NULL, attempts=attempts+1, next_attempt_at=$5, reason='submission_abandoned', ${release}`,
+      [exhausted ? "failed" : "prepared", now + 30],
+    );
+    if (exhausted) await settlePlan(context.pool, run, false);
+    return;
+  }
+  if (seen.status !== "finalized" || seen.execution === null) {
+    await update(context.pool, run, `status='failed', reason=$4, transaction_hash=$5, ${release}`, [
+      `operation_${seen.status}`,
+      seen.transactionHash,
+    ]);
+    await settlePlan(context.pool, run, false);
+    return;
+  }
+  const bound =
+    seen.execution.sender.toLowerCase() === plan.account &&
+    run.calls !== null &&
+    sameCalls(seen.execution.calls, run.calls);
+  const succeeded = bound && seen.execution.outcome === "success";
+  const changed = await update(
+    context.pool,
+    run,
+    `status=$4, reason=$5, transaction_hash=$6, evidence=$7, ${release}`,
+    [
+      succeeded ? "finalized" : "failed",
+      succeeded ? null : bound ? "reverted" : "evidence_mismatch",
+      seen.transactionHash,
+      { outcome: seen.execution.outcome },
+    ],
+  );
+  if (changed) await settlePlan(context.pool, run, succeeded);
+}
+
+/** Drives one claimed run as far as it can go now, then releases its lease. */
+export async function processRun(
+  context: ServiceContext,
+  run: RunRow,
+  open: OpenGateway,
+): Promise<void> {
+  const plan = await readPlan(context.pool, run.plan_id);
+  let current = run;
+  if (current.status === "claimed") {
+    const decision = admitted(plan, current, context.now());
+    if (decision !== "run") {
+      await update(
+        context.pool,
+        current,
+        decision === "skip"
+          ? `status='skipped', reason='admission_closed', ${release}`
+          : `next_attempt_at=$4, reason='plan_paused', ${release}`,
+        decision === "skip" ? [] : [context.now() + 10],
+      );
+      return;
+    }
+    const calls = resolveCalls(
+      plan.definition,
+      plan.terms,
+      current.kind === "occurrence" ? { slot: current.slot as number } : current.kind,
+    );
+    if (
+      !(await update(context.pool, current, "status='prepared', calls=$4", [JSON.stringify(calls)]))
+    )
+      return;
+    current = { ...current, status: "prepared", calls };
+  }
+
+  let gateway: OperationGateway;
+  try {
+    gateway = await open(plan);
+  } catch (error) {
+    await defer(context, current, error);
+    return;
+  }
+  try {
+    if (current.status === "prepared" && current.op_hash === null) {
+      if (current.kind === "occurrence" && admitted(plan, current, context.now()) !== "run") {
+        await update(
+          context.pool,
+          current,
+          `status='skipped', reason='admission_closed', ${release}`,
+        );
+        return;
+      }
+      try {
+        await gateway.send(current.calls as readonly ResolvedCall[]);
+      } catch (error) {
+        // Whatever failed, the journal decides: a linked hash means it may have been sent.
+        const linked = await readRun(context.pool, current);
+        if (linked?.op_hash) {
+          await update(
+            context.pool,
+            current,
+            `status='submitted', reason='submission_uncertain', next_attempt_at=$4, ${release}`,
+            [context.now() + 5],
+          );
+          return;
+        }
+        await defer(context, current, error, true);
+        return;
+      }
+      const linked = await readRun(context.pool, current);
+      if (!linked?.op_hash) {
+        await defer(context, current, new Error("operation_unlinked"));
+        return;
+      }
+      if (!(await update(context.pool, current, "status='submitted', reason=NULL"))) return;
+      current = { ...current, status: "submitted", op_hash: linked.op_hash };
+    }
+    if (current.op_hash !== null)
+      await observe(context, plan, current as RunRow & { op_hash: `0x${string}` }, gateway);
+  } catch (error) {
+    await defer(context, current, error);
+  } finally {
+    await gateway.close().catch(() => undefined);
+  }
+}
+
+async function readRun(pool: Pool, run: RunRow): Promise<RunRow | undefined> {
+  return (
+    await pool.query("SELECT * FROM automation_runs WHERE plan_id=$1 AND run_key=$2", [
+      run.plan_id,
+      run.run_key,
+    ])
+  ).rows[0] as RunRow | undefined;
+}
+
+function failureCode(error: unknown): string {
+  const code =
+    (error as { code?: unknown } | null)?.code ??
+    (error instanceof Error ? error.message : undefined);
+  return typeof code === "string" && /^[a-z0-9_]{1,80}$/u.test(code) ? code : "execution_deferred";
+}
+
+/** Releases the run for a later attempt; a counted send failure eventually fails it. */
+async function defer(
+  context: ServiceContext,
+  run: RunRow,
+  error: unknown,
+  countsAsSend = false,
+): Promise<void> {
+  const budgetRetryAt = error instanceof BudgetError ? context.budgetRetryAt() : null;
+  const exhausted =
+    countsAsSend && !(error instanceof BudgetError) && run.attempts + 1 >= MAX_SEND_ATTEMPTS;
+  await update(
+    context.pool,
+    run,
+    `status=$4, attempts=attempts+$5, next_attempt_at=$6, reason=$7, ${release}`,
+    [
+      exhausted ? "failed" : run.status,
+      countsAsSend && !(error instanceof BudgetError) ? 1 : 0,
+      budgetRetryAt ?? context.now() + 30,
+      failureCode(error),
+    ],
+  );
+  if (exhausted) await settlePlan(context.pool, run, false);
+}
+
+/** One executor loop; run several per replica and any number of replicas. */
+export async function executorLoop(
+  context: ServiceContext,
+  open: OpenGateway,
+  signal: AbortSignal,
+): Promise<void> {
+  while (!signal.aborted) {
+    const run = await claimRun(context).catch(() => null);
+    if (run === null) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      continue;
+    }
+    await processRun(context, run, open).catch(() => undefined);
+  }
 }

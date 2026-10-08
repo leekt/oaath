@@ -1,73 +1,64 @@
 {
   "name": "@oaath/automation",
-  "version": "0.1.0",
+  "version": "0.3.5",
+  "description": "Declarative OAAth automations: the definition schema and the automation service client.",
   "type": "module",
-  "sideEffects": [
-    "**/*.css"
-  ],
-  "files": [
-    "dist",
-    "README.md",
-    "THIRD_PARTY_NOTICES.md"
-  ],
+  "sideEffects": false,
+  "license": "Apache-2.0",
+  "author": "taek <leekt216@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leekt/oaath.git",
+    "directory": "packages/automation"
+  },
+  "bugs": {
+    "url": "https://github.com/leekt/oaath/issues"
+  },
+  "homepage": "https://github.com/leekt/oaath#readme",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "oaath-source": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./approval": {
-      "types": "./dist/approval.d.ts",
-      "default": "./dist/approval.js"
-    },
     "./server": {
+      "oaath-source": {
+        "types": "./src/server.ts",
+        "default": "./src/server.ts"
+      },
       "types": "./dist/server.d.ts",
       "default": "./dist/server.js"
-    },
-    "./react": {
-      "types": "./dist/react.d.ts",
-      "default": "./dist/react.js"
-    },
-    "./wallet": {
-      "types": "./dist/wallet.d.ts",
-      "default": "./dist/wallet.js"
-    },
-    "./journal": {
-      "types": "./dist/journal.d.ts",
-      "default": "./dist/journal.js"
-    },
-    "./styles.css": "./dist/styles.css",
-    "./cancellation": {
-      "types": "./dist/cancellation.d.ts",
-      "default": "./dist/cancellation.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && tailwindcss -i src/styles.css -o dist/styles.css --minify"
+    "build": "tsdown src/index.ts src/server.ts --platform neutral",
+    "prepack": "bun run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "release:publish": "bun publish --access public --tolerate-republish",
+    "release:check": "bun pm pack --dry-run"
   },
   "dependencies": {
-    "@radix-ui/react-alert-dialog": "^1.1.24",
-    "@radix-ui/react-label": "^2.1.16",
-    "@radix-ui/react-select": "^2.3.8",
-    "@radix-ui/react-slot": "^1.4.0",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "lucide-react": "^1.52.0",
-    "tailwind-merge": "^3.7.0"
+    "@oaath/protocol": "workspace:*",
+    "cetane": "0.0.4"
   },
-  "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@oaath/sdk": "^0.3.4"
+  "devDependencies": {
+    "@types/node": "22.13.0"
   },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "react-dom": {
-      "optional": true
-    },
-    "@oaath/sdk": {
-      "optional": true
-    }
+  "publishConfig": {
+    "access": "public"
   }
 }

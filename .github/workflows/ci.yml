@@ -76,6 +76,11 @@ jobs:
       # Covers the root config files as well as every package.
       - run: bun run typecheck
       - run: bun run test
+      # The automation service's PostgreSQL suites must run, not skip: the
+      # runner image ships PostgreSQL binaries for a throwaway local cluster.
+      - run: bun run --filter @oaath/automation-server test
+        env:
+          OAATH_REQUIRE_POSTGRES: "1"
       - run: bun run build
       - run: bun run --workspaces --if-present lint
       - run: bun run lint
@@ -91,6 +96,7 @@ jobs:
       - run: bun run check:public-surface
       - run: bun run release:check
       - run: bun run smoke:protocol
+      - run: bun run smoke:automation
       - run: bun run smoke:cetane
       - run: bun run smoke:kernel-import
       - run: bun run smoke:weighted-root

@@ -1,392 +1,200 @@
-use crate::sessions;
-use crate::{
-    model::{self, Create, Terms},
-    scheduler,
-};
-use axum::{
-    Json, Router,
-    extract::Request,
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
-    middleware::{self, Next},
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
-use num_bigint::BigUint;
-use serde::Deserialize;
-use serde_json::{Value, json};
-use sqlx::{PgPool, Row};
-use std::sync::Arc;
+/**
+ * The HTTP API. JSON in and out, bounded bodies, structured error codes only,
+ * CORS for the configured browser origins, and no caching.
+ *
+ * | Route | Caller |
+ * | --- | --- |
+ * | `GET /health` | anyone |
+ * | `GET /v1/automations` | application or session |
+ * | `POST /v1/sessions`, `POST /v1/application` | application credential |
+ * | `POST /v1/plans`, `GET /v1/plans`, `GET /v1/plans/{id}`, `GET /v1/plans/{id}/runs` | session (list/get: application too) |
+ * | `POST /v1/plans/{id}/{authorize,pause,resume,cancel}` | session |
+ * | `GET /v1/oauth/callback` | the issuer's redirect |
+ *
+ * @author taek <leekt216@gmail.com>
+ */
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { AutomationError } from "@oaath/automation";
+import { type ServiceContext, ServiceError } from "./context.js";
+import { completeAuthorization, startAuthorization } from "./oauth.js";
+import {
+  cancelPlan,
+  createPlan,
+  listPlans,
+  listRuns,
+  ownPlan,
+  pausePlan,
+  projectPlan,
+  resumePlan,
+} from "./plans.js";
+import {
+  authenticate,
+  configureApplication,
+  createSession,
+  requireApplication,
+} from "./sessions.js";
 
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Config {
-    pub chain_id: u64,
-    pub sell_token: String,
-    pub buy_token: String,
-    pub router: String,
-    pub pool_fee: u32,
-    pub sell_feed: String,
-    pub buy_feed: String,
-    pub factory: String,
-    pub max_price_age_seconds: u32,
-    pub max_fee_per_gas: String,
-    pub max_gas_cost: String,
-    pub origin: String,
-}
-#[derive(Clone)]
-pub struct App {
-    pub pool: PgPool,
-    pub config: Config,
-    pub apps: Arc<Vec<(String, String)>>,
-    pub runtime: String,
-    pub runtime_token: String,
-    pub client: reqwest::Client,
-    pub hosts: Arc<Vec<String>>,
-}
-#[derive(Debug)]
-pub struct ApiError(pub StatusCode, pub &'static str);
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        (self.0, Json(json!({"error":{"code":self.1}}))).into_response()
-    }
-}
-impl From<sqlx::Error> for ApiError {
-    fn from(_: sqlx::Error) -> Self {
-        Self(StatusCode::SERVICE_UNAVAILABLE, "storage_unavailable")
-    }
-}
-impl From<&'static str> for ApiError {
-    fn from(s: &'static str) -> Self {
-        Self(StatusCode::UNPROCESSABLE_ENTITY, s)
-    }
-}
-pub type Result<T> = std::result::Result<T, ApiError>;
-pub fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
-}
-async fn guard(State(app): State<App>, req: Request, next: Next) -> Response {
-    let host = req
-        .headers()
-        .get("host")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !app.hosts.iter().any(|h| h == host) {
-        return ApiError(StatusCode::MISDIRECTED_REQUEST, "host_denied").into_response();
-    }
-    if let Some(origin) = req.headers().get("origin")
-        && origin.to_str().ok() != Some(app.config.origin.as_str())
-    {
-        return ApiError(StatusCode::FORBIDDEN, "origin_denied").into_response();
-    }
-    let cors = req.headers().contains_key("origin");
-    let mut response = if req.method() == axum::http::Method::OPTIONS {
-        StatusCode::NO_CONTENT.into_response()
-    } else {
-        next.run(req).await
-    };
-    if cors {
-        response.headers_mut().insert(
-            "access-control-allow-origin",
-            app.config.origin.parse().unwrap(),
-        );
-        response
-            .headers_mut()
-            .insert("vary", "origin".parse().unwrap());
-        response.headers_mut().insert(
-            "access-control-allow-methods",
-            "GET, POST, OPTIONS".parse().unwrap(),
-        );
-        response.headers_mut().insert(
-            "access-control-allow-headers",
-            "authorization, content-type".parse().unwrap(),
-        );
-    }
+const MAX_BODY = 32 * 1024;
 
-    response
-        .headers_mut()
-        .insert("cache-control", "no-store".parse().unwrap());
-    response
-        .headers_mut()
-        .insert("x-content-type-options", "nosniff".parse().unwrap());
-    response
+async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY) throw new ServiceError("request_too_large", 413);
+    chunks.push(chunk as Buffer);
+  }
+  if (size === 0) return {};
+  let value: unknown;
+  try {
+    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new ServiceError("request_invalid", 400);
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new ServiceError("request_invalid", 400);
+  return value as Record<string, unknown>;
 }
-pub fn router(app: App) -> Router {
-    Router::new()
-        .route(
-            "/health",
-            get(|| async { Json(json!({"status":"ok","version":"automation.api/v1"})) }),
-        )
-        .route(
-            "/openapi.json",
-            get(|| async {
-                Json(serde_json::from_str::<Value>(include_str!("../openapi.json")).unwrap())
-            }),
-        )
-        .route("/v1/config", get(config))
-        .route("/v1/sessions", post(sessions::create))
-        .route("/v1/application", post(sessions::configure))
-        .route("/v1/plans", post(create).get(list))
-        .route("/v1/plans/{id}", get(status))
-        .route("/v1/plans/{id}/runs", get(history))
-        .route("/v1/plans/{id}/authorize", post(authorize))
-        .route("/v1/plans/{id}/approve", post(approve))
-        .route("/v1/plans/{id}/pause", post(pause))
-        .route("/v1/plans/{id}/resume", post(resume))
-        .route("/v1/plans/{id}/cancel", post(cancel))
-        .route("/v1/plans/{id}/refresh", post(refresh))
-        .layer(axum::extract::DefaultBodyLimit::max(32768))
-        .layer(middleware::from_fn_with_state(app.clone(), guard))
-        .with_state(app)
+
+function send(response: ServerResponse, status: number, body: unknown): void {
+  response.writeHead(status, { "content-type": "application/json" });
+  response.end(JSON.stringify(body));
 }
-async fn config(State(a): State<App>, h: HeaderMap) -> Result<Json<Value>> {
-    let identity = sessions::authenticate(&a, &h).await?;
-    Ok(Json(
-        json!({"version":"automation.api/v1","recipes":[{"id":"dca.v1","name":"Recurring purchase"}],"account":identity.account,"keyScope":sessions::scope(&a,&identity.app_id).await?,"chainId":a.config.chain_id,"sell":{"token":a.config.sell_token,"symbol":"USDC","decimals":6},"buy":{"token":a.config.buy_token,"symbol":"WETH","decimals":18},"intervalSeconds":86400,"graceSeconds":900,"serviceFee":"0","maxFeePerGas":a.config.max_fee_per_gas,"maxGasCost":a.config.max_gas_cost,"factory":a.config.factory}),
-    ))
+
+/** A same-origin-list return target, or null. */
+function returnTarget(context: ServiceContext, value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new ServiceError("return_to_invalid", 422);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new ServiceError("return_to_invalid", 422);
+  }
+  if (!context.config.allowedOrigins.includes(url.origin) || url.username || url.password)
+    throw new ServiceError("return_to_invalid", 422);
+  return url.href;
 }
-async fn own(a: &App, h: &HeaderMap, id: &str) -> Result<Value> {
-    let identity = sessions::authenticate(a, h).await?;
-    let row = sqlx::query("SELECT to_jsonb(p) AS value FROM automation_plans p WHERE id=$1 AND app_id=$2 AND ($3::text IS NULL OR (user_id=$3 AND account=$4))")
-        .bind(id)
-        .bind(identity.app_id)
-        .bind(identity.user_id)
-        .bind(identity.account)
-        .fetch_optional(&a.pool)
-        .await?
-        .ok_or(ApiError(StatusCode::NOT_FOUND, "plan_not_found"))?;
-    Ok(row.get("value"))
+
+async function callback(context: ServiceContext, url: URL, response: ServerResponse) {
+  let outcome: Awaited<ReturnType<typeof completeAuthorization>>;
+  try {
+    outcome = await completeAuthorization(context, url.searchParams);
+  } catch (error) {
+    const code = error instanceof ServiceError ? error.code : "authorization_unavailable";
+    outcome = { planId: null, status: "invalid", returnTo: null };
+    response.writeHead(409, { "content-type": "text/plain; charset=utf-8" });
+    response.end(`Authorization could not be completed (${code}). Return to the application.`);
+    return;
+  }
+  if (outcome.returnTo !== null) {
+    const target = new URL(outcome.returnTo);
+    if (outcome.planId !== null) target.searchParams.set("automation_plan", outcome.planId);
+    target.searchParams.set("automation_status", outcome.status);
+    response.writeHead(303, { location: target.href });
+    response.end();
+    return;
+  }
+  response.writeHead(outcome.status === "invalid" ? 400 : 200, {
+    "content-type": "text/plain; charset=utf-8",
+  });
+  response.end(`Authorization ${outcome.status}. You can close this window.`);
 }
-async fn bridge(a: &App, action: &str, id: &str, body: Value) -> Result<Value> {
-    let r = a
-        .client
-        .post(format!("{}/{}", a.runtime, action))
-        .bearer_auth(&a.runtime_token)
-        .json(&json!({"planId":id,"input":body}))
-        .send()
-        .await
-        .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "runtime_unavailable"))?;
-    let code = r.status();
-    let v = r
-        .json::<Value>()
-        .await
-        .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "runtime_unreadable"))?;
-    if !code.is_success() {
-        return Err(ApiError(
-            StatusCode::CONFLICT,
-            "runtime_action_pending_or_rejected",
-        ));
+
+async function route(
+  context: ServiceContext,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const url = new URL(request.url ?? "/", "http://service");
+  const method = request.method ?? "GET";
+  const path = url.pathname;
+  if (method === "GET" && path === "/health")
+    return send(response, 200, { status: "ok", version: "oaath.automation-api/v1" });
+  if (method === "GET" && path === "/v1/oauth/callback") return callback(context, url, response);
+
+  if (method === "POST" && path === "/v1/sessions") {
+    const appId = requireApplication(context, request.headers);
+    return send(response, 200, await createSession(context, appId, await readBody(request)));
+  }
+  if (method === "POST" && path === "/v1/application") {
+    const appId = requireApplication(context, request.headers);
+    return send(response, 200, await configureApplication(context, appId, await readBody(request)));
+  }
+
+  const principal = await authenticate(context, request.headers);
+  if (method === "GET" && path === "/v1/automations")
+    return send(response, 200, { automations: [...context.definitions.values()] });
+  if (path === "/v1/plans") {
+    if (method === "GET") return send(response, 200, await listPlans(context, principal));
+    if (method === "POST") {
+      const { created, plan } = await createPlan(context, principal, await readBody(request));
+      return send(response, created ? 201 : 200, await projectPlan(context, plan));
     }
-    Ok(v)
-}
-async fn create(
-    State(a): State<App>,
-    h: HeaderMap,
-    Json(c): Json<Create>,
-) -> Result<(StatusCode, Json<Value>)> {
-    let identity = sessions::authenticate(&a, &h).await?;
-    let app = identity.app_id.clone();
-    let user_id = identity
-        .user_id
-        .ok_or(ApiError(StatusCode::FORBIDDEN, "user_session_required"))?;
-    let account = identity.account.ok_or("account_required")?;
-    let key_scope = sessions::scope(&a, &app).await?;
-    if c.idempotency_key.is_empty()
-        || c.idempotency_key.len() > 128
-        || c.idempotency_key.trim() != c.idempotency_key
-        || c.recipe != "dca.v1"
-        || c.opportunities == 0
-        || c.opportunities > 365
-        || c.max_slippage_bps > 1000
-    {
-        return Err("plan_invalid".into());
+  }
+  const match = /^\/v1\/plans\/(0x[0-9a-f]{64})(?:\/(runs|authorize|pause|resume|cancel))?$/u.exec(
+    path,
+  );
+  if (match) {
+    const plan = await ownPlan(context, principal, match[1] as string);
+    const action = match[2];
+    if (method === "GET" && action === undefined)
+      return send(response, 200, await projectPlan(context, plan));
+    if (method === "GET" && action === "runs")
+      return send(response, 200, await listRuns(context, plan, url.searchParams));
+    if (method === "POST" && action !== undefined && action !== "runs") {
+      if (principal.user === null) throw new ServiceError("user_session_required", 403);
+      const body = await readBody(request);
+      if (action === "authorize") {
+        const consenting = plan.status === "draft" || plan.status === "awaiting_consent";
+        const authorizationUrl = consenting
+          ? await startAuthorization(context, plan, returnTarget(context, body.returnTo))
+          : null;
+        const current = await ownPlan(context, principal, plan.id);
+        return send(response, 200, { plan: await projectPlan(context, current), authorizationUrl });
+      }
+      if (action === "pause") await pausePlan(context, plan);
+      if (action === "resume") await resumePlan(context, plan);
+      if (action === "cancel") await cancelPlan(context, plan);
+      return send(
+        response,
+        200,
+        await projectPlan(context, await ownPlan(context, principal, plan.id)),
+      );
     }
-    let amount = model::base_units(&c.amount)?;
-    let canonical = json!({"recipe":c.recipe,"userId":user_id,"keyScope":key_scope,"account":account,"chainId":a.config.chain_id,"amountIn":amount,"maxRuns":c.opportunities,"maxSlippageBps":c.max_slippage_bps,"startAt":c.start_at,"profile":serde_json::json!([&a.config.sell_token,&a.config.buy_token,&a.config.router,a.config.pool_fee,&a.config.sell_feed,&a.config.buy_feed,a.config.max_price_age_seconds,&a.config.max_fee_per_gas,&a.config.max_gas_cost])});
-    let digest = model::hash(canonical.to_string().as_bytes());
-    let existing = sqlx::query(
-        "SELECT id,input_digest FROM automation_plans WHERE app_id=$1 AND account=$2 AND creation_key=$3",
-    )
-    .bind(&app)
-    .bind(&account)
-    .bind(&c.idempotency_key)
-    .fetch_optional(&a.pool)
-    .await?;
-    if let Some(row) = existing {
-        if row.get::<String, _>("input_digest") != digest {
-            return Err(ApiError(StatusCode::CONFLICT, "idempotency_conflict"));
-        }
-        return Ok((
-            StatusCode::OK,
-            Json(project(&a, &row.get::<String, _>("id")).await?),
-        ));
+  }
+  throw new ServiceError("route_not_found", 404);
+}
+
+export function createHttpServer(context: ServiceContext): Server {
+  return createServer(async (request, response) => {
+    const origin = request.headers.origin;
+    response.setHeader("cache-control", "no-store");
+    response.setHeader("x-content-type-options", "nosniff");
+    if (origin !== undefined) {
+      if (!context.config.allowedOrigins.includes(origin)) {
+        send(response, 403, { error: { code: "origin_denied" } });
+        return;
+      }
+      response.setHeader("access-control-allow-origin", origin);
+      response.setHeader("vary", "origin");
+      response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+      response.setHeader("access-control-allow-headers", "authorization, content-type");
+      if (request.method === "OPTIONS") {
+        response.writeHead(204);
+        response.end();
+        return;
+      }
     }
-    let start = c.start_at.unwrap_or((now() + 300) as u64);
-    if start < now() as u64 || start > now() as u64 + 31_536_000 {
-        return Err("start_invalid".into());
+    try {
+      await route(context, request, response);
+    } catch (error) {
+      if (response.headersSent) return response.end();
+      if (error instanceof ServiceError)
+        return send(response, error.status, { error: { code: error.code } });
+      if (error instanceof AutomationError)
+        return send(response, 422, { error: { code: error.code } });
+      send(response, 503, { error: { code: "service_unavailable" } });
     }
-    let id = format!("0x{}", hex::encode(rand::random::<[u8; 32]>()));
-    let terms = Terms {
-        version: model::VERSION.into(),
-        plan_id: id.clone(),
-        account: account.clone(),
-        chain_id: a.config.chain_id,
-        sell_token: a.config.sell_token.clone(),
-        buy_token: a.config.buy_token.clone(),
-        amount_in: amount.clone(),
-        total_input_cap: (amount.parse::<BigUint>().unwrap() * c.opportunities).to_string(),
-        start_at: start,
-        interval_seconds: 86400,
-        grace_seconds: 900,
-        max_runs: c.opportunities,
-        end_at: start + u64::from(c.opportunities - 1) * 86400 + 900,
-        recipient: account.clone(),
-        router: a.config.router.clone(),
-        pool_fee: a.config.pool_fee,
-        sell_feed: a.config.sell_feed.clone(),
-        buy_feed: a.config.buy_feed.clone(),
-        max_price_age_seconds: a.config.max_price_age_seconds,
-        max_slippage_bps: c.max_slippage_bps,
-    };
-    terms.validate()?;
-    let inserted=sqlx::query("INSERT INTO automation_plans(id,app_id,account,creation_key,input_digest,terms,status,next_at,created_at,fee_terms,user_id,key_scope,recipe) VALUES($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10,$11,$12) ON CONFLICT(app_id,account,creation_key) DO NOTHING RETURNING id").bind(&id).bind(&app).bind(&account).bind(&c.idempotency_key).bind(&digest).bind(serde_json::to_value(&terms).unwrap()).bind(start as i64).bind(now()).bind(json!({"serviceFee":"0","payer":"account","maxFeePerGas":a.config.max_fee_per_gas,"maxGasCost":a.config.max_gas_cost})).bind(&user_id).bind(&key_scope).bind(&c.recipe).fetch_optional(&a.pool).await?;
-    if inserted.is_none() {
-        let row=sqlx::query("SELECT id,input_digest FROM automation_plans WHERE app_id=$1 AND account=$2 AND creation_key=$3").bind(app).bind(account).bind(c.idempotency_key).fetch_one(&a.pool).await?;
-        if row.get::<String, _>("input_digest") != digest {
-            return Err(ApiError(StatusCode::CONFLICT, "idempotency_conflict"));
-        }
-        return Ok((
-            StatusCode::OK,
-            Json(project(&a, &row.get::<String, _>("id")).await?),
-        ));
-    }
-    Ok((StatusCode::CREATED, Json(project(&a, &id).await?)))
-}
-const PROJECTION: &str = "SELECT to_jsonb(p) AS value,COALESCE((SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*)::integer AS n FROM automation_runs WHERE plan_id=p.id GROUP BY status) counts),'{}'::jsonb) AS progress FROM automation_plans p";
-fn projection(_a: &App, r: sqlx::postgres::PgRow) -> Value {
-    let p: Value = r.get("value");
-    let counts: Value = r.get("progress");
-    let mut progress =
-        json!({"succeeded":0,"failed":0,"skipped":0,"reserved":0,"observing":0,"unresolved":0});
-    for (k, v) in counts.as_object().unwrap() {
-        progress[k] = v.clone();
-    }
-    json!({"id":p["id"],"recipe":p["recipe"],"keyScope":p["key_scope"],"status":p["status"],"revision":p["revision"],"terms":p["terms"],"executor":p["executor"],"signer":p["signer"],"commitment":p["commitment"],"progress":progress,"nextSlot":p["next_slot"],"nextAt":p["next_at"],"setup":p["setup"],"cancellation":p["cancellation"],"diagnostic":p["diagnostic"],"fees":p["fee_terms"],"asOf":now()})
-}
-pub async fn project(a: &App, id: &str) -> Result<Value> {
-    let r = sqlx::query(&format!("{PROJECTION} WHERE id=$1"))
-        .bind(id)
-        .fetch_one(&a.pool)
-        .await?;
-    Ok(projection(a, r))
-}
-async fn status(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Result<Json<Value>> {
-    own(&a, &h, &id).await?;
-    Ok(Json(project(&a, &id).await?))
-}
-#[derive(Deserialize)]
-struct Page {
-    after: Option<i32>,
-    limit: Option<i64>,
-}
-async fn history(
-    State(a): State<App>,
-    h: HeaderMap,
-    Path(id): Path<String>,
-    Query(q): Query<Page>,
-) -> Result<Json<Value>> {
-    own(&a, &h, &id).await?;
-    let rows=sqlx::query("SELECT to_jsonb(r) - 'generation' - 'lease_until' AS value FROM automation_runs r WHERE plan_id=$1 AND slot>$2 ORDER BY slot LIMIT $3").bind(id).bind(q.after.unwrap_or(-1)).bind(q.limit.unwrap_or(50).clamp(1,100)).fetch_all(&a.pool).await?;
-    Ok(Json(
-        json!({"runs":rows.iter().map(|r|r.get::<Value,_>("value")).collect::<Vec<_>>() }),
-    ))
-}
-async fn list(State(a): State<App>, h: HeaderMap) -> Result<Json<Value>> {
-    let identity = sessions::authenticate(&a, &h).await?;
-    let app = identity.app_id.clone();
-    let rows = sqlx::query(&format!(
-        "{PROJECTION} WHERE app_id=$1 AND ($2::text IS NULL OR (user_id=$2 AND account=$3)) ORDER BY created_at DESC,id LIMIT 100"
-    ))
-    .bind(app)
-    .bind(identity.user_id)
-    .bind(identity.account)
-    .fetch_all(&a.pool)
-    .await?;
-    Ok(Json(
-        json!({"plans":rows.into_iter().map(|r|projection(&a,r)).collect::<Vec<_>>()}),
-    ))
-}
-async fn authorize(
-    State(a): State<App>,
-    h: HeaderMap,
-    Path(id): Path<String>,
-) -> Result<Json<Value>> {
-    let p = own(&a, &h, &id).await?;
-    if !matches!(
-        p["status"].as_str(),
-        Some("draft" | "awaiting_consent" | "authorized")
-    ) {
-        return Err(ApiError(
-            StatusCode::CONFLICT,
-            "authorization_state_conflict",
-        ));
-    }
-    let mut result = bridge(&a, "authorize", &id, json!({})).await?;
-    result["plan"] = project(&a, &id).await?;
-    Ok(Json(result))
-}
-async fn approve(
-    State(a): State<App>,
-    h: HeaderMap,
-    Path(id): Path<String>,
-    Json(body): Json<Value>,
-) -> Result<Json<Value>> {
-    own(&a, &h, &id).await?;
-    let mut result = bridge(&a, "approve", &id, body).await?;
-    result["plan"] = project(&a, &id).await?;
-    Ok(Json(result))
-}
-async fn pause(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Result<Json<Value>> {
-    own(&a, &h, &id).await?;
-    let n = sqlx::query(
-        "UPDATE automation_plans SET status='paused',revision=revision+1 WHERE id=$1 AND status='active'",
-    )
-    .bind(&id)
-    .execute(&a.pool)
-    .await?
-    .rows_affected();
-    if n == 0 && project(&a, &id).await?["status"] != "paused" {
-        return Err(ApiError(StatusCode::CONFLICT, "plan_not_active"));
-    }
-    Ok(Json(project(&a, &id).await?))
-}
-async fn resume(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Result<Json<Value>> {
-    own(&a, &h, &id).await?;
-    bridge(&a, "resume", &id, json!({})).await?;
-    Ok(Json(project(&a, &id).await?))
-}
-async fn cancel(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Result<Json<Value>> {
-    own(&a, &h, &id).await?;
-    sqlx::query("UPDATE automation_plans SET status='cancelling',revision=revision+1 WHERE id=$1 AND status IN ('draft','awaiting_consent','authorized','active','paused','completed','expired')").bind(&id).execute(&a.pool).await?;
-    let _ = bridge(&a, "cancel", &id, json!({})).await;
-    Ok(Json(project(&a, &id).await?))
-}
-async fn refresh(
-    State(a): State<App>,
-    h: HeaderMap,
-    Path(id): Path<String>,
-) -> Result<(StatusCode, Json<Value>)> {
-    own(&a, &h, &id).await?;
-    sqlx::query("UPDATE automation_runs SET next_observe_at=LEAST(next_observe_at,$2) WHERE plan_id=$1 AND status IN ('observing','unresolved') AND next_observe_at>$2+10").bind(&id).bind(now()+10).execute(&a.pool).await?;
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(json!({"status":"queued","planId":id})),
-    ))
-}
-pub async fn tick(a: &App) -> Result<()> {
-    scheduler::admit(&a.pool, now()).await?;
-    Ok(())
+  });
 }

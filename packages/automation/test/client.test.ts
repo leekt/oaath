@@ -1,124 +1,79 @@
-import { expect, test } from "bun:test";
-import {
-	type ApprovalRecord,
-	createOwnerApproval,
-} from "../sdk/src/approval.ts";
-import { AutomationError, createAutomation } from "../sdk/src/index.ts";
+import { describe, expect, it } from "vitest";
+import { AutomationError, createAutomation } from "../src/index.js";
+import { createAutomationServer } from "../src/server.js";
 
-test("HTTP transport does not retry an unknown mutation or follow redirects", async () => {
-	let calls = 0;
-	const dca = createAutomation({
-		baseUrl: "http://service",
-		token: "secret",
-		fetch: async (_, init) => {
-			calls++;
-			expect(init?.redirect).toBe("error");
-			throw new Error("secret network diagnostic");
-		},
-	});
-	await expect(dca.cancel(`0x${"ab".repeat(32)}`)).rejects.toMatchObject({
-		code: "request_outcome_unknown",
-	});
-	expect(calls).toBe(1);
-});
-test("SDK sanitizes upstream errors", async () => {
-	const dca = createAutomation({
-		baseUrl: "http://service",
-		token: "secret",
-		fetch: async () =>
-			Response.json({ error: { code: "a secret raw error" } }, { status: 409 }),
-	});
-	await expect(dca.get(`0x${"ab".repeat(32)}`)).rejects.toMatchObject({
-		code: "request_failed",
-		status: 409,
-	});
-});
-test("owner flow persists before setup and never resends after a lost reply", async () => {
-	let record: ApprovalRecord | null = null,
-		sends = 0,
-		signs = 0;
-	const approve = createOwnerApproval({
-		journal: {
-			read: async () => record,
-			compareAndSwap: async (_, old, next) => {
-				if (record !== old) return false;
-				record = next;
-				return true;
-			},
-		},
-		confirm: async () => true,
-		signTypedData: async () => {
-			signs++;
-			return "0xsigned";
-		},
-		executeSetup: async () => {
-			sends++;
-			throw new Error("lost reply");
-		},
-	});
-	const review = { commitment: `0x${"ab".repeat(32)}`, setupCalls: [] } as any;
-	const a = await approve(review);
-	expect(await approve(review)).toEqual(a);
-	expect(sends).toBe(1);
-	expect(signs).toBe(2);
-});
-test("declining owner review causes no signature or setup", async () => {
-	const approve = createOwnerApproval({
-		journal: {
-			read: async () => null,
-			compareAndSwap: async () => {
-				throw Error();
-			},
-		},
-		confirm: async () => false,
-		signTypedData: async () => {
-			throw Error();
-		},
-		executeSetup: async () => {
-			throw Error();
-		},
-	});
-	await expect(approve({ commitment: "0x" } as any)).rejects.toBeInstanceOf(
-		AutomationError,
-	);
+const id = `0x${"ab".repeat(32)}`;
+
+describe("createAutomation", () => {
+  it("does not retry an unknown mutation or follow redirects", async () => {
+    let calls = 0;
+    const client = createAutomation({
+      baseUrl: "http://service",
+      token: "secret-session-token",
+      fetch: async (_, init) => {
+        calls += 1;
+        expect(init?.redirect).toBe("error");
+        throw new Error("secret network diagnostic");
+      },
+    });
+    await expect(client.cancel(id)).rejects.toMatchObject({ code: "request_outcome_unknown" });
+    expect(calls).toBe(1);
+  });
+
+  it("passes only structured service codes through", async () => {
+    const client = createAutomation({
+      baseUrl: "http://service",
+      token: "secret-session-token",
+      fetch: async () => Response.json({ error: { code: "a secret raw error" } }, { status: 409 }),
+    });
+    await expect(client.get(id)).rejects.toMatchObject({ code: "request_failed", status: 409 });
+  });
+
+  it("refuses a malformed plan id before any request", () => {
+    const client = createAutomation({ baseUrl: "http://service", token: "t".repeat(16) });
+    expect(() => client.get("../sessions")).toThrow(AutomationError);
+  });
+
+  it("sends authorize to the plan with its return target", async () => {
+    const seen: { url: string; body: unknown }[] = [];
+    const client = createAutomation({
+      baseUrl: "https://automation.example/",
+      token: async () => "session-token-value",
+      fetch: async (url, init) => {
+        seen.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+        return Response.json({ plan: { id }, authorizationUrl: "https://issuer/authorize" });
+      },
+    });
+    const result = await client.authorize(id, { returnTo: "https://app.example/done" });
+    expect(result.authorizationUrl).toBe("https://issuer/authorize");
+    expect(seen).toEqual([
+      {
+        url: `https://automation.example/v1/plans/${id}/authorize`,
+        body: { returnTo: "https://app.example/done" },
+      },
+    ]);
+  });
+
+  it("rejects credentials in the base URL", () => {
+    expect(() => createAutomation({ baseUrl: "https://user:pw@service", token: "x" })).toThrow(
+      AutomationError,
+    );
+  });
 });
 
-test("unknown persisted approval versions fail closed", async () => {
-	const approve = createOwnerApproval({
-		journal: {
-			read: async () =>
-				({
-					version: "dca.owner-approval/v9",
-					stage: "submitted",
-					evidence: { commitment: "0xabc" },
-				}) as never,
-			compareAndSwap: async () => {
-				throw Error("must not write");
-			},
-		},
-		confirm: async () => {
-			throw Error("must not prompt");
-		},
-		signTypedData: async () => {
-			throw Error("must not sign");
-		},
-		executeSetup: async () => {
-			throw Error("must not submit");
-		},
-	});
-	await expect(approve({ commitment: "0xabc" } as any)).rejects.toMatchObject({
-		code: "consent_mismatch",
-	});
-});
-
-test("HTTP authorize returns a review without invoking owner effects", async () => {
-	const client = createAutomation({
-		baseUrl: "http://service",
-		token: "user",
-		fetch: async () =>
-			Response.json({ status: "pending", review: { commitment: "0xabc" } }),
-	});
-	expect((await client.authorize(`0x${"ab".repeat(32)}`)).status).toBe(
-		"pending",
-	);
+describe("createAutomationServer", () => {
+  it("creates a session with the application credential", async () => {
+    const client = createAutomationServer({
+      baseUrl: "http://service",
+      token: "application-credential",
+      fetch: async (url, init) => {
+        expect(String(url)).toBe("http://service/v1/sessions");
+        expect((init?.headers as Record<string, string> | undefined)?.authorization).toBe(
+          "Bearer application-credential",
+        );
+        return Response.json({ token: "s", expiresAt: 1, account: "0x1", keyScope: "user" });
+      },
+    });
+    expect((await client.createSession({ userId: "u", account: "0x1" })).keyScope).toBe("user");
+  });
 });

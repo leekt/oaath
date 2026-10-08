@@ -109,8 +109,10 @@ the Kernel runtime, chain ports and the wallet RPC standards.
 | `@oaath/sdk` | Browser client plus the concrete Kernel/ZeroDev runtime. |
 | `@oaath/testing` | Deterministic fixtures and local Anvil harnesses; never a production dependency. |
 | `@oaath/cli` (`oaath`) | Runtime readiness checks and deterministic deployment of the pinned contracts. |
+| `@oaath/automation` | Declarative automation definitions, plan terms, the derived Grant policy and the service client. |
+| `@oaath/automation-server` (`oaath-automation`) | Self-hostable automation service over PostgreSQL; an OAuth client of an OAAth issuer. |
 
-All four are one fixed `0.x.y` release group; no package becomes `1.0.0` during
+All six are one fixed `0.x.y` release group; no package becomes `1.0.0` during
 this program. Versioned source does not imply npm publication.
 
 ## Examples

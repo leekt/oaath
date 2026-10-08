@@ -1,174 +1,174 @@
-import { createTransport } from "./transport.js";
-export type Address = `0x${string}`;
-export type PlanStatus =
-	| "draft"
-	| "awaiting_consent"
-	| "authorized"
-	| "active"
-	| "paused"
-	| "cancelling"
-	| "cancelled"
-	| "expired"
-	| "completed";
+/**
+ * `@oaath/automation` — declarative automations for OAAth Grants.
+ *
+ * - `defineAutomation` / `parseAutomation`: the one definition schema owner.
+ * - `createPlanTerms`, `resolveCalls`, `derivePlanPolicy`: what a plan freezes,
+ *   executes and asks its owner to approve. Pure, shared by the service and
+ *   any consent UI.
+ * - `createAutomation`: the browser client of an automation service, using a
+ *   short-lived session token. It holds no keys and polls no chain.
+ *
+ * The application backend issues sessions with `@oaath/automation/server`.
+ *
+ * @author taek <leekt216@gmail.com>
+ */
+import type { GrantPolicy } from "@oaath/protocol";
+import type { Address, AutomationDefinition, Hex } from "./definition.js";
+import { AutomationError } from "./error.js";
+import type { AutomationParamValue, AutomationPlanTerms } from "./plan.js";
+import { type AutomationClientOptions, createTransport } from "./transport.js";
+
+export type {
+  Address,
+  AutomationAbiItem,
+  AutomationAbiParameter,
+  AutomationArgument,
+  AutomationCall,
+  AutomationContract,
+  AutomationDefinition,
+  AutomationDefinitionInput,
+  AutomationFunction,
+  AutomationParam,
+  AutomationSchedule,
+  AutomationValueType,
+  Hex,
+  NormalizedAutomationCall,
+} from "./definition.js";
+export {
+  AUTOMATION_DEFINITION_VERSION,
+  canonicalJson,
+  contractFunction,
+  defineAutomation,
+  encodeCall,
+  functionSelector,
+  hashAutomation,
+  parseAutomation,
+} from "./definition.js";
+export { AutomationError } from "./error.js";
+export type {
+  AutomationParamValue,
+  AutomationPlanInput,
+  AutomationPlanSchedule,
+  AutomationPlanTerms,
+  ResolvedCall,
+} from "./plan.js";
+export {
+  AUTOMATION_PLAN_VERSION,
+  createPlanTerms,
+  derivePlanPolicy,
+  hashPlanTerms,
+  planOperationCount,
+  resolveCalls,
+  slotTime,
+} from "./plan.js";
+export type { AutomationClientOptions } from "./transport.js";
+
 export type KeyScope = "user" | "application";
-export interface CreatePlan {
-	recipe: "dca.v1";
-	amount: string;
-	opportunities: number;
-	maxSlippageBps: number;
-	startAt?: number;
-	idempotencyKey: string;
-}
+
+export type PlanStatus =
+  | "draft"
+  | "awaiting_consent"
+  | "authorized"
+  | "active"
+  | "paused"
+  | "cancelling"
+  | "cancelled"
+  | "completed"
+  | "expired"
+  | "failed";
+
+export type RunStatus =
+  | "due"
+  | "claimed"
+  | "prepared"
+  | "submitted"
+  | "observed"
+  | "finalized"
+  | "failed"
+  | "skipped";
+
 export interface Session {
-	token: string;
-	expiresAt: number;
-	account: Address;
-	keyScope: KeyScope;
+  readonly token: string;
+  readonly expiresAt: number;
+  readonly account: Address;
+  readonly keyScope: KeyScope;
 }
-export interface Config {
-	version: "automation.api/v1";
-	recipes: readonly { id: "dca.v1"; name: string }[];
-	account: Address | null;
-	keyScope: KeyScope;
-	chainId: number;
-	sell: { token: Address; symbol: string; decimals: number };
-	buy: { token: Address; symbol: string; decimals: number };
-	intervalSeconds: number;
-	graceSeconds: number;
-	serviceFee: string;
-	maxFeePerGas: string;
-	maxGasCost: string;
-	factory: Address;
+
+export interface CreatePlan {
+  /** The automation definition id, e.g. `dca.v1`. */
+  readonly automation: string;
+  readonly params?: Readonly<Record<string, AutomationParamValue>>;
+  readonly occurrences?: number;
+  readonly startAt?: number;
+  /** Reuse only for identical input; changed input under the same key conflicts. */
+  readonly idempotencyKey: string;
 }
-export interface Terms {
-	version: "oaath.dca-terms/v1";
-	planId: Address;
-	account: Address;
-	chainId: number;
-	sellToken: Address;
-	buyToken: Address;
-	amountIn: string;
-	totalInputCap: string;
-	startAt: number;
-	intervalSeconds: number;
-	graceSeconds: number;
-	maxRuns: number;
-	endAt: number;
-	recipient: Address;
-	router: Address;
-	poolFee: number;
-	sellFeed: Address;
-	buyFeed: Address;
-	maxPriceAgeSeconds: number;
-	maxSlippageBps: number;
-}
+
 export interface Plan {
-	recipe: "dca.v1";
-	keyScope: KeyScope;
-	id: Address;
-	status: PlanStatus;
-	revision: number;
-	terms: Terms;
-	executor: Address | null;
-	signer: Address | null;
-	commitment: Address | null;
-	progress: Record<string, number>;
-	nextSlot: number;
-	nextAt: number;
-	setup: unknown;
-	cancellation: null | {
-		status: "confirmed" | "owner_action_required";
-		calls?: readonly { target: Address; data: Address; value: string }[];
-		executorStopped?: boolean;
-		grantRevoked?: boolean;
-		allowanceCleared?: boolean;
-	};
-	diagnostic: string | null;
-	fees: {
-		serviceFee: string;
-		payer: "account";
-		maxFeePerGas: string;
-		maxGasCost: string;
-	};
-	asOf: number;
+  readonly id: Hex;
+  readonly automation: Readonly<{ id: string; name: string; hash: Hex }>;
+  readonly keyScope: KeyScope;
+  readonly status: PlanStatus;
+  readonly revision: number;
+  readonly terms: AutomationPlanTerms;
+  /** The policy the owner approves; null until authorization starts. */
+  readonly permission: Readonly<GrantPolicy> | null;
+  /** The session key's address the Grant names. */
+  readonly signer: Address | null;
+  readonly grantId: string | null;
+  readonly progress: Readonly<Record<RunStatus, number>>;
+  readonly nextSlot: number;
+  readonly nextAt: number;
+  readonly diagnostic: string | null;
+  readonly asOf: number;
 }
+
 export interface Run {
-	plan_id: Address;
-	slot: number;
-	scheduled_at: number;
-	closes_at: number;
-	digest: Address;
-	status:
-		| "reserved"
-		| "observing"
-		| "unresolved"
-		| "succeeded"
-		| "failed"
-		| "skipped";
-	operation: unknown;
-	evidence: unknown;
-	reason: string | null;
+  readonly kind: "setup" | "occurrence" | "cancel";
+  readonly slot: number | null;
+  readonly status: RunStatus;
+  readonly scheduledAt: number;
+  readonly closesAt: number | null;
+  /** The UserOperation hash once journaled; never a reason to resend. */
+  readonly operation: Hex | null;
+  readonly transactionHash: Hex | null;
+  readonly reason: string | null;
 }
-export interface Approval {
-	status: "pending" | "active" | "cancelled";
-	plan: Plan;
-	review?: {
-		commitment: Address;
-		custody: "oaath_hosted";
-		keyScope: KeyScope;
-		terms: Terms;
-		fees: Plan["fees"];
-		permission: unknown;
-		consent: unknown;
-		setupCalls: readonly { target: Address; data: Address; value: string }[];
-	};
+
+export interface Authorization {
+  readonly plan: Plan;
+  /** Open in a popup or redirect; the issuer's portal shows the exact policy. */
+  readonly authorizationUrl: string | null;
 }
-export class AutomationError extends Error {
-	constructor(
-		readonly code: string,
-		readonly status: number,
-	) {
-		super(code);
-		this.name = "AutomationError";
-	}
+
+/** The browser client. Memoize it for the lifetime of the mounted integration. */
+export function createAutomation(options: AutomationClientOptions) {
+  const request = createTransport(options);
+  const path = (id: string) => {
+    if (!/^0x[0-9a-f]{64}$/u.test(id)) throw new AutomationError("plan_id_invalid", 0);
+    return `/v1/plans/${id}`;
+  };
+  return Object.freeze({
+    automations: () =>
+      request<{ automations: readonly AutomationDefinition[] }>("GET", "/v1/automations"),
+    create: (input: CreatePlan) => request<Plan>("POST", "/v1/plans", input),
+    get: (id: string) => request<Plan>("GET", path(id)),
+    list: () => request<{ plans: readonly Plan[] }>("GET", "/v1/plans"),
+    runs: (id: string, page: Readonly<{ after?: number; limit?: number }> = {}) =>
+      request<{ runs: readonly Run[] }>(
+        "GET",
+        `${path(id)}/runs?${new URLSearchParams({
+          after: String(page.after ?? -1),
+          limit: String(page.limit ?? 50),
+        })}`,
+      ),
+    /** Starts (or returns the pending) OAuth authorization at the issuer. */
+    authorize: (id: string, input: Readonly<{ returnTo?: string }> = {}) =>
+      request<Authorization>("POST", `${path(id)}/authorize`, input),
+    pause: (id: string) => request<Plan>("POST", `${path(id)}/pause`, {}),
+    resume: (id: string) => request<Plan>("POST", `${path(id)}/resume`, {}),
+    cancel: (id: string) => request<Plan>("POST", `${path(id)}/cancel`, {}),
+  });
 }
-export interface ClientOptions {
-	baseUrl: string;
-	token: string | (() => string | Promise<string>);
-	fetch?: typeof fetch;
-	timeoutMs?: number;
-}
-/** HTTP-only entry: no private keys, chain polling, database, wallet or scheduler dependency. */
-export function createAutomation(options: ClientOptions) {
-	const request = createTransport(options);
-	const path = (id: string) => {
-		if (!/^0x[0-9a-f]{64}$/.test(id))
-			throw new AutomationError("plan_id_invalid", 0);
-		return `/v1/plans/${id}`;
-	};
-	return Object.freeze({
-		create: (input: CreatePlan) => request<Plan>("POST", "/v1/plans", input),
-		get: (id: string) => request<Plan>("GET", path(id)),
-		list: () => request<{ plans: Plan[] }>("GET", "/v1/plans"),
-		listRuns: (id: string, options: { after?: number; limit?: number } = {}) =>
-			request<{ runs: Run[] }>(
-				"GET",
-				path(id) +
-					`/runs?after=${options.after ?? -1}&limit=${options.limit ?? 50}`,
-			),
-		authorize: (id: string) =>
-			request<Approval>("POST", `${path(id)}/authorize`),
-		submitApproval: (id: string, evidence: unknown) =>
-			request<Approval>("POST", `${path(id)}/approve`, evidence),
-		pause: (id: string) => request<Plan>("POST", `${path(id)}/pause`),
-		resume: (id: string) => request<Plan>("POST", `${path(id)}/resume`),
-		cancel: (id: string) => request<Plan>("POST", `${path(id)}/cancel`),
-		refresh: (id: string) =>
-			request<{ status: "queued"; planId: Address }>(
-				"POST",
-				`${path(id)}/refresh`,
-			),
-		config: () => request<Config>("GET", "/v1/config"),
-	});
-}
+
 export type AutomationClient = ReturnType<typeof createAutomation>;

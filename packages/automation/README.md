@@ -1,76 +1,68 @@
 # @oaath/automation
 
-Two integration points: your authenticated backend issues a session; your React
-page renders the supplied creator. End users choose terms and approve with their
-wallet. DCA (`dca.v1`) is the first supported recipe.
+Declarative automations for OAAth Grants, and the client of an automation
+service ([`@oaath/automation-server`](../automation-server)).
+
+An automation is data: the contracts it calls, typed parameters, a bounded
+schedule, and the calls themselves. There is no scripting. An argument is a
+literal or one reference: `$plan.id`, `$plan.account`, `$plan.startAt`,
+`$plan.endAt`, `$plan.every`, `$plan.grace`, `$plan.occurrences`,
+`$slot.index`, `$slot.at`, `$param.<name>` or `$contract.<name>`.
 
 ```ts
-// Backend only. Derive both values from YOUR authenticated customer/account.
-import { createAutomationServer } from "@oaath/automation/server";
-const automation = createAutomationServer({ baseUrl: API_URL, token: API_KEY });
-// Optional application setting, default "user". This is onchain signing custody.
-await automation.configureSigning({ keyScope: "user" }); // or "application"
-return automation.createSession({ userId: customer.id, account: customer.account });
-```
+import { defineAutomation } from "@oaath/automation";
 
-```tsx
-// Browser. Memoize client/owner for the lifetime of the mounted integration.
-import { createAutomation } from "@oaath/automation";
-import { createWalletOwner } from "@oaath/automation/wallet";
-import { AutomationCreator } from "@oaath/automation/react";
-import "@oaath/automation/styles.css";
-
-const session = await fetch("/your/authenticated/automation-session", {
-  method: "POST",
-}).then(r => r.json());
-const client = createAutomation({ baseUrl: API_URL, token: session.token });
-const owner = createWalletOwner({ provider: connectedEip1193Wallet, chains });
-// chains: your existing OAAth public RPC/bundler descriptors for the configured chain.
-// Account must already be a supported Kernel account owned by this wallet.
-<AutomationCreator client={client} owner={owner} />;
-// When the integration unmounts: await owner.close().
-```
-
-Sessions last one hour and are bound to application, user and account. Refresh
-through your authenticated backend. A token callback can provide a refreshed
-session token. Never accept unauthenticated user/account claims or expose the
-application API credential. Per-user keys are scoped by stable customer ID,
-not account address; application keys never cross applications.
-
-For a custom UI, the same small HTTP client exposes:
-
-```ts
-const plan = await client.create({
-  recipe: "dca.v1", amount: "25", opportunities: 30,
-  maxSlippageBps: 50, idempotencyKey: stableCustomerRequestId,
+export default defineAutomation({
+  id: "ping.v1",
+  name: "Hourly ping",
+  chainId: 421614,
+  contracts: { target: { address: "0x…", abi: [pingAbiItem] } },
+  schedule: { every: "1h", count: { max: 24 }, grace: "5m" },
+  call: { contract: "target", function: "ping", args: ["$plan.id", "$slot.index"] },
 });
-const authorization = await client.authorize(plan.id); // review, no automatic signing
-// Display the exact review, then obtain an explicit owner action:
-if (authorization.review) {
-  const evidence = await owner.approve(authorization.review);
-  await client.submitApproval(plan.id, evidence); // active or setup pending
-}
-await client.get(plan.id);
-await client.listRuns(plan.id);
-await client.pause(plan.id);
-await client.resume(plan.id);
-const stopped = await client.cancel(plan.id); // stops admission immediately
-if (stopped.cancellation?.status === "owner_action_required") {
-  // Explain and confirm the onchain cancellation, then:
-  await owner.cancel(stopped);
-}
 ```
 
-`opportunities` counts scheduled slots, not completed purchases. `/config`
-returns the pinned pair, chain, daily interval, grace and fees. Amounts are
-normalized before consent. A changed plan needs new consent. Reuse creation's
-idempotency key only for identical inputs, including user and key scope.
+`setup` calls run once as the first operation and `cancel` calls run once when a
+plan is cancelled. Functions must be declared exactly once in the given ABI and
+take static elementary types (`address`, `bool`, `bytes32`, `uintN`). Values
+default to `"0"` and never exceed `limits.valuePerCall`. See
+[`examples/dca`](../../examples/dca) for a complete definition.
 
-The browser root is HTTP-only. React is an optional peer for `/react`; OAAth is
-an optional peer for `/wallet`. IndexedDB stores owner action intents before
-submission. Lost replies never trigger a second send. A pending operation stays
-pending until independently observed; reopening a page does not rotate keys.
+## Plans and their Grant
 
-For other wallet hosts use `/approval` and `/cancellation` with an atomic durable
-journal and the existing OAAth owner sendCalls path. `approve()` assumes the
-calling UI has shown and explicitly accepted the complete owner review.
+A plan freezes one definition, its parameters and schedule
+(`createPlanTerms`, `hashPlanTerms`). `derivePlanPolicy` turns them into the
+Grant policy the account root approves in the issuer's portal:
+
+- a call allow-list of exactly the declared contract functions (target and
+  selector);
+- validity from authorization until the schedule's last window closes;
+- an operation count of the occurrences, plus one each for setup and cancel.
+
+OAAth 0.3.x Kernel policies cannot pin arguments, so a definition's frozen
+arguments are enforced by the service and by the called contracts, not by the
+account. Design contracts accordingly. Editing a definition affects only new
+plans.
+
+## Client
+
+```ts
+// Your backend, with the application credential:
+import { createAutomationServer } from "@oaath/automation/server";
+const automation = createAutomationServer({ baseUrl: AUTOMATION_URL, token: APPLICATION_KEY });
+const session = await automation.createSession({ userId: user.id, account: user.account });
+
+// The browser, with the session token only:
+import { createAutomation } from "@oaath/automation";
+const client = createAutomation({ baseUrl: AUTOMATION_URL, token: session.token });
+const plan = await client.create({
+  automation: "ping.v1", occurrences: 24, idempotencyKey: crypto.randomUUID(),
+});
+const { authorizationUrl } = await client.authorize(plan.id, { returnTo: location.href });
+location.assign(authorizationUrl); // the root approves the exact policy in the portal
+```
+
+Status and history (`get`, `list`, `runs`) are the service's retained
+projections. `pause` stops new occurrences, `resume` restarts them, and `cancel`
+stops admission and runs the definition's cancel calls. A request whose reply is
+lost fails as `request_outcome_unknown` and is never retried.
