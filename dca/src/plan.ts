@@ -207,3 +207,9 @@ export function decodeUint(result: unknown): bigint | null {
   if (typeof result !== "string" || !/^0x[0-9a-fA-F]{64}$/u.test(result)) return null;
   return BigInt(result);
 }
+
+/** The one call the app's relay sends: `token.mint(recipient, amount)`, zero value. */
+export function mintCall(token: string, recipient: string, amount: string) {
+  const data = `0x40c10f19${word(recipient)}${BigInt(amount).toString(16).padStart(64, "0")}`;
+  return { to: token as `0x${string}`, data: data as `0x${string}` } as const;
+}

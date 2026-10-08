@@ -1,24 +1,31 @@
 /**
  * The `dca.taek.tech` edge: serves the DCA example page, its runtime config,
- * a read-only chain proxy, and the automation session handoff.
+ * chain and bundler proxies, and the automation session handoff.
  *
  * - `/`, `/callback`, `/assets/*`: built assets (GET/HEAD only), strict CSP.
  * - `/config.json`: issuer, client id and chain settings from Worker vars, so
  *   the client id changes without a rebuild.
- * - `/rpc/chain`: read-only, allow-listed, per-IP budgeted Arbitrum Sepolia
- *   JSON-RPC for balance reads (`rpc.ts`).
+ * - `/rpc/chain`, `/rpc/bundler`: allow-listed, per-IP budgeted Arbitrum
+ *   Sepolia JSON-RPC, and the ERC-4337 proxy to the gas-paying bundle_rs relay
+ *   over the `BUNDLER` VPC binding, which relays only a test tUSD mint (`rpc.ts`).
  * - `/automation/session`: a verified login becomes a session at the
  *   automation service (`automation.ts`).
  *
  * The plan itself lives at the automation service: the page creates, authorizes
  * and watches it there with the session token, and the service sends every
- * operation. This Worker never signs or submits anything.
+ * operation. The page's "Mint 1,000 tUSD" button sends one operation from the
+ * user's account under a grant the user approved. This Worker never signs.
  *
  * @author taek <leekt216@gmail.com>
  */
 
 import { type AutomationEnv, automationSession, automationUrl } from "./automation.js";
-import { DCA_CHAIN_ID, type ProxyEnv, proxy } from "./rpc.js";
+import { DCA_CHAIN_ID, MINT_AMOUNT, mintToken, type ProxyEnv, proxy } from "./rpc.js";
+
+const ROLES = {
+  "/rpc/chain": "chain",
+  "/rpc/bundler": "bundler",
+} as const;
 
 interface Fetcher {
   fetch(request: Request): Promise<Response>;
@@ -75,7 +82,8 @@ export default {
     if (url.origin !== env.DCA_ORIGIN) return failure(421, "Unknown host");
     const reading = request.method === "GET" || request.method === "HEAD";
 
-    if (url.pathname === "/rpc/chain" || url.pathname === "/automation/session") {
+    const role = ROLES[url.pathname as keyof typeof ROLES];
+    if (role || url.pathname === "/automation/session") {
       const site = request.headers.get("sec-fetch-site");
       if (
         (site !== null && site !== "same-origin") ||
@@ -83,9 +91,7 @@ export default {
       )
         return failure(403, "Cross-site request refused");
       return secured(
-        url.pathname === "/rpc/chain"
-          ? await proxy(request, env)
-          : await automationSession(request, env),
+        role ? await proxy(role, request, env) : await automationSession(request, env),
         {},
       );
     }
@@ -97,6 +103,11 @@ export default {
           clientId: env.OAATH_CLIENT_ID,
           chainId: DCA_CHAIN_ID,
           explorerTxUrl: env.EXPLORER_TX_URL ?? null,
+          // The relay-paid test tUSD mint; null hides the mint button.
+          mint:
+            mintToken(env) === null
+              ? null
+              : { token: mintToken(env), amount: MINT_AMOUNT.toString() },
           // Without a service and credential the page says the app is not configured.
           automation:
             automationUrl(env) === null

@@ -6,7 +6,12 @@
  * The Worker turns the verified login into an automation session; the page
  * then creates, authorizes and watches the plan at the service directly. The
  * service holds the session key and sends every operation, each once; this page
- * never signs or submits. Balances are read through the Worker's chain proxy.
+ * never signs a plan operation. Balances are read through the Worker's chain proxy.
+ *
+ * "Mint 1,000 tUSD" sends one zero-fee operation, `tUSD.mint(account, 1000e6)`,
+ * through the Worker's gas-paying relay. tUSD's mint is permissionless, so the
+ * sender is a throwaway Kernel account of a key this page generates and keeps;
+ * its first operation deploys it. No wallet prompt; each click sends once.
  */
 import {
   type AutomationClient,
@@ -15,6 +20,13 @@ import {
   type PlanStatus,
 } from "@oaath/automation";
 import { loginWithOAAth } from "@oaath/sdk";
+import { ECDSA_VALIDATOR, kernelDeployment } from "@oaath/sdk/kernel";
+import { createClient, createWalletClient, http } from "cetane";
+import { createAccount, generatePrivateKey, privateKeyToSigner } from "cetane/accounts";
+import { createAuthorization } from "cetane/accounts/kernel";
+import { waitForTransactionReceipt } from "cetane/actions";
+import { arbitrum } from "cetane/chains/arbitrum";
+import { withKernel } from "cetane/chains/kernel";
 import {
   BUY_DECIMALS,
   BUY_TOKEN_DATA,
@@ -25,6 +37,7 @@ import {
   decodeUint,
   formatUnits,
   intervalLabel,
+  mintCall,
   PlanInputError,
   parseAmount,
   planRequest,
@@ -39,6 +52,8 @@ interface AppConfig {
   readonly explorerTxUrl: string | null;
   /** The automation service and the definition id prefix this app offers, or null. */
   readonly automation: Readonly<{ url: string; prefix: string }> | null;
+  /** The relay-paid test tUSD mint, or null when the relay is not configured. */
+  readonly mint: Readonly<{ token: `0x${string}`; amount: string }> | null;
 }
 
 interface Stored {
@@ -146,6 +161,10 @@ function signedIn(account: string) {
   $("login").classList.replace("button-primary", "button-outline");
   badge("login", "Signed in", "done");
   step("login", "done");
+  if (config.mint) {
+    $("mint-row").hidden = false;
+    void mintBalance(account);
+  }
 }
 
 async function connect(state: Stored) {
@@ -394,6 +413,112 @@ $("new-plan").addEventListener("click", () => {
   watching = null;
   $("feedback").hidden = true;
   showForm();
+});
+
+// ---- mint test tUSD into the account ---------------------------------------------
+
+const MINT_KEY = "oaath-dca:mint-key";
+const MINT_LABEL = "Mint 1,000 tUSD";
+
+/** The throwaway key whose Kernel account sends mints. It holds nothing. */
+function mintKey(): `0x${string}` {
+  try {
+    const kept = localStorage.getItem(MINT_KEY);
+    if (kept && /^0x[0-9a-fA-F]{64}$/u.test(kept)) return kept as `0x${string}`;
+    const key = generatePrivateKey();
+    localStorage.setItem(MINT_KEY, key);
+    return key;
+  } catch {
+    return generatePrivateKey();
+  }
+}
+
+let minter: Promise<ReturnType<typeof createWalletClient>> | null = null;
+
+/** A Cetane client for the throwaway key's counterfactual Kernel v4 account. */
+function mintClient() {
+  minter ??= (async () => {
+    const signer = privateKeyToSigner(mintKey());
+    const deployment = kernelDeployment({ chainId });
+    const chain = withKernel(
+      { ...arbitrum, id: chainId, name: "Arbitrum Sepolia" },
+      {
+        version: "4",
+        factory: deployment.factory,
+        root: createAuthorization({
+          validator: ECDSA_VALIDATOR,
+          owner: signer.address,
+          role: "owner",
+        }),
+      },
+    );
+    const transport = http(`${location.origin}/rpc/chain`);
+    const account = await createAccount({ client: createClient({ chain, transport }) });
+    return createWalletClient({
+      chain,
+      transport,
+      relay: http(`${location.origin}/rpc/bundler`),
+      account,
+      signer,
+    });
+  })().catch((error: unknown) => {
+    minter = null;
+    throw error;
+  });
+  return minter;
+}
+
+async function mintBalance(account: string): Promise<bigint | null> {
+  if (!config.mint) return null;
+  const balance = decodeUint(
+    await chainCall(config.mint.token, balanceOfData(account)).catch(() => null),
+  );
+  $("mint-balance").textContent = balance === null ? "–" : formatUnits(balance, SELL_DECIMALS, 2);
+  return balance;
+}
+
+$("mint").addEventListener("click", async () => {
+  const state = stored();
+  if (!config.mint || !state) {
+    show("error", "Sign in again to mint test tUSD.");
+    return;
+  }
+  const source = $<HTMLButtonElement>("mint");
+  const link = $<HTMLAnchorElement>("mint-link");
+  source.disabled = true;
+  source.textContent = "Minting…";
+  $("mint-done").hidden = true;
+  $("feedback").hidden = true;
+  try {
+    const before = await mintBalance(state.account);
+    const client = await mintClient();
+    // The relay pays the gas: the operation carries zero fees. Sent once, never resent.
+    const { id } = await client.sendCalls({
+      calls: [mintCall(config.mint.token, state.account, config.mint.amount)],
+      maxFeePerGas: 0n,
+      maxPriorityFeePerGas: 0n,
+    });
+    // Polling stays well inside the Worker's per-IP budget.
+    const receipt = await waitForTransactionReceipt(client, {
+      hash: id,
+      pollingInterval: 2_000,
+      timeout: 90_000,
+    });
+    if (receipt.status !== "success")
+      throw Object.assign(new Error("mint reverted"), { code: "mint_reverted" });
+    link.hidden = !config.explorerTxUrl;
+    link.href = `${config.explorerTxUrl ?? ""}${receipt.transactionHash}`;
+    $("mint-done").hidden = false;
+    // The chain proxy's reads can trail inclusion briefly.
+    for (let read = 0; read < 5; read += 1) {
+      if ((await mintBalance(state.account)) !== before) break;
+      await sleep(2_000);
+    }
+  } catch (error) {
+    failed(error);
+  }
+  source.disabled = false;
+  source.textContent = MINT_LABEL;
 });
 
 // ---- startup ---------------------------------------------------------------------

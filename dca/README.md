@@ -11,18 +11,25 @@ Sepolia a person:
    Arbiscan links and token balances.
 
 The service holds the plan's session key and sends every operation through its
-gas-paying bundler; this app never signs or submits. The market and the
-definitions are in [`examples/dca`](../examples/dca): the plan's setup mints its
-own test tUSD budget, approves the shared `DcaExecutor`, and opens the plan;
-each buy swaps tUSD for tETH on Uniswap v3.
+gas-paying bundler. The market and the definitions are in
+[`examples/dca`](../examples/dca): the plan's setup mints its own test tUSD
+budget, approves the shared `DcaExecutor`, and opens the plan; each buy swaps
+tUSD for tETH on Uniswap v3.
+
+**Mint 1,000 tUSD.** After sign-in, one button mints test tUSD into the
+account without a wallet prompt. tUSD's `mint` is permissionless, so the page
+sends one zero-fee ERC-4337 operation, `tUSD.mint(account, 1000e6)`, from a
+throwaway Kernel v4 account of a key it generates and keeps in
+`localStorage` (the first operation deploys it), through `/rpc/bundler`.
 
 ## Worker routes
 
 | Route | Handling |
 | --- | --- |
 | `/`, `/callback`, `/assets/*` | The built page, GET/HEAD only, strict CSP (`connect-src` self, the issuer and the service). |
-| `/config.json` | Issuer, `OAATH_CLIENT_ID`, chain and the service URL from Worker vars; `automation: null` without the app credential. |
-| `/rpc/chain` | Same-origin, per-IP budgeted, read-only JSON-RPC (`eth_chainId`, `eth_blockNumber`, `eth_call`) to `CHAIN_RPC_URL`, for balances. |
+| `/config.json` | Issuer, `OAATH_CLIENT_ID`, chain and the service URL from Worker vars; `automation: null` without the app credential; `mint: null` without the `BUNDLER` binding or `TUSD_TOKEN`. |
+| `/rpc/chain` | Same-origin, per-IP `RPC_LIMIT`, allow-listed reads to `CHAIN_RPC_URL`, for balances and the mint account. |
+| `/rpc/bundler` | Same-origin, per-IP `RPC_LIMIT`, plus `SEND_LIMIT` per send, to bundle_rs (relay-paid) over the `BUNDLER` VPC binding. Estimates and sends only one zero-value `TUSD_TOKEN.mint(any, 1000e6)` through EntryPoint 0.9; receipts pass through. 503 without the binding or token. |
 | `/automation/session` | Same-origin, per-IP budgeted: verifies the login's id_token (issuer JWKS, this client) and creates a one-hour session at the service with the `AUTOMATION_APP_TOKEN` secret, through the `AUTOMATION_SERVICE` binding. 503 without the secret. |
 
 The page offers every definition the service loads whose id starts with

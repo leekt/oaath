@@ -58,6 +58,7 @@
           <section id="s-plan" class="task" aria-labelledby="plan-heading">
             <div class="task-heading"><h2 id="plan-heading">Set a plan, approve once</h2><span id="plan-badge" class="state-label">Sign in first</span></div>
             <p>Each buy swaps test tUSD for test tETH on Uniswap v3. The plan's first operation mints the whole budget of test tUSD into your account.</p>
+            <div id="mint-row" class="actions" hidden><span class="action-note">tUSD balance <strong id="mint-balance">–</strong></span><button id="mint" class="button button-outline" type="button">Mint 1,000 tUSD</button><span id="mint-done" class="action-note" hidden>Minted<a id="mint-link" href="https://sepolia.arbiscan.io/" target="_blank" rel="noopener" hidden> · View on Arbiscan</a></span></div>
             <form id="plan-form" class="plan-form" hidden>
               <label>Amount per buy <span class="field"><input id="amount" name="amount" inputmode="decimal" autocomplete="off" value="1" required /><span>tUSD</span></span></label>
               <label>Number of buys <input id="buys" name="buys" type="number" min="1" step="1" value="3" required /></label>
