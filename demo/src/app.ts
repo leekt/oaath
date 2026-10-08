@@ -21,6 +21,7 @@ import {
 } from "@oaath/sdk";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import { type PreparedOwnerOperation, prepareOwnerOperation } from "@oaath/sdk/kernel";
+import { type PingState, pingSlots } from "./runs.js";
 
 interface DemoConfig {
   readonly issuer: string;
@@ -646,15 +647,38 @@ async function automationClient(): Promise<AutomationClient> {
   return createAutomation({ baseUrl: automation.url, token: state.token });
 }
 
-function describeRun(run: Run) {
-  const label = run.kind === "occurrence" ? `ping ${run.slot}` : run.kind;
-  return (
-    `${label}: ${run.status}` +
-    (run.operation ? ` · UserOperation ${run.operation}` : "") +
-    (run.transactionHash
-      ? ` · transaction ${run.transactionHash}${explorer(run.transactionHash)}`
-      : "")
-  );
+const PING_BADGE: Readonly<Record<PingState, string>> = {
+  scheduled: "",
+  sent: "current",
+  included: "done",
+  failed: "failed",
+  skipped: "",
+};
+
+/** One row per ping slot: its state and, once it has one, its transaction. */
+function showPingRuns(plan: Plan, runs: readonly Run[]) {
+  const rows = pingSlots(plan, runs).map((ping) => {
+    const row = document.createElement("li");
+    row.dataset.state = ping.state;
+    const label = document.createElement("span");
+    label.textContent = `Ping ${ping.slot + 1} · ${new Date(ping.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    const badge = document.createElement("span");
+    badge.className = "state-label";
+    badge.dataset.state = PING_BADGE[ping.state];
+    badge.textContent = ping.state;
+    row.append(label, badge);
+    if (ping.transactionHash && config.explorerTxUrl) {
+      const link = document.createElement("a");
+      link.className = "text-link";
+      link.href = `${config.explorerTxUrl}${ping.transactionHash}`;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "Arbiscan";
+      row.append(link);
+    }
+    return row;
+  });
+  $("automation-runs").replaceChildren(...rows);
 }
 
 async function watchPlan(client: AutomationClient, id: string) {
@@ -670,8 +694,8 @@ async function watchPlan(client: AutomationClient, id: string) {
     }
     $("automation").textContent =
       `Plan ${plan.id}\nstatus ${plan.status}` +
-      (plan.signer ? `\nservice session key ${plan.signer}` : "") +
-      (runs.length ? `\n${runs.map(describeRun).join("\n")}` : "");
+      (plan.signer ? `\nservice session key ${plan.signer}` : "");
+    showPingRuns(plan, runs);
     if (
       runs.some((run) => run.status === "finalized") &&
       $("result").dataset.outcome !== "automation-finalized"

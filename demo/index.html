@@ -115,7 +115,8 @@
           <section id="s-automate" class="extra-flow" aria-labelledby="automate-heading" hidden>
             <h3 id="automate-heading">Automate on a backend</h3><p>An automation service calls <code>ping(plan, slot)</code> on <code>0x000000000000000000000000000000000000dead</code> once a minute, three times, with its own session key. The account owner approves exactly that call in OAAth; the service sends each occurrence once and afterwards only observes it.</p>
             <div class="actions"><button id="automate" class="button button-outline" type="button">Schedule three pings</button></div>
-            <pre id="automation" aria-live="polite"></pre>
+            <ol id="automation-runs" class="ping-runs" aria-live="polite"></ol>
+            <pre id="automation"></pre>
           </section>
           <section id="s-revoke" class="extra-flow revoke-flow" aria-labelledby="revoke-heading">
             <div><h3 id="revoke-heading">Your permission. Your off switch.</h3><p>Open your account in OAAth, find this app's access, and revoke or invalidate it on chain. Removing access requires a separate owner signature.</p></div>
