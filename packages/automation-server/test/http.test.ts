@@ -235,4 +235,21 @@ describe.skipIf(!postgresAvailable)("HTTP API", () => {
       "plan_not_active",
     );
   });
+
+  it("lists runs without a slot beside the occurrences", async () => {
+    const alice = await session("alice");
+    const plan = (await create(alice, "k-runs")).json;
+    for (const [key, kind, slot] of [
+      ["setup", "setup", null],
+      ["occurrence:0", "occurrence", 0],
+    ] as const)
+      await service.context.pool.query(
+        "INSERT INTO automation_runs(plan_id,run_key,kind,slot,scheduled_at,status) VALUES($1,$2,$3,$4,1,'due')",
+        [plan.id, key, kind, slot],
+      );
+    const runs = (await call("GET", `/v1/plans/${plan.id}/runs`, alice)).json.runs;
+    expect(runs.map((run: { kind: string }) => run.kind)).toEqual(["setup", "occurrence"]);
+    const next = (await call("GET", `/v1/plans/${plan.id}/runs?after=0`, alice)).json.runs;
+    expect(next.map((run: { kind: string }) => run.kind)).toEqual(["setup"]);
+  });
 });

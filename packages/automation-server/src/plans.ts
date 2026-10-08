@@ -177,7 +177,7 @@ export async function listRuns(context: ServiceContext, plan: PlanRow, query: UR
     throw new ServiceError("page_invalid", 422);
   const rows = (
     await context.pool.query(
-      `SELECT * FROM automation_runs WHERE plan_id=$1 AND COALESCE(slot,-1)>$2
+      `SELECT * FROM automation_runs WHERE plan_id=$1 AND (slot IS NULL OR slot>$2)
        ORDER BY COALESCE(slot,-1), run_key LIMIT $3`,
       [plan.id, after, Math.min(Math.max(limit, 1), 100)],
     )

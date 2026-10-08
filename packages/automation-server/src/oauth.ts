@@ -297,7 +297,8 @@ async function adoptGrant(
     request.expiresAt !== expected.expiresAt ||
     request.chainScope !== "all" ||
     request.sessionSigner !== null ||
-    account.address !== plan.account ||
+    // A derived profile names no address; the context and the install approval do.
+    (account.address !== undefined && account.address !== plan.account) ||
     request.context.accountId !== plan.account
   )
     throw mismatch();
