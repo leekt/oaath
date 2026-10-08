@@ -721,7 +721,7 @@ impl Relay {
                         let body = body_record(headers, body, self.max_body_bytes).await?;
                         let decision = login_decision(&body)?;
                         // A root-signed decision for the signer and account the
-                        // id_token_hint bound needs no session: the root's
+                        // id_token_hint or login_hint bound needs no session: the root's
                         // signature, verified below, proves the signer.
                         let signed_and_bound = match &decision {
                             LoginDecision::Grant {
@@ -804,7 +804,7 @@ impl Relay {
                     }
                     Some("prepare") => {
                         require_method(method, &Method::POST)?;
-                        // A request bound by its id_token_hint prepares without a session.
+                        // A request bound by its id_token_hint or login_hint prepares without a session.
                         let session = match session_signer(store, clock, headers).await {
                             Ok(signer) => Some(signer),
                             Err(RelayErrorCode::Unauthenticated) => None,

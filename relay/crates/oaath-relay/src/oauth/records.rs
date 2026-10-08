@@ -141,7 +141,7 @@ pub struct ParRecord {
     pub scope: String,
     /// Canonical JSON of the captured `authorization_details`, if any.
     pub authorization_details: Option<String>,
-    /// The signer and account a verified `id_token_hint` named: the portal
+    /// The signer and account a verified `id_token_hint` or `login_hint` named: the portal
     /// opens on them. Both or neither.
     pub bound_signer_id: Option<String>,
     pub bound_account_id: Option<String>,
@@ -222,7 +222,7 @@ impl ParRecord {
         })
     }
 
-    /// The `(signer_id, account_id)` a verified `id_token_hint` bound, if any.
+    /// The `(signer_id, account_id)` a verified `id_token_hint` or `login_hint` bound, if any.
     pub fn binding(&self) -> Option<(&str, &str)> {
         Some((
             self.bound_signer_id.as_deref()?,

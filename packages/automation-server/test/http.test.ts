@@ -142,6 +142,8 @@ describe.skipIf(!postgresAvailable)("HTTP API", () => {
     );
     expect(pushed.get("redirect_uri")).toBe("http://127.0.0.1:4317/v1/oauth/callback");
     expect(pushed.get("code_challenge_method")).toBe("S256");
+    // The session's OAAth signer and account preselect the issuer's portal.
+    expect(pushed.get("login_hint")).toBe(`alice@${ACCOUNT}`);
     const [detail] = JSON.parse(pushed.get("authorization_details") as string);
     const current = authorized.json.plan;
     expect(current.status).toBe("awaiting_consent");

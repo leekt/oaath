@@ -4,7 +4,8 @@
 //!
 //! ```text
 //! state and owner      PAR (immutable: client intent, state, nonce, and the
-//!                      signer and account a verified id_token_hint bound) ->
+//!                      signer and account a verified id_token_hint or
+//!                      login_hint bound) ->
 //!                      request + decision (+ code) written together at decision
 //!                      -> code consumed once at /oauth/token
 //! persisted evidence   oauth_client_v1, oauth_par_v1, then the existing
@@ -116,7 +117,8 @@ impl OAuthFailure {
         match code {
             RelayErrorCode::RequestInvalid
             | RelayErrorCode::Forbidden
-            | RelayErrorCode::IdTokenHintInvalid => Self::new(400, "invalid_request", code),
+            | RelayErrorCode::IdTokenHintInvalid
+            | RelayErrorCode::LoginHintInvalid => Self::new(400, "invalid_request", code),
             RelayErrorCode::NotFound | RelayErrorCode::MethodNotAllowed => {
                 Self::new(code.status(), "invalid_request", code)
             }
@@ -327,6 +329,15 @@ pub const REQUEST_URI_PREFIX: &str = "urn:ietf:params:oauth:request_uri:";
 /// and signer (`signer.id`) to the request, so the portal opens on them. A
 /// hint that does not verify, or whose signer is no longer an active member of
 /// its account, refuses the request with `relay_id_token_hint_invalid`.
+///
+/// An OIDC `login_hint` binds the same columns for a client that holds no
+/// id_token of its own, such as a backend acting for a user another client
+/// logged in. Its one format is `<signer_id>@<account_address>`, the address
+/// lowercase `0x` hex. It binds only when that signer is an active member of
+/// that account; a malformed hint, a non-member, or a request carrying both
+/// hints is refused with `relay_login_hint_invalid`. A hint only preselects:
+/// as for an `id_token_hint`, only the bound root's signed prepare and
+/// decision skip the portal session, because that signature proves the signer.
 pub async fn push_authorization_request(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
@@ -357,9 +368,17 @@ pub async fn push_authorization_request(
         return Err(OAuthFailure::new(400, "invalid_scope", INVALID));
     }
     let created_at = relay_now(clock)?;
-    let hint = match param(form, "id_token_hint") {
-        None | Some("") => None,
-        Some(token) => Some(id_token_hint(oauth, token, client_id, created_at / 1_000)?),
+    let hint = match (
+        param(form, "id_token_hint").filter(|token| !token.is_empty()),
+        param(form, "login_hint").filter(|hint| !hint.is_empty()),
+    ) {
+        (None, None) => None,
+        (Some(token), None) => Some((
+            id_token_hint(oauth, token, client_id, created_at / 1_000)?,
+            RelayErrorCode::IdTokenHintInvalid,
+        )),
+        (None, Some(hint)) => Some((login_hint(hint)?, RelayErrorCode::LoginHintInvalid)),
+        (Some(_), Some(_)) => return Err(RelayErrorCode::LoginHintInvalid.into()),
     };
     let par_id = random_identifier();
     let invalid_details = || OAuthFailure::new(400, "invalid_authorization_details", INVALID);
@@ -405,11 +424,11 @@ pub async fn push_authorization_request(
             None => None,
         };
         let mut record = record;
-        if let Some(hint) = &hint {
-            let account_id = bind_hint(&mut *transaction, hint).await?;
+        if let Some((hint, refused)) = &hint {
+            let account_id = bind_hint(&mut *transaction, hint, *refused).await?;
             // An operation's hint must name the account the operation runs on.
             if operation_account.is_some_and(|account| account.account_id != account_id) {
-                return Err(RelayErrorCode::IdTokenHintInvalid.into());
+                return Err((*refused).into());
             }
             record.bound_signer_id = Some(hint.signer_id.clone());
             record.bound_account_id = Some(account_id);
@@ -434,8 +453,9 @@ pub async fn push_authorization_request(
     })
 }
 
-/// What a verified `id_token_hint` names: the account address and the signer.
-struct IdTokenHint {
+/// What a verified `id_token_hint` or a `login_hint` names: the account
+/// address and the signer.
+struct Hint {
     account: String,
     signer_id: String,
 }
@@ -447,7 +467,7 @@ fn id_token_hint(
     token: &str,
     client_id: &str,
     now_seconds: u64,
-) -> OAuthResult<IdTokenHint> {
+) -> OAuthResult<Hint> {
     let refused = || OAuthFailure::from_code(RelayErrorCode::IdTokenHintInvalid);
     if token.len() > limits::ARTIFACT_PLAINTEXT {
         return Err(refused());
@@ -472,18 +492,35 @@ fn id_token_hint(
             .map(str::to_owned)
             .ok_or_else(refused)
     };
-    Ok(IdTokenHint {
+    Ok(Hint {
         account: text(claims.get("sub"))?,
         signer_id: text(claims.get("signer").and_then(|signer| signer.get("id")))?,
     })
 }
 
-/// The hinted account's id, once its signer is proven an active member of it.
+/// Parses a `login_hint`: `<signer_id>@<account_address>`, lowercase hex.
+fn login_hint(text: &str) -> OAuthResult<Hint> {
+    let refused = || OAuthFailure::from_code(RelayErrorCode::LoginHintInvalid);
+    let (signer_id, account) = text.split_once('@').ok_or_else(refused)?;
+    let signer_id = canonical_str(signer_id, INVALID).map_err(|_| refused())?;
+    let hex = account.strip_prefix("0x").ok_or_else(refused)?;
+    if hex.len() != 40 || !hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(refused());
+    }
+    Ok(Hint {
+        account: account.to_owned(),
+        signer_id: signer_id.to_owned(),
+    })
+}
+
+/// The hinted account's id, once its signer is proven an active member of it;
+/// otherwise the hint's own `refused` code.
 async fn bind_hint(
     transaction: &mut dyn RelayTransaction,
-    hint: &IdTokenHint,
+    hint: &Hint,
+    refused: RelayErrorCode,
 ) -> OAuthResult<String> {
-    let refused = || OAuthFailure::from_code(RelayErrorCode::IdTokenHintInvalid);
+    let refused = || OAuthFailure::from_code(refused);
     let account = transaction
         .lock_account_by_address(&hint.account)
         .await?
@@ -569,7 +606,7 @@ pub struct PortalTransaction {
     pub authorization_details: Vec<Value>,
     /// Unix seconds.
     pub expires_at: u64,
-    /// The signer and account an `id_token_hint` bound, with the signer's
+    /// The signer and account an `id_token_hint` or `login_hint` bound, with the signer's
     /// current membership in it; null when the request carried no hint.
     pub bound: Option<BoundSelection>,
 }
@@ -612,7 +649,7 @@ async fn bound_selection(
 }
 
 /// Whether `transaction_id` bound exactly this signer and account through a
-/// verified `id_token_hint`.
+/// verified `id_token_hint` or `login_hint`.
 pub async fn is_bound_selection(
     store: &dyn RelayStore,
     transaction_id: &str,
@@ -1266,7 +1303,7 @@ pub(crate) fn compose_par_grant(
 
 /// What the account root must sign for this grant; nothing is persisted.
 /// `session` is the request's proven signer; only it may prepare, or, without
-/// a session, the signer and account the request's `id_token_hint` bound: the
+/// a session, the signer and account the request's `id_token_hint` or `login_hint` bound: the
 /// root's signature over what is prepared is the proof that decides.
 pub async fn prepare_grant(
     store: &dyn RelayStore,

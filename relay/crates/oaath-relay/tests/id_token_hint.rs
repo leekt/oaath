@@ -2,6 +2,10 @@
 //! request: the portal reads the binding, and the bound root prepares and
 //! decides with its signature alone. A hint that is not the relay's own live
 //! id_token for this client is refused with a structured code.
+//!
+//! A `login_hint` (`<signer_id>@<account>`) binds the same way for a client
+//! that holds no id_token, only when that signer is an active member of that
+//! account.
 
 mod support;
 
@@ -39,6 +43,19 @@ async fn client(h: &Harness) -> String {
 }
 
 async fn par(h: &Harness, client_id: &str, details: Option<&Value>, hint: Option<&str>) -> Reply {
+    let hint: Vec<_> = hint
+        .map(|hint| ("id_token_hint", hint))
+        .into_iter()
+        .collect();
+    par_with(h, client_id, details, &hint).await
+}
+
+async fn par_with(
+    h: &Harness,
+    client_id: &str,
+    details: Option<&Value>,
+    hints: &[(&str, &str)],
+) -> Reply {
     let challenge = code_challenge();
     let details = details.map(Value::to_string);
     let mut pairs = vec![
@@ -52,9 +69,7 @@ async fn par(h: &Harness, client_id: &str, details: Option<&Value>, hint: Option
     if let Some(details) = &details {
         pairs.push(("authorization_details", details));
     }
-    if let Some(hint) = hint {
-        pairs.push(("id_token_hint", hint));
-    }
+    pairs.extend_from_slice(hints);
     h.send(form(&pairs)).await
 }
 
@@ -277,4 +292,149 @@ async fn without_a_hint_nothing_is_bound_and_prepare_still_needs_a_session() {
     ))
     .await
     .failure(E::Unauthenticated);
+}
+
+/// A signed-out root with an account: its signer id and the account.
+async fn root_with_account(h: &Harness, root: &Root) -> (String, Value) {
+    let (signer_id, cookie) = sign_in(h, root).await;
+    let account = h
+        .send(portal_call(
+            "POST",
+            "/portal/accounts",
+            Some(&cookie),
+            Some(json!({ "root_signer_id": signer_id, "creation_key": creation_key() })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    h.send(portal_call(
+        "DELETE",
+        "/portal/sessions",
+        Some(&cookie),
+        None,
+    ))
+    .await;
+    (signer_id, account)
+}
+
+fn login_hint_refused(reply: &Reply) {
+    assert_eq!(reply.status, 400, "body: {}", reply.body);
+    assert_eq!(reply.body["error"], json!("invalid_request"));
+    assert_eq!(reply.body["error_code"], json!(E::LoginHintInvalid));
+}
+
+#[tokio::test]
+async fn a_login_hint_binds_another_clients_request_and_the_root_signs_without_a_session() {
+    let h = harness();
+    // The service never logged anyone in: it holds no id_token of its own.
+    let service = client(&h).await;
+    let root = Root::Ecdsa(root_key());
+    let (signer_id, account) = root_with_account(&h, &root).await;
+    let hint = format!("{signer_id}@{}", text(&account, "address"));
+    let details = json!([detail()]);
+
+    let id =
+        transaction_id(&par_with(&h, &service, Some(&details), &[("login_hint", &hint)]).await);
+    let transaction = h
+        .send(get(&format!("/portal/transactions/{id}"), None))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(transaction["bound"]["signer_id"], json!(signer_id));
+    assert_eq!(
+        transaction["bound"]["account"]["account_id"],
+        account["account_id"]
+    );
+    assert_eq!(transaction["bound"]["account"]["role"], json!("root"));
+
+    // No cookie: the binding lets the bound root prepare and decide.
+    let selection = json!({ "signer_id": signer_id, "account_id": account["account_id"] });
+    let prepared = h
+        .send(portal_call(
+            "POST",
+            &format!("/portal/transactions/{id}/prepare"),
+            None,
+            Some(selection),
+        ))
+        .await
+        .ok(200)
+        .clone();
+    let decided = h
+        .send(portal_call(
+            "POST",
+            &format!("/portal/transactions/{id}/decision"),
+            None,
+            Some(json!({
+                "outcome": "approved",
+                "signer_id": signer_id,
+                "account_id": account["account_id"],
+                "artifact": approval(&prepared, &root).to_string(),
+            })),
+        ))
+        .await;
+    let tokens = token(&h, &service, &code_of(&decided)).await;
+    assert_eq!(
+        tokens["authorization_details"][0]["permission_request"],
+        prepared["permission_request"]
+    );
+
+    // The binding grants no session: a member's request still needs one.
+    let other =
+        transaction_id(&par_with(&h, &service, Some(&details), &[("login_hint", &hint)]).await);
+    h.send(portal_call(
+        "POST",
+        &format!("/portal/transactions/{other}/decision"),
+        None,
+        Some(json!({
+            "outcome": "request_approval",
+            "signer_id": signer_id,
+            "account_id": account["account_id"],
+        })),
+    ))
+    .await
+    .failure(E::Unauthenticated);
+}
+
+#[tokio::test]
+async fn refuses_a_login_hint_for_a_non_member_unknown_account_or_malformed_hint() {
+    let h = harness();
+    let service = client(&h).await;
+    let (signer_id, account) = root_with_account(&h, &Root::Ecdsa(root_key())).await;
+    let other_root = Root::Ecdsa(k256::ecdsa::SigningKey::from_slice(&[0x22; 32]).unwrap());
+    let (other_signer, other_account) = root_with_account(&h, &other_root).await;
+    let address = text(&account, "address").to_owned();
+    let other_address = text(&other_account, "address").to_owned();
+    let details = json!([detail()]);
+    let send = |hint: String| {
+        let (h, service, details) = (&h, &service, &details);
+        async move { par_with(h, service, Some(details), &[("login_hint", &hint)]).await }
+    };
+
+    send(format!("{signer_id}@{address}")).await.ok(201);
+    // A signer binds only an account it is an active member of.
+    login_hint_refused(&send(format!("{other_signer}@{address}")).await);
+    login_hint_refused(&send(format!("{signer_id}@{other_address}")).await);
+    // An account the relay does not know.
+    login_hint_refused(&send(format!("{signer_id}@0x{}", "12".repeat(20))).await);
+    // Malformed: no separator, a non-canonical signer, an uppercase, short, or
+    // repeated address.
+    login_hint_refused(&send(signer_id.clone()).await);
+    login_hint_refused(&send(format!("{signer_id} @{address}")).await);
+    login_hint_refused(&send(format!("{signer_id}@0x{}", address[2..].to_uppercase())).await);
+    login_hint_refused(&send(format!("{signer_id}@{}", &address[..41])).await);
+    login_hint_refused(&send(format!("{signer_id}@{address}@{address}")).await);
+    // Both hints are ambiguous: neither is silently preferred.
+    let (_, _, id_token) = logged_in(&h, &service, &Root::Ecdsa(root_key())).await;
+    login_hint_refused(
+        &par_with(
+            &h,
+            &service,
+            Some(&details),
+            &[
+                ("id_token_hint", &id_token),
+                ("login_hint", &format!("{signer_id}@{address}")),
+            ],
+        )
+        .await,
+    );
 }
