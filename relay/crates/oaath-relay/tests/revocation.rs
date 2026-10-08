@@ -544,3 +544,52 @@ async fn an_unused_enable_is_invalidated_on_chain_with_one_root_signature() {
 fn calls_of(shared: &Shared) -> usize {
     calls(shared, "eth_sendUserOperation")
 }
+
+#[tokio::test]
+async fn an_undeployed_account_must_fund_invalidation_before_a_signable_request_is_returned() {
+    let (url, shared) = stub(Send::Accept).await;
+    let h = harness_with(configure(&url));
+    let granted = template_grant(&h).await;
+    suspend(&h, &granted).await;
+    {
+        let mut state = shared.lock().unwrap();
+        state.deployed = false;
+        state.installed = false;
+        state.balance = json!("0x0");
+    }
+    prepare(&h, &granted).await.failure(E::InsufficientFunds);
+    assert_eq!(calls(&shared, "eth_estimateUserOperationGas"), 0);
+    assert_eq!(calls(&shared, "eth_sendUserOperation"), 0);
+    shared.lock().unwrap().balance = json!("0x1");
+    prepare(&h, &granted).await.failure(E::InsufficientFunds);
+    assert_eq!(calls(&shared, "eth_estimateUserOperationGas"), 1);
+    assert_eq!(calls(&shared, "eth_sendUserOperation"), 0);
+    // Exactly the maximum estimated fee is sufficient; no arbitrary minimum.
+    shared.lock().unwrap().balance = json!(format!("0x{:x}", 786_432_000_000_000u64));
+    assert_eq!(prepare(&h, &granted).await.ok(200)["action"], "invalidate");
+}
+
+#[tokio::test]
+async fn an_entrypoint_deposit_can_fund_an_undeployed_account_but_unreadable_balance_cannot() {
+    let (url, shared) = stub(Send::Accept).await;
+    let h = harness_with(configure(&url));
+    let granted = template_grant(&h).await;
+    suspend(&h, &granted).await;
+    {
+        let mut state = shared.lock().unwrap();
+        state.deployed = false;
+        state.installed = false;
+        state.balance = json!("0x0");
+        state.deposit = 1_000_000_000_000_000_000;
+    }
+    assert_eq!(
+        prepare(&h, &granted).await.ok(200)["status"],
+        "pending_signature"
+    );
+    for balance in [Value::Null, json!("0x00"), json!("0xNO"), json!("0x")] {
+        shared.lock().unwrap().balance = balance;
+        prepare(&h, &granted).await.failure(E::ChainUnavailable);
+    }
+    assert_eq!(calls(&shared, "eth_estimateUserOperationGas"), 1);
+    assert_eq!(calls(&shared, "eth_sendUserOperation"), 0);
+}

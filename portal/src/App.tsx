@@ -9,6 +9,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { ArrowRight, Fingerprint, KeyRound, ShieldCheck } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   type DecisionRequest,
@@ -20,6 +21,7 @@ import {
   portalApi,
   transactionIdFromRequestUri,
 } from "./api.js";
+import { Developers } from "./Developers.js";
 import { GrantReview } from "./GrantReview.js";
 import { LinkApproval, LinkRequest, ManageAccounts } from "./Links.js";
 import { OperationReview } from "./OperationReview.js";
@@ -47,6 +49,7 @@ export function App() {
   if (link) return <LinkApproval linkId={link} />;
   const request = /^\/requests\/([A-Za-z0-9._~-]{1,256})$/u.exec(location.pathname)?.[1];
   if (request) return <RequestPage requestId={request} />;
+  if (location.pathname === "/developers") return <Developers />;
   if (location.pathname === "/accounts") return <ManageAccounts />;
   if (location.pathname !== "/authorize") return <Landing />;
   const transactionId = transactionIdFromRequestUri(params.get("request_uri"));
@@ -63,17 +66,64 @@ export function App() {
 
 function Landing() {
   return (
-    <Frame>
-      <h1>OAAth</h1>
-      <p className="lede">
-        One account for every app. Start from an app's “Login with OAAth” button.
-      </p>
-      <p>
-        <a href="/accounts">Manage your accounts</a>
-      </p>
-      <p>
-        <a href="https://oaath-demo.taek.tech">Try the demo app</a>
-      </p>
+    <Frame variant="landing">
+      <section className="home-intro">
+        <div>
+          <h1>
+            Your account.
+            <br />
+            Your way in.
+          </h1>
+          <p className="lede">
+            One account for every app. Sign in with a passkey or a wallet, and choose what each app
+            can do.
+          </p>
+          <a className="primary home-action" href="/accounts">
+            Manage your accounts <ArrowRight size={18} aria-hidden="true" />
+          </a>
+        </div>
+        <aside className="home-start">
+          <KeyRound size={32} aria-hidden="true" />
+          <h2>Here to sign in to an app?</h2>
+          <p>
+            Start from the app's “Login with OAAth” button. You'll return to the app after choosing
+            your account.
+          </p>
+          <p className="small">Signing in proves it's you. It approves nothing.</p>
+        </aside>
+      </section>
+      <section className="home-guide" aria-labelledby="home-guide-heading">
+        <h2 id="home-guide-heading">
+          A familiar way in.
+          <br />A clear say in what happens next.
+        </h2>
+        <ol>
+          <li>
+            <Fingerprint aria-hidden="true" />
+            <div>
+              <h3>Choose your signer</h3>
+              <p>Use a passkey or connect a wallet to confirm it's you.</p>
+            </div>
+          </li>
+          <li>
+            <KeyRound aria-hidden="true" />
+            <div>
+              <h3>Choose your account</h3>
+              <p>Select an account, create one, or link to an existing account.</p>
+            </div>
+          </li>
+          <li>
+            <ShieldCheck aria-hidden="true" />
+            <div>
+              <h3>Review any requested access</h3>
+              <p>
+                If an app asks for a permission or an operation, review exactly what your signature
+                approves.
+              </p>
+            </div>
+          </li>
+        </ol>
+      </section>
     </Frame>
   );
 }
@@ -152,11 +202,26 @@ function Authorize({ transactionId }: { transactionId: string }) {
   return (
     <Frame>
       <header className="client">
-        <p className="eyebrow">Login with OAAth</p>
-        <p className="client-name">{transaction.client_name}</p>
-        <p className="quiet">
-          returns to <span className="mono">{transaction.redirect_origin}</span>
+        <KeyRound className="intro-icon" size={32} aria-hidden="true" />
+        <p className="context-title">Sign in with OAAth</p>
+        <p>
+          to continue to <strong>{transaction.client_name}</strong>
         </p>
+        <ol className="flow-progress" aria-label="Sign-in progress">
+          <li aria-current={step.name === "signer" ? "step" : undefined}>Sign-in method</li>
+          <li aria-current={step.name === "account" ? "step" : undefined}>Account</li>
+          {(grant || operation) && (
+            <li aria-current={step.name === "review" || step.name === "ask" ? "step" : undefined}>
+              Review
+            </li>
+          )}
+        </ol>
+        <details className="connection-details">
+          <summary>Connection details</summary>
+          <p className="quiet small">
+            Returns to <span className="mono">{transaction.redirect_origin}</span>
+          </p>
+        </details>
       </header>
       {step.name === "signer" && (
         <SignerStep onChosen={(signer) => setStep({ name: "account", signer })} onCancel={cancel} />
@@ -362,7 +427,14 @@ function AccountStep({
         </ul>
       )}
       <div className="actions">
-        <button type="button" className="primary" disabled={busy} onClick={create}>
+        <button
+          type="button"
+          className={
+            accounts?.some((account) => account.status === "active") ? "secondary" : "primary"
+          }
+          disabled={busy}
+          onClick={create}
+        >
           Create account
         </button>
         {!rootOnly && (

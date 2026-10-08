@@ -1,0 +1,42 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.147.0/config-schema.json",
+  "name": "oaath-demo",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-05",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "oaath-demo.taek.tech", "custom_domain": true }],
+  // The Worker decides every route first; `/callback` maps to callback.html itself.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none"
+  },
+  "vars": {
+    "DEMO_ORIGIN": "https://oaath-demo.taek.tech",
+    "OAATH_ISSUER": "https://oaath.taek.tech",
+    // Registered with POST https://oaath.taek.tech/oauth/clients; re-register when the relay DB is recreated.
+    "OAATH_CLIENT_ID": "c3793db9e777c101a8dbd27e5e51fc9f8501fbdc",
+    "EXPLORER_TX_URL": "https://sepolia.arbiscan.io/tx/",
+    "CHAIN_RPC_URL": "https://sepolia-rollup.arbitrum.io/rpc",
+    "BUNDLER_URL": "https://public.pimlico.io/v2/421614/rpc",
+    // The key is appended from the PIMLICO_API_KEY secret; unset, sponsorship answers 503.
+    "PAYMASTER_URL": "https://api.pimlico.io/v2/421614/rpc"
+  },
+  "ratelimits": [
+    // Per IP: every proxied chain, bundler and paymaster call.
+    { "name": "RPC_LIMIT", "namespace_id": "4216150", "simple": { "limit": 300, "period": 60 } },
+    // Per IP: eth_sendUserOperation.
+    { "name": "SEND_LIMIT", "namespace_id": "4216151", "simple": { "limit": 5, "period": 60 } },
+    // Per IP: final sponsorship data (pm_getPaymasterData).
+    { "name": "SPONSOR_LIMIT", "namespace_id": "4216152", "simple": { "limit": 5, "period": 60 } },
+    // Everyone together (one key): final sponsorship data.
+    {
+      "name": "SPONSOR_GLOBAL_LIMIT",
+      "namespace_id": "4216153",
+      "simple": { "limit": 30, "period": 60 }
+    }
+  ],
+  "observability": { "enabled": true }
+}

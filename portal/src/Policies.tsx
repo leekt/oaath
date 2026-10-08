@@ -194,7 +194,7 @@ export function Policies({
         </button>
       )}
       {editing && (
-        <form className="link-request" onSubmit={save} aria-label="Policy">
+        <form className="link-request policy-editor" onSubmit={save} aria-label="Policy">
           <label>
             Name
             <input

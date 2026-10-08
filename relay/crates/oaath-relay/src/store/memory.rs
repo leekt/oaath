@@ -772,6 +772,36 @@ impl RelayTransaction for MemoryTransaction {
         ))
     }
 
+    async fn list_oauth_clients(&mut self, signer_id: &str) -> RelayResult<Vec<OAuthClientRecord>> {
+        let mut clients = Vec::new();
+        for value in self.staged.oauth_clients.values() {
+            let record = OAuthClientRecord::parse(value)?;
+            if record.owner_signer_id.as_deref() == Some(signer_id) {
+                clients.push(record);
+            }
+        }
+        clients.sort_by(|a, b| (a.created_at, &a.client_id).cmp(&(b.created_at, &b.client_id)));
+        Ok(clients)
+    }
+
+    async fn update_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool> {
+        let Some(existing) = self.lock_oauth_client(&record.client_id).await? else {
+            return Ok(false);
+        };
+        if existing.owner_signer_id.is_none() || existing.owner_signer_id != record.owner_signer_id
+        {
+            return Ok(false);
+        }
+        let mut updated = existing;
+        updated.client_name = record.client_name.clone();
+        updated.redirect_uris = record.redirect_uris.clone();
+        updated.revocation_delivery = record.revocation_delivery;
+        self.staged
+            .oauth_clients
+            .insert(record.client_id.clone(), to_value(&updated));
+        Ok(true)
+    }
+
     async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>> {
         read(&self.staged.pars, par_id, ParRecord::parse)
     }

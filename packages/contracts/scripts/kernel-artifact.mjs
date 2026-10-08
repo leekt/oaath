@@ -167,7 +167,7 @@ async function verify(chainId) {
   }
 }
 const { kernelFactory: factoryHash } = await verify(421614);
-runtime.version = "oaath.kernel-v4-runtime-artifacts/v3";
+runtime.version = "oaath.kernel-v4-runtime-artifacts/v1";
 runtime.kernelSource = {
   repository: REPOSITORY,
   commit: COMMIT,

@@ -42,6 +42,8 @@ function failure(error: unknown): string {
     case "request-invalid":
     case "calls-mismatch":
       return "OAAth sent an operation that doesn't match this grant. Nothing was signed.";
+    case "relay_insufficient_funds":
+      return "This account needs ETH on Arbitrum Sepolia to deploy and invalidate the approval. Fund the account, then try again. Nothing was signed.";
     case "relay_chain_unavailable":
       return "The chain or the bundler is unavailable. Try again later.";
     case "relay_request_budget_exhausted":

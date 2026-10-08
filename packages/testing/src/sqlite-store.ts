@@ -31,7 +31,7 @@ const GRANT_SCHEMA = `
 `;
 
 const OPERATION_SCHEMA = `
-  CREATE TABLE oaath_test_operation_store_v2 (
+  CREATE TABLE oaath_test_operation_store_v1 (
     grant_id TEXT NOT NULL,
     chain_id INTEGER NOT NULL CHECK (chain_id >= 1 AND chain_id <= ${MAX_SAFE_INTEGER}),
     kind TEXT NOT NULL CHECK (kind IN ('execution', 'revocation')),
@@ -55,7 +55,7 @@ const EXPECTED_SCHEMAS = new Map([
   ["oaath_test_context_store_v1", CONTEXT_SCHEMA],
   ["oaath_test_store_schema_v1", METADATA_SCHEMA],
   ["oaath_test_grant_store_v1", GRANT_SCHEMA],
-  ["oaath_test_operation_store_v2", OPERATION_SCHEMA],
+  ["oaath_test_operation_store_v1", OPERATION_SCHEMA],
 ]);
 
 type StoredRow = Readonly<{
@@ -271,23 +271,23 @@ export function createSqliteOperationStoreAdapter(filePath: string): OperationSt
   return prepareStore(database, () => {
     const get = database.prepare(`
     SELECT record_version, store_revision, updated_at, payload
-    FROM oaath_test_operation_store_v2
+    FROM oaath_test_operation_store_v1
     WHERE grant_id = ? AND chain_id = ? AND kind = ? AND lane = ?
   `);
     const list = database.prepare(`
     SELECT record_version, store_revision, updated_at, payload
-    FROM oaath_test_operation_store_v2
+    FROM oaath_test_operation_store_v1
     WHERE grant_id = ? AND chain_id = ? AND kind = ?
     ORDER BY lane
   `);
     const insert = database.prepare(`
-    INSERT INTO oaath_test_operation_store_v2 (
+    INSERT INTO oaath_test_operation_store_v1 (
       grant_id, chain_id, kind, lane, record_version, store_revision, updated_at, payload
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (grant_id, chain_id, kind, lane) DO NOTHING
   `);
     const update = database.prepare(`
-    UPDATE oaath_test_operation_store_v2
+    UPDATE oaath_test_operation_store_v1
     SET record_version = ?, store_revision = ?, updated_at = ?, payload = ?
     WHERE grant_id = ? AND chain_id = ? AND kind = ? AND lane = ? AND store_revision = ?
   `);

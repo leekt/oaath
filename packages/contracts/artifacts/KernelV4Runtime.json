@@ -1,5 +1,5 @@
 {
-  "version": "oaath.kernel-v4-runtime-artifacts/v3",
+  "version": "oaath.kernel-v4-runtime-artifacts/v1",
   "entryPoint": {
     "version": "0.9",
     "expectedAddress": "0x433709009b8330fda32311df1c2afa402ed8d009",

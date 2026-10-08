@@ -197,6 +197,7 @@ pub fn schema_statements() -> Vec<String> {
     client_id text PRIMARY KEY,
     record_version text NOT NULL,
     client_name text NOT NULL,
+    owner_signer_id text REFERENCES oaath_signer_v1 (signer_id),
     redirect_uris text NOT NULL,
     revocation_delivery text NOT NULL CHECK (revocation_delivery IN ('relay', 'dapp')),
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
@@ -622,6 +623,7 @@ fn client_record(row: &PgRow) -> RelayResult<OAuthClientRecord> {
             ("version", "record_version", false),
             ("clientId", "client_id", false),
             ("clientName", "client_name", false),
+            ("ownerSignerId", "owner_signer_id", false),
             ("revocationDelivery", "revocation_delivery", false),
             ("createdAt", "created_at", true),
         ],
@@ -1544,7 +1546,7 @@ impl RelayTransaction for PostgresTransaction {
     ) -> RelayResult<Option<OAuthClientRecord>> {
         self.first(
             sqlx::query(
-                "SELECT client_id, record_version, client_name, redirect_uris, \
+                "SELECT client_id, record_version, client_name, owner_signer_id, redirect_uris, \
                  revocation_delivery, created_at FROM oauth_client_v1 WHERE client_id = $1 FOR UPDATE",
             )
             .bind(client_id),
@@ -1560,7 +1562,7 @@ impl RelayTransaction for PostgresTransaction {
             sqlx::query(
                 "INSERT INTO oauth_client_v1 (\
                  client_id, record_version, client_name, redirect_uris, revocation_delivery, \
-                 created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+                 created_at, owner_signer_id) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
             )
             .bind(&record.client_id)
             .bind(record.version)
@@ -1570,9 +1572,24 @@ impl RelayTransaction for PostgresTransaction {
                 RevocationDelivery::Relay => "relay",
                 RevocationDelivery::Dapp => "dapp",
             })
-            .bind(bigint(record.created_at)),
+            .bind(bigint(record.created_at))
+            .bind(&record.owner_signer_id),
         )
         .await
+    }
+
+    async fn list_oauth_clients(&mut self, signer_id: &str) -> RelayResult<Vec<OAuthClientRecord>> {
+        let rows = sqlx::query("SELECT client_id, record_version, client_name, owner_signer_id, redirect_uris, revocation_delivery, created_at FROM oauth_client_v1 WHERE owner_signer_id = $1 ORDER BY created_at, client_id")
+            .bind(signer_id).fetch_all(&mut *self.transaction).await.map_err(|_| RelayErrorCode::StoreUnavailable)?;
+        rows.iter().map(client_record).collect()
+    }
+
+    async fn update_oauth_client(&mut self, record: &OAuthClientRecord) -> RelayResult<bool> {
+        let uris =
+            serde_json::to_string(&record.redirect_uris).map_err(|_| RelayErrorCode::Internal)?;
+        self.applied(sqlx::query("UPDATE oauth_client_v1 SET client_name = $3, redirect_uris = $4, revocation_delivery = $5 WHERE client_id = $1 AND owner_signer_id = $2")
+            .bind(&record.client_id).bind(&record.owner_signer_id).bind(&record.client_name).bind(uris)
+            .bind(match record.revocation_delivery { RevocationDelivery::Relay => "relay", RevocationDelivery::Dapp => "dapp" })).await
     }
 
     async fn lock_par(&mut self, par_id: &str) -> RelayResult<Option<ParRecord>> {
