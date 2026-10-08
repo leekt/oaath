@@ -180,6 +180,10 @@ pub trait RelayTransaction: Send {
         account_id: &str,
     ) -> RelayResult<Option<AccountImportRecord>>;
 
+    /// Adds one write to `bucket`'s window starting at `window_start` and
+    /// answers the window's count; earlier windows are deleted.
+    async fn spend_write_budget(&mut self, bucket: &str, window_start: u64) -> RelayResult<u64>;
+
     async fn lock_revocation(&mut self, grant_id: &str) -> RelayResult<Option<RevocationRecord>>;
     /// Inserts revision 1, or replaces revision `n - 1` with `n`; `false`
     /// when another transition came first or the grant is unknown.

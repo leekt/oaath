@@ -24,6 +24,7 @@ pub mod registry;
 pub mod revocation;
 pub mod session;
 pub mod store;
+pub mod write_budget;
 
 pub use error::{RelayErrorCode, RelayResult};
 pub use handler::{Relay, RelayOptions};

@@ -1433,3 +1433,38 @@ async fn a_submitted_revocation_is_observed_after_a_restart_and_never_resubmitte
     assert_eq!(calls(&shared, "eth_sendUserOperation"), 1);
     shutdown(h).await;
 }
+
+#[tokio::test]
+async fn keeps_a_clients_write_budget_across_restarts() {
+    let Some(url) = database() else { return };
+    let fixture = Fixture::create(url).await;
+    let clock = TestClock::new();
+    let request = || {
+        let mut request = post(
+            "/oauth/clients",
+            None,
+            Some(json!({ "client_name": "Dapp", "redirect_uris": [REDIRECT_URI] })),
+        );
+        request
+            .headers_mut()
+            .insert("x-oaath-client-ip", "203.0.113.9".parse().unwrap());
+        request
+    };
+    let process = |clock: Arc<TestClock>, pool| {
+        harness_on(
+            Arc::new(PostgresRelayStore::owning(pool)),
+            clock,
+            |options| options.writes_per_minute = Some(2),
+        )
+    };
+    let h = process(clock.clone(), fixture.pool().await);
+    h.send(request()).await.ok(201);
+    h.send(request()).await.ok(201);
+    shutdown(h).await;
+
+    let h = process(clock.clone(), fixture.pool().await);
+    assert_eq!(h.send(request()).await.status, 429);
+    clock.advance(60_000);
+    h.send(request()).await.ok(201);
+    shutdown(h).await;
+}

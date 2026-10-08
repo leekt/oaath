@@ -96,6 +96,7 @@ describe("portal worker", () => {
           "x-forwarded-for": "203.0.113.9",
           forwarded: "for=203.0.113.9",
           "cf-connecting-ip": "203.0.113.9",
+          "x-oaath-client-ip": "198.51.100.1",
           cookie: "session=1",
         },
         body: '{"profile":{}}',
@@ -111,6 +112,19 @@ describe("portal worker", () => {
       expect(forwarded?.headers.get(name)).toBeNull();
     expect(forwarded?.headers.get("content-type")).toBe("application/json");
     expect(forwarded?.headers.get("cookie")).toBe("session=1");
+    // The relay's client address is Cloudflare's, never the client's own claim.
+    expect(forwarded?.headers.get("x-oaath-client-ip")).toBe("203.0.113.9");
+  });
+
+  it("drops a client-supplied client address when Cloudflare names none", async () => {
+    const recorded = environment();
+    await call(
+      "/oauth/par",
+      { method: "POST", headers: { "x-oaath-client-ip": "198.51.100.1" }, body: "client_id=a" },
+      recorded,
+    );
+    const [forwarded] = recorded.requests;
+    expect(forwarded?.headers.get("x-oaath-client-ip")).toBeNull();
   });
 
   it("carries the session cookie on /portal/* only, in both directions", async () => {

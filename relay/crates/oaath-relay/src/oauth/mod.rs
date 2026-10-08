@@ -118,6 +118,7 @@ impl OAuthFailure {
             // RFC 8628 §3.5 polling answers, as CIBA uses them.
             RelayErrorCode::AuthorizationPending => Self::new(400, "authorization_pending", code),
             RelayErrorCode::AccessDenied => Self::new(400, "access_denied", code),
+            RelayErrorCode::RateLimited => Self::new(429, "temporarily_unavailable", code),
             RelayErrorCode::StoreUnavailable | RelayErrorCode::KmsUnavailable => {
                 Self::new(503, "temporarily_unavailable", code)
             }
