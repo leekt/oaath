@@ -9,6 +9,8 @@
  *   bundler proxies (`rpc.ts`).
  * - `/paymaster/421614`: the ERC-7677 sponsorship proxy to Pimlico; it
  *   sponsors only the demo's own call (`rpc.ts`).
+ * - `/automation/session`: a verified login becomes a session at the
+ *   automation service (`automation.ts`).
  *
  * Every proxy route is same-origin only, allow-listed, budgeted per IP, and
  * forwards each request exactly once with no fallback.
@@ -16,13 +18,17 @@
  * @author taek <leekt216@gmail.com>
  */
 
+import { type AutomationEnv, automationSession, automationUrl } from "./automation.js";
 import { DEMO_CHAIN_ID, DEMO_SELECTOR, DEMO_TARGET, type ProxyEnv, proxy } from "./rpc.js";
 
 interface Fetcher {
   fetch(request: Request): Promise<Response>;
 }
 
-export interface Env extends ProxyEnv {
+/** The automation definition the demo schedules (`automation/demo-ping.automation.json`). */
+export const DEMO_AUTOMATION = "demo.ping.v1";
+
+export interface Env extends ProxyEnv, AutomationEnv {
   /** Workers static assets (`dist/`). */
   readonly ASSETS: Fetcher;
   /** The demo's public origin, e.g. `https://oaath-demo.taek.tech`. */
@@ -35,12 +41,13 @@ export interface Env extends ProxyEnv {
   readonly EXPLORER_TX_URL?: string;
 }
 
-function policy(issuer: string): string {
+function policy(issuer: string, automation: string | null): string {
+  const services = [issuer, ...(automation === null ? [] : [automation])];
   return [
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self'",
-    `connect-src 'self' ${new URL(issuer).origin}`,
+    `connect-src 'self' ${services.map((url) => new URL(url).origin).join(" ")}`,
     "img-src 'self' data:",
     "object-src 'none'",
     "frame-ancestors 'none'",
@@ -76,14 +83,17 @@ export default {
     const reading = request.method === "GET" || request.method === "HEAD";
 
     const role = ROLES[url.pathname as keyof typeof ROLES];
-    if (role) {
+    if (role || url.pathname === "/automation/session") {
       const site = request.headers.get("sec-fetch-site");
       if (
         (site !== null && site !== "same-origin") ||
         request.headers.get("origin") !== env.DEMO_ORIGIN
       )
         return failure(403, "Cross-site request refused");
-      return secured(await proxy(role, request, env), {});
+      return secured(
+        role ? await proxy(role, request, env) : await automationSession(request, env),
+        {},
+      );
     }
 
     if (url.pathname === "/config.json" && reading)
@@ -97,6 +107,9 @@ export default {
           explorerTxUrl: env.EXPLORER_TX_URL ?? null,
           // Without a key the paymaster answers 503 and the page asks for funding instead.
           sponsored: Boolean(env.PIMLICO_API_KEY),
+          // Without a service and credential the automation section stays hidden.
+          automation:
+            automationUrl(env) === null ? null : { url: automationUrl(env), id: DEMO_AUTOMATION },
         }),
         { "Cache-Control": "no-store" },
       );
@@ -114,7 +127,7 @@ export default {
       served,
       page
         ? {
-            "Content-Security-Policy": policy(env.OAATH_ISSUER),
+            "Content-Security-Policy": policy(env.OAATH_ISSUER, automationUrl(env)),
             "X-Frame-Options": "DENY",
             "Cache-Control": "no-store",
           }

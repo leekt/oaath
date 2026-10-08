@@ -1,0 +1,21 @@
+{
+  "id": "demo.ping.v1",
+  "name": "Demo ping",
+  "chainId": 421614,
+  "contracts": {
+    "target": {
+      "address": "0x000000000000000000000000000000000000dead",
+      "abi": [
+        {
+          "type": "function",
+          "name": "ping",
+          "stateMutability": "nonpayable",
+          "inputs": [{ "name": "plan", "type": "bytes32" }, { "name": "slot", "type": "uint32" }],
+          "outputs": []
+        }
+      ]
+    }
+  },
+  "schedule": { "every": "1m", "count": { "max": 5 }, "grace": "50s" },
+  "call": { "contract": "target", "function": "ping", "args": ["$plan.id", "$slot.index"] }
+}

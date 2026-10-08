@@ -22,7 +22,10 @@
     "CHAIN_RPC_URL": "https://sepolia-rollup.arbitrum.io/rpc",
     "BUNDLER_URL": "https://public.pimlico.io/v2/421614/rpc",
     // The key is appended from the PIMLICO_API_KEY secret; unset, sponsorship answers 503.
-    "PAYMASTER_URL": "https://api.pimlico.io/v2/421614/rpc"
+    "PAYMASTER_URL": "https://api.pimlico.io/v2/421614/rpc",
+    // The hosted automation service (@oaath/automation-server). Section 6 stays
+    // hidden until the AUTOMATION_APP_TOKEN secret holds the demo's credential there.
+    "AUTOMATION_URL": "https://oaath-automation.taek.tech"
   },
   "ratelimits": [
     // Per IP: every proxied chain, bundler and paymaster call.
