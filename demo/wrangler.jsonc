@@ -27,6 +27,8 @@
     // hidden until the AUTOMATION_APP_TOKEN secret holds the demo's credential there.
     "AUTOMATION_URL": "https://oaath-automation.taek.tech"
   },
+  // Server-side calls to the hosted automation service go through its Worker directly.
+  "services": [{ "binding": "AUTOMATION_SERVICE", "service": "oaath-automation" }],
   "ratelimits": [
     // Per IP: every proxied chain, bundler and paymaster call.
     { "name": "RPC_LIMIT", "namespace_id": "4216150", "simple": { "limit": 300, "period": 60 } },

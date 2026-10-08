@@ -22,6 +22,8 @@ export interface AutomationEnv {
   /** Secret: the demo's application credential at that service. Unset: the section is off. */
   readonly AUTOMATION_APP_TOKEN?: string;
   readonly RPC_LIMIT?: RateLimit;
+  /** Service binding to the hosted service's Worker; a Worker cannot reach another Worker on its zone by public fetch. */
+  readonly AUTOMATION_SERVICE?: { fetch(request: Request): Promise<Response> };
 }
 
 /** The service URL the page may call, or null when automation is not configured. */
@@ -80,6 +82,14 @@ export async function automationSession(request: Request, env: AutomationEnv): P
       baseUrl: url,
       token: env.AUTOMATION_APP_TOKEN as string,
       timeoutMs: 15_000,
+      ...(env.AUTOMATION_SERVICE
+        ? {
+            fetch: ((input: RequestInfo | URL, init?: RequestInit) =>
+              (env.AUTOMATION_SERVICE as NonNullable<AutomationEnv["AUTOMATION_SERVICE"]>).fetch(
+                new Request(input, init),
+              )) as typeof fetch,
+          }
+        : {}),
     }).createSession({ userId: signer, account: subject as `0x${string}` });
     return reply(200, {
       token: session.token,
@@ -88,6 +98,7 @@ export async function automationSession(request: Request, env: AutomationEnv): P
     });
   } catch (error) {
     const code = (error as { code?: unknown }).code;
+    console.error("automation_session_failed", String(code));
     return reply(502, {
       error: code === "request_outcome_unknown" ? "automation_unavailable" : "automation_refused",
     });
