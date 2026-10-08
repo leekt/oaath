@@ -108,7 +108,8 @@ function failed(error: unknown) {
       ? "The request was declined. You can start a new request when you're ready."
       : code === "uncertain"
         ? "The submission has no confirmed answer yet. Reload to observe it; do not send it again."
-        : "The action couldn't complete. No automatic retry was made. Check your connection and the account portal before continuing.";
+        : `The action couldn't complete (${code}). No automatic retry was made. Check your connection and the account portal before continuing.`;
+  console.error("[oaath-demo]", code, error);
   show(code, message);
   $("feedback").dataset.tone = "error";
 }
