@@ -1,31 +1,27 @@
 /**
- * The demo's chain, bundler and paymaster proxies. They spend shared providers
- * (and a paymaster-rs key) on behalf of anyone who loads the demo, so every
+ * The demo's chain and bundler proxies. They spend a shared chain RPC and our
+ * own gas-paying relay on behalf of anyone who loads the demo, so every
  * request is bounded:
  *
  * - an allow-listed method set per role; at most `MAX_BATCH` calls per request;
  * - body and response size caps;
  * - each call spends one unit of a per-IP rate budget (`RPC_LIMIT`); a send
- *   (`eth_sendUserOperation`) also spends `SEND_LIMIT`; final sponsorship data
- *   (`pm_getPaymasterData`) also spends `SPONSOR_LIMIT` per IP and
- *   `SPONSOR_GLOBAL_LIMIT` for everyone. A missing binding refuses;
+ *   (`eth_sendUserOperation`) also spends `SEND_LIMIT`. A missing binding refuses;
  * - one upstream attempt, capped in time, with no fallback and no retry. A
  *   send without an answer gets a bare 504: the SDK keeps it uncertain and only
  *   observes it, and this proxy never repeats it;
- * - the paymaster sponsors only the demo's own call (`DEMO_TARGET`, zero value,
- *   `DEMO_SELECTOR`) on chain 421614 through EntryPoint 0.9, decoded from the
- *   operation's Kernel callData. The context the page sends is replaced by `{}`.
+ * - the relay pays every operation's gas, so it simulates and sends only the
+ *   demo's own call (`DEMO_TARGET`, zero value, `DEMO_SELECTOR`) through
+ *   EntryPoint 0.9, decoded from the operation's Kernel callData.
  *
- * Sponsorship goes to paymaster-rs (leekt/paymaste_rs), our own ERC-7677
- * service: the hosted paymasters (Pimlico, ZeroDev, Alchemy) do not support
- * EntryPoint 0.9, which Kernel v4 accounts use. It listens only on the VM's
- * loopback, so the Worker reaches it through the `PAYMASTER` Workers VPC
- * service binding and authenticates with `Authorization: Bearer
- * PAYMASTER_API_KEY`.
+ * The bundler is bundle_rs (zerodevapp/bundle_rs) in its default fast mode:
+ * operations carry zero fees and its executor pays chain gas, because the
+ * hosted paymasters (Pimlico, ZeroDev, Alchemy) do not support EntryPoint 0.9,
+ * which Kernel v4 accounts use. It listens only on the VM's loopback, so the
+ * Worker reaches it through the `BUNDLER` Workers VPC service binding.
  *
- * Only `content-type` (and, for paymaster-rs, that bearer key) reaches a
- * provider. Upstream URLs and the paymaster key are never logged or returned;
- * provider answers pass through unchanged only when they are JSON-RPC.
+ * Only `content-type` reaches a provider. Upstream URLs are never logged or
+ * returned; provider answers pass through unchanged only when they are JSON-RPC.
  *
  * @author taek <leekt216@gmail.com>
  */
@@ -39,26 +35,18 @@ export interface ProxyEnv {
   readonly RPC_LIMIT?: RateLimit;
   /** Per-IP budget: `eth_sendUserOperation`. */
   readonly SEND_LIMIT?: RateLimit;
-  /** Per-IP budget: `pm_getPaymasterData`. */
-  readonly SPONSOR_LIMIT?: RateLimit;
-  /** Budget shared by every visitor (one key): `pm_getPaymasterData`. */
-  readonly SPONSOR_GLOBAL_LIMIT?: RateLimit;
   /** Arbitrum Sepolia JSON-RPC endpoint. */
   readonly CHAIN_RPC_URL: string;
-  /** ERC-4337 bundler endpoint for 421614. */
-  readonly BUNDLER_URL: string;
-  /** Workers VPC service: paymaster-rs on the VM's loopback. Unset: the paymaster route answers 503. */
-  readonly PAYMASTER?: { fetch(request: Request): Promise<Response> };
-  /** Secret: paymaster-rs bearer key. Unset: the paymaster route answers 503. */
-  readonly PAYMASTER_API_KEY?: string;
+  /** Workers VPC service: bundle_rs on the VM's loopback. Unset: the bundler route answers 503. */
+  readonly BUNDLER?: { fetch(request: Request): Promise<Response> };
 }
 
-/** True when the paymaster-rs binding and its key are both configured. */
-export function sponsorshipConfigured(env: ProxyEnv): boolean {
-  return Boolean(env.PAYMASTER && env.PAYMASTER_API_KEY);
+/** True when the relay that pays every operation's gas is bound. */
+export function relayConfigured(env: ProxyEnv): boolean {
+  return Boolean(env.BUNDLER);
 }
 
-export type Role = "chain" | "bundler" | "paymaster";
+export type Role = "chain" | "bundler";
 
 export const DEMO_CHAIN_ID = 421_614;
 export const DEMO_TARGET = "0x000000000000000000000000000000000000dead";
@@ -92,8 +80,10 @@ export const METHODS: Readonly<Record<Role, ReadonlySet<string>>> = {
     "eth_sendUserOperation",
     "eth_getUserOperationReceipt",
   ]),
-  paymaster: new Set(["pm_getPaymasterStubData", "pm_getPaymasterData"]),
 };
+
+/** Methods the relay pays for or simulates: only the demo's own call. */
+const RELAY_PAID = new Set(["eth_sendUserOperation", "eth_estimateUserOperationGas"]);
 
 type Call = { jsonrpc: "2.0"; id: string | number | null; method: string; params: unknown[] };
 
@@ -169,25 +159,22 @@ async function spend(limiter: RateLimit | undefined, key: string): Promise<boole
   return limiter ? (await limiter.limit({ key })).success : false;
 }
 
-/** The paymaster call's sponsorship refusal, or null; its context is replaced in place. */
-function sponsorship(call: Call): string | null {
-  const [operation, entryPoint, chainId] = call.params;
-  if (call.params.length !== 4) return "invalid paymaster params";
+/** The relay-paid call's refusal, or null: only the demo's own call through EntryPoint 0.9. */
+function relayRefusal(call: Call): string | null {
+  const [operation, entryPoint] = call.params;
+  // A third (state override) parameter would simulate against another state.
+  if (call.params.length !== 2) return "invalid bundler params";
   if (String(entryPoint).toLowerCase() !== ENTRY_POINT_V09) return "unsupported EntryPoint";
-  if (typeof chainId !== "string" || !/^0x[0-9a-fA-F]{1,16}$/u.test(chainId))
-    return "invalid chain";
-  if (BigInt(chainId) !== BigInt(DEMO_CHAIN_ID)) return "unsupported chain";
   if (!isDemoCall((operation as { callData?: unknown } | null)?.callData))
-    return "the demo sponsors only its own call";
-  call.params[3] = {};
+    return "the demo relays only its own call";
   return null;
 }
 
 /** Serves one same-origin proxy request; the caller has checked the path and origin. */
 export async function proxy(role: Role, request: Request, env: ProxyEnv): Promise<Response> {
   if (request.method !== "POST") return reply(405, { error: "Unsupported method" });
-  if (role === "paymaster" && !sponsorshipConfigured(env))
-    return reply(503, { error: "Sponsorship is not configured" });
+  if (role === "bundler" && !relayConfigured(env))
+    return reply(503, { error: "The bundler is not configured" });
   if (Number(request.headers.get("content-length") ?? "0") > MAX_BODY_BYTES)
     return reply(413, { error: "Request too large" });
   const text = await request.text();
@@ -209,9 +196,8 @@ export async function proxy(role: Role, request: Request, env: ProxyEnv): Promis
   // A refused call refuses the whole request: a batch is forwarded whole or not at all.
   for (const call of captured) {
     if (!METHODS[role].has(call.method)) return refused(call, "method not allowed by the demo");
-    if (role === "paymaster") {
-      if (batch) return reply(400, { error: "Paymaster calls are not batched" });
-      const refusal = sponsorship(call);
+    if (RELAY_PAID.has(call.method)) {
+      const refusal = relayRefusal(call);
       if (refusal) return refused(call, refusal);
     }
   }
@@ -223,24 +209,14 @@ export async function proxy(role: Role, request: Request, env: ProxyEnv): Promis
     if (!(await spend(env.RPC_LIMIT, ip))) return tooMany();
     if (call.method === "eth_sendUserOperation" && !(await spend(env.SEND_LIMIT, ip)))
       return tooMany();
-    if (call.method === "pm_getPaymasterData") {
-      if (!(await spend(env.SPONSOR_LIMIT, ip))) return tooMany();
-      if (!(await spend(env.SPONSOR_GLOBAL_LIMIT, "global"))) return tooMany();
-    }
   }
 
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (role === "paymaster") headers.authorization = `Bearer ${env.PAYMASTER_API_KEY}`;
   const forwarded = new Request(
-    // The VPC binding pins the paymaster's destination; this URL only sets its path.
-    role === "chain"
-      ? env.CHAIN_RPC_URL
-      : role === "bundler"
-        ? env.BUNDLER_URL
-        : "http://paymaster.internal/rpc",
+    // The VPC binding pins the bundler's destination; this URL only sets its path.
+    role === "chain" ? env.CHAIN_RPC_URL : "http://bundler.internal/",
     {
       method: "POST",
-      headers,
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(batch ? captured : captured[0]),
       // Workers accepts only "follow" or "manual"; a 3xx is not ok and is refused below.
       redirect: "manual",
@@ -249,18 +225,15 @@ export async function proxy(role: Role, request: Request, env: ProxyEnv): Promis
   );
   let upstream: Response;
   try {
-    upstream = await (role === "paymaster"
-      ? (env.PAYMASTER as NonNullable<ProxyEnv["PAYMASTER"]>).fetch(forwarded)
+    upstream = await (role === "bundler"
+      ? (env.BUNDLER as NonNullable<ProxyEnv["BUNDLER"]>).fetch(forwarded)
       : fetch(forwarded));
   } catch {
     // No answer is not a refusal: a send may still land. A bare 504 keeps it
     // uncertain in the SDK, which observes and never resends.
     return new Response(null, { status: 504, headers: { "Cache-Control": "no-store" } });
   }
-  let body = upstream.ok ? await boundedText(upstream) : null;
-  // A provider that echoes its request must not hand the key to the page.
-  if (body !== null && role === "paymaster" && env.PAYMASTER_API_KEY)
-    body = body.replaceAll(env.PAYMASTER_API_KEY, "[redacted]");
+  const body = upstream.ok ? await boundedText(upstream) : null;
   let answer: unknown = null;
   try {
     answer = body === null ? null : JSON.parse(body);

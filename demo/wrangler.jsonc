@@ -20,37 +20,29 @@
     "OAATH_CLIENT_ID": "474aea002286cd2bcd36295e25cd10b0ebefb494",
     "EXPLORER_TX_URL": "https://sepolia.arbiscan.io/tx/",
     "CHAIN_RPC_URL": "https://sepolia-rollup.arbitrum.io/rpc",
-    "BUNDLER_URL": "https://public.pimlico.io/v2/421614/rpc",
     // The hosted automation service (@oaath/automation-server). Section 6 stays
     // hidden until the AUTOMATION_APP_TOKEN secret holds the demo's credential there.
     "AUTOMATION_URL": "https://oaath-automation.taek.tech"
   },
-  // Sponsorship: paymaster-rs (leekt/paymaste_rs), because Pimlico, ZeroDev and
-  // Alchemy paymasters do not support EntryPoint 0.9 (Kernel v4). It is
-  // loopback-only on the VM, so it is reached through a Workers VPC service and
-  // authenticated with the PAYMASTER_API_KEY secret; either unset, sponsorship answers 503.
+  // Bundler: bundle_rs (zerodevapp/bundle_rs) in its default fast mode. It takes
+  // zero-fee operations and its executor pays their gas, because Pimlico, ZeroDev
+  // and Alchemy paymasters do not support EntryPoint 0.9 (Kernel v4). It is
+  // loopback-only on the VM, so it is reached through a Workers VPC service;
+  // without the binding the bundler route answers 503.
   "vpc_services": [
     {
-      "binding": "PAYMASTER",
-      // Workers VPC service `paymaster-rs`: 127.0.0.1:4338 on the OCI VM's loopback.
-      "service_id": "01a11b05-da4d-74c0-bdab-45b39c0074a1"
+      "binding": "BUNDLER",
+      // Workers VPC service for bundle_rs: 127.0.0.1:4337 on the OCI VM's loopback.
+      "service_id": "01a11b20-f2a5-7080-96a8-aca3de4fd906"
     }
   ],
   // Server-side calls to the hosted automation service go through its Worker directly.
   "services": [{ "binding": "AUTOMATION_SERVICE", "service": "oaath-automation" }],
   "ratelimits": [
-    // Per IP: every proxied chain, bundler and paymaster call.
+    // Per IP: every proxied chain and bundler call.
     { "name": "RPC_LIMIT", "namespace_id": "4216150", "simple": { "limit": 300, "period": 60 } },
     // Per IP: eth_sendUserOperation.
-    { "name": "SEND_LIMIT", "namespace_id": "4216151", "simple": { "limit": 5, "period": 60 } },
-    // Per IP: final sponsorship data (pm_getPaymasterData).
-    { "name": "SPONSOR_LIMIT", "namespace_id": "4216152", "simple": { "limit": 5, "period": 60 } },
-    // Everyone together (one key): final sponsorship data.
-    {
-      "name": "SPONSOR_GLOBAL_LIMIT",
-      "namespace_id": "4216153",
-      "simple": { "limit": 30, "period": 60 }
-    }
+    { "name": "SEND_LIMIT", "namespace_id": "4216151", "simple": { "limit": 5, "period": 60 } }
   ],
   "observability": { "enabled": true }
 }

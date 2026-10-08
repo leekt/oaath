@@ -6,13 +6,14 @@
  * - the real portal Worker module in front of the built portal SPA;
  * - the real demo Worker module in front of the built demo SPA, on its own
  *   origin, proxying to local Arbitrum Sepolia (Anvil 421614 with the pinned
- *   Kernel stack), a fixture ERC-4337 bundler and a fixture ERC-7677
- *   paymaster backed by an always-accepting paymaster contract on Anvil;
+ *   Kernel stack) and a fixture ERC-4337 bundler that, like bundle_rs in fast
+ *   mode, takes zero-fee operations and pays their gas from its own wallet;
  * - headless Chrome clicking through the demo and the SDK's popups.
  *
- * Root login → invite → sponsored root Grant and test call → owner operation
- * → member joins with a passkey → member Grant pending → root approves →
- * member redeems after a reload → member's sponsored test call executes.
+ * Root login → invite → root Grant and relay-paid test call → relay-paid owner
+ * operation → member joins with a passkey → member Grant pending → root
+ * approves → member redeems after a reload → member's relay-paid test call
+ * executes → the automation service's relay-paid ping. No account is funded.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
@@ -59,8 +60,6 @@ const V33 = fileURLToPath(
 );
 const PING = fileURLToPath(new URL("../automation/demo-ping.automation.json", import.meta.url));
 const DEMO_ORIGIN = "https://oaath-demo.taek.tech";
-const PAYMASTER_KEY = "e2e-fixture-key";
-const AUTOMATION_PAYMASTER_KEY = "e2e-automation-paymaster-key";
 const WALLET = privateKeyToAccount(`0x${"5a".repeat(32)}`);
 const WALLET_ADDRESS = WALLET.address.toLowerCase() as `0x${string}`;
 let walletSignatures = 0;
@@ -285,19 +284,6 @@ async function startLocalArbitrumSepolia() {
     }),
   });
 
-  // A paymaster that accepts every operation: validatePaymasterUserOp returns
-  // (empty context, validationData 0) for any call. Deposited in the EntryPoint.
-  const paymaster = `0x${"76".repeat(20)}` as const;
-  await chain.rpc("anvil_setCode", [paymaster, "0x604060005260606000f3"]);
-  await chain.client.waitForTransactionReceipt({
-    hash: await stack.wallet.sendTransaction({
-      to: deployment.entryPoint.address,
-      // depositTo(address)
-      data: `0xb760faf9${paymaster.slice(2).padStart(64, "0")}`,
-      value: 10n ** 18n,
-    }),
-  });
-
   const sent: UserOperation<"0.9">[] = [];
   const receipts = new Map<string, unknown>();
   const bundlerPort = await listen(async (request, response) => {
@@ -318,6 +304,7 @@ async function startLocalArbitrumSepolia() {
         preVerificationGas: "0x249f0",
       };
     else if (rpc.method === "eth_sendUserOperation") {
+      // The relay's wallet pays gas, as bundle_rs's fast path: no account funds.
       const wire = rpc.params[0] as Record<string, string>;
       const big = (value: string | undefined) => (value === undefined ? undefined : BigInt(value));
       const operation = {
@@ -367,7 +354,8 @@ async function startLocalArbitrumSepolia() {
         entryPoint: deployment.entryPoint.address,
         sender: operation.sender,
         nonce: toHex(operation.nonce),
-        paymaster: operation.paymaster ?? null,
+        // As bundle_rs: the field is omitted when the operation has no paymaster.
+        ...(operation.paymaster ? { paymaster: operation.paymaster } : {}),
         actualGasCost: toHex(event.args.actualGasCost),
         actualGasUsed: toHex(event.args.actualGasUsed),
         success: event.args.success,
@@ -385,38 +373,10 @@ async function startLocalArbitrumSepolia() {
     response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
   });
 
-  // Fixture ERC-7677 service for that paymaster; it records what reached it.
-  const sponsorships: { method: string; authorization: string | null; context: unknown }[] = [];
-  const paymasterPort = await listen(async (request, response) => {
-    const rpc = JSON.parse(String(await body(request))) as {
-      id: number;
-      method: string;
-      params: unknown[];
-    };
-    sponsorships.push({
-      method: rpc.method,
-      authorization: request.headers.authorization ?? null,
-      context: rpc.params[3],
-    });
-    const result =
-      rpc.method === "pm_getPaymasterStubData"
-        ? {
-            paymaster,
-            paymasterData: "0x",
-            paymasterVerificationGasLimit: "0x30000",
-            paymasterPostOpGasLimit: "0x0",
-          }
-        : { paymaster, paymasterData: "0x" };
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
-  });
   return {
     chain,
     sent,
-    sponsorships,
-    paymaster,
     bundlerUrl: `http://127.0.0.1:${bundlerPort}`,
-    paymasterUrl: `http://127.0.0.1:${paymasterPort}/v2/421614/rpc`,
   };
 }
 
@@ -567,6 +527,13 @@ async function capture(page: Page, name: string) {
   }
 }
 
+/** A relay-paid operation: zero fees and no paymaster. */
+function expectRelayPaid(operation: UserOperation<"0.9"> | undefined) {
+  expect(operation?.maxFeePerGas).toBe(0n);
+  expect(operation?.maxPriorityFeePerGas).toBe(0n);
+  expect(operation?.paymaster ?? null).toBeNull();
+}
+
 let demo: string;
 let local: Awaited<ReturnType<typeof startLocalArbitrumSepolia>>;
 let automation: AutomationService | undefined;
@@ -587,22 +554,18 @@ beforeAll(async () => {
     OAATH_CLIENT_ID: "",
     EXPLORER_TX_URL: "https://sepolia.arbiscan.io/tx/",
     CHAIN_RPC_URL: local.chain.url,
-    BUNDLER_URL: local.bundlerUrl,
-    // The paymaster-rs VPC binding, pointed at the fixture paymaster.
-    PAYMASTER: {
-      fetch: (request) =>
-        fetch(local.paymasterUrl, {
+    // The bundle_rs VPC binding, pointed at the fixture bundler.
+    BUNDLER: {
+      fetch: (request: Request) =>
+        fetch(local.bundlerUrl, {
           method: request.method,
           headers: request.headers,
           body: request.body,
           duplex: "half",
         } as RequestInit),
     },
-    PAYMASTER_API_KEY: PAYMASTER_KEY,
     RPC_LIMIT: { limit: async () => ({ success: true }) },
     SEND_LIMIT: { limit: async () => ({ success: true }) },
-    SPONSOR_LIMIT: { limit: async () => ({ success: true }) },
-    SPONSOR_GLOBAL_LIMIT: { limit: async () => ({ success: true }) },
   };
   demo = await serveWorker(DEMO_ORIGIN, (request) => demoWorker.fetch(request, env), "127.0.0.1");
   // Registered once, as for the hosted demo; the Worker serves it in /config.json.
@@ -614,7 +577,7 @@ beforeAll(async () => {
   env.OAATH_CLIENT_ID = ((await registered.json()) as { client_id: string }).client_id;
 
   // The automation service the demo schedules on: its own OAuth client at the
-  // same issuer, a throwaway PostgreSQL, and the same chain, bundler and paymaster.
+  // same issuer, a throwaway PostgreSQL, and the same chain and relay-paid bundler.
   cluster = await startCluster();
   const servicePort = await freePort();
   const serviceUrl = `http://127.0.0.1:${servicePort}`;
@@ -640,8 +603,7 @@ beforeAll(async () => {
         AUTOMATION_ALLOWED_ORIGINS: demo,
         AUTOMATION_RPC_URL_421614: local.chain.url,
         AUTOMATION_BUNDLER_URL_421614: local.bundlerUrl,
-        AUTOMATION_PAYMASTER_URL_421614: local.paymasterUrl,
-        AUTOMATION_PAYMASTER_API_KEY_421614: AUTOMATION_PAYMASTER_KEY,
+        AUTOMATION_RELAY_PAYS_GAS_421614: "true",
       },
       loadDefinitions([PING]),
     ),
@@ -693,7 +655,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await capture(page, "callback");
     await page.close();
   });
-  it("root logs in, grants and sends sponsored; a member joins, waits, is approved and sends", async () => {
+  it("root logs in, grants and sends relay-paid; a member joins, waits, is approved and sends", async () => {
     // 1. The root logs in with a new wallet signer and a new account.
     const root = await openDemo(`${demo}/`);
     await capture(root, "start");
@@ -743,7 +705,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     );
     await capture(root, "permission");
 
-    // 4. The sponsored test call deploys, enables and executes with an unfunded account.
+    // 4. The relay-paid test call deploys, enables and executes with an unfunded account.
     expect(await local.chain.rpc("eth_getBalance", [address, "latest"])).toBe("0x0");
     await click(root, "#send");
     await outcome(root, "finalized");
@@ -753,22 +715,12 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
       /UserOperation 0x[0-9a-f]{64}[\s\S]*https:\/\/sepolia\.arbiscan\.io\/tx\/0x[0-9a-f]{64}/u,
     );
     expect(local.sent).toHaveLength(1);
-    expect(local.sent[0]?.paymaster?.toLowerCase()).toBe(local.paymaster);
+    expectRelayPaid(local.sent[0]);
     expect(BigInt(local.sent[0]?.nonce ?? 0) >> 248n).toBe(12n);
     expect(await local.chain.rpc("eth_getCode", [address, "latest"])).not.toBe("0x");
-    // The Worker added the key and the context; the page never had either.
-    expect(local.sponsorships.map((entry) => entry.method)).toEqual([
-      "pm_getPaymasterStubData",
-      "pm_getPaymasterData",
-    ]);
-    expect(
-      local.sponsorships.every((entry) => entry.authorization === `Bearer ${PAYMASTER_KEY}`),
-    ).toBe(true);
-    expect(local.sponsorships.every((entry) => JSON.stringify(entry.context) === "{}")).toBe(true);
-    expect(await root.content()).not.toContain(PAYMASTER_KEY);
 
-    // 5. An owner operation: the root approves it in OAAth and the page submits it once.
-    await local.chain.rpc("anvil_setBalance", [address, toHex(10n ** 18n)]);
+    // 5. An owner operation: the root approves it in OAAth and the page submits
+    // it once, zero-fee, from the still-unfunded account.
     await click(root, "#owner-prepare");
     await outcome(root, "owner-prepared");
     await capture(root, "owner-prepared");
@@ -778,6 +730,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     expect(local.sent).toHaveLength(2);
     expect(local.sent[1]?.sender.toLowerCase()).toBe(address);
     expect(local.sent[1]?.factory ?? null).toBeNull();
+    expectRelayPaid(local.sent[1]);
 
     // The member: another browser profile opens the invite and joins with a new passkey.
     const device = await browser.createBrowserContext();
@@ -849,11 +802,11 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     expect(await text(member, "#identity-title")).toBe("Saved account · sign in again");
     expect(await text(member, "#account")).toBe(address);
 
-    // The member's sponsored test call enables its permission and executes.
+    // The member's relay-paid test call enables its permission and executes.
     await click(member, "#send");
     await outcome(member, "finalized");
     expect(local.sent).toHaveLength(3);
-    expect(local.sent[2]?.paymaster?.toLowerCase()).toBe(local.paymaster);
+    expectRelayPaid(local.sent[2]);
     expect(BigInt(local.sent[2]?.nonce ?? 0) >> 248n).toBe(12n);
     // Approval was the root's one signature; the member's send asked it nothing.
     expect(walletSignatures).toBe(approvals + 1);
@@ -865,7 +818,7 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await device.close();
 
     // The root schedules backend pings: it approves the automation service's
-    // own session key in OAAth, and the service sends the first ping, sponsored.
+    // own session key in OAAth, and the service sends the first ping, relay-paid.
     popup = await popupFrom(root, "#automate");
     await click(popup, "#wallet-method");
     await click(popup, "::-p-text(E2E Wallet)");
@@ -880,15 +833,8 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     );
     expect(local.sent).toHaveLength(4);
     expect(local.sent[3]?.sender.toLowerCase()).toBe(address);
-    expect(local.sent[3]?.paymaster?.toLowerCase()).toBe(local.paymaster);
-    // The service asked the paymaster itself with its own key in the context;
-    // the demo's key never reached it.
-    expect(local.sponsorships.at(-1)).toMatchObject({
-      method: "pm_getPaymasterData",
-      authorization: null,
-      context: { apiKey: AUTOMATION_PAYMASTER_KEY },
-    });
-    expect(await root.content()).not.toContain(PAYMASTER_KEY);
+    expectRelayPaid(local.sent[3]);
+    expect(await local.chain.rpc("eth_getBalance", [address, "latest"])).toBe("0x0");
     await root.close();
   }, 600_000);
 });

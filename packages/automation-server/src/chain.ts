@@ -46,6 +46,7 @@ export function createBudgetedChains(
             publicRpcUrls: [endpoints.rpcUrl],
             bundlerUrl: endpoints.bundlerUrl,
             ...(endpoints.paymasterUrl === null ? {} : { paymasterUrl: endpoints.paymasterUrl }),
+            ...(endpoints.relayPaysGas ? { relayPaysGas: true } : {}),
           },
         ]),
       ),

@@ -1,9 +1,22 @@
-import { encodeAbiParameters, encodeEventTopics, zeroAddress } from "viem";
+import {
+  decodeFunctionData,
+  encodeAbiParameters,
+  encodeEventTopics,
+  toHex,
+  zeroAddress,
+} from "viem";
 import { entryPoint07Abi } from "viem/account-abstraction";
 import { describe, expect, it } from "vitest";
 import { createCetaneChainPorts } from "../src/cetane.js";
 import { prepareUserOperation } from "../src/kernel.js";
 import { KERNEL_V4_ENTRY_POINT_V09 } from "../src/kernel-v4.js";
+import {
+  CHAIN_ID,
+  createChainFixture,
+  createRealm,
+  permissionInput,
+  sendCallsInput,
+} from "./support/browser.js";
 
 const config = {
   143: {
@@ -322,5 +335,101 @@ describe("default viem chain ports", () => {
       .catch((error: unknown) => error);
     expect(error).toMatchObject({ code: "oaath_rpc_rejected", rpcCode: -32601 });
     expect(JSON.stringify(error).includes("secret")).toBe(false);
+  });
+});
+
+describe("relay-paid chain ports", () => {
+  function relayFixture(relayPaysGas: boolean) {
+    const methods: string[] = [];
+    const estimates: Record<string, string>[] = [];
+    const [ports] = createCetaneChainPorts(
+      {
+        [CHAIN_ID]: {
+          publicRpcUrls: ["https://public.test"],
+          bundlerUrl: "https://bundler.test",
+          ...(relayPaysGas ? { relayPaysGas } : {}),
+        },
+      },
+      {
+        fetch: async (request) => {
+          const { id, method, params } = await request.json();
+          methods.push(method);
+          if (method === "eth_chainId") return rpc(id, toHex(CHAIN_ID));
+          if (method === "eth_call") {
+            const decoded = decodeFunctionData({ abi: entryPoint07Abi, data: params[0].data });
+            if (decoded.functionName !== "getNonce") throw new Error("unexpected read");
+            return rpc(id, toHex(decoded.args[1] << 64n, { size: 32 }));
+          }
+          if (method === "eth_getBlockByNumber")
+            return rpc(id, {
+              baseFeePerGas: "0x3b9aca00",
+              number: "0x1",
+              hash: `0x${"11".repeat(32)}`,
+            });
+          if (method === "eth_maxPriorityFeePerGas") return rpc(id, "0x3b9aca00");
+          expect(method).toBe("eth_estimateUserOperationGas");
+          estimates.push(params[0]);
+          return rpc(id, {
+            callGasLimit: "0x30000",
+            verificationGasLimit: "0x300000",
+            preVerificationGas: "0x20000",
+          });
+        },
+      },
+    );
+    const base = createChainFixture();
+    const realm = createRealm({
+      chain: { ...base, capability: { ...base.capability, quote: ports!.quote } },
+    });
+    return { base, realm, methods, estimates };
+  }
+
+  it("prepares and sends a zero-fee operation with bundler gas limits and no fee reads", async () => {
+    const { base, realm, methods, estimates } = relayFixture(true);
+    try {
+      const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+      await grant.sendCalls(sendCallsInput() as never);
+      expect(base.sends).toHaveLength(1);
+      expect(base.sends[0]?.userOperation).toMatchObject({
+        maxFeePerGas: "0",
+        maxPriorityFeePerGas: "0",
+        callGasLimit: String(0x30000),
+        preVerificationGas: String(0x20000),
+        paymaster: null,
+      });
+      expect(estimates).toHaveLength(1);
+      expect(estimates[0]).toMatchObject({ maxFeePerGas: "0x0", maxPriorityFeePerGas: "0x0" });
+      expect(methods).not.toContain("eth_maxPriorityFeePerGas");
+      expect(methods).not.toContain("eth_getBlockByNumber");
+    } finally {
+      await realm.oaath.close();
+    }
+  });
+
+  it("keeps market fees on the default path", async () => {
+    const { base, realm, estimates } = relayFixture(false);
+    try {
+      const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
+      await grant.sendCalls(sendCallsInput() as never);
+      expect(BigInt(base.sends[0]?.userOperation.maxFeePerGas ?? 0)).toBeGreaterThan(0n);
+      expect(BigInt(base.sends[0]?.userOperation.maxPriorityFeePerGas ?? 0)).toBeGreaterThan(0n);
+      expect(estimates[0]?.maxFeePerGas).not.toBe("0x0");
+    } finally {
+      await realm.oaath.close();
+    }
+  });
+
+  it("refuses a relay-paid chain with a paymaster, without a bundler, or with a non-boolean", () => {
+    const publicRpcUrls = ["https://public.test"];
+    for (const chain of [
+      { publicRpcUrls, bundlerUrl: "https://bundler.test", paymasterUrl: "https://pm.test" },
+      { publicRpcUrls },
+      { publicRpcUrls, bundlerUrl: "https://bundler.test", relayPaysGas: "true" },
+    ])
+      expect(() =>
+        createCetaneChainPorts({
+          143: { relayPaysGas: true, ...chain } as never,
+        }),
+      ).toThrow(expect.objectContaining({ code: "oaath_rpc_config_invalid" }));
   });
 });
