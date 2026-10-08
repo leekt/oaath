@@ -819,10 +819,11 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
 
     // The root schedules backend pings: it approves the automation service's
     // own session key in OAAth, and the service sends the first ping, relay-paid.
-    popup = await popupFrom(root, "#automate");
-    await click(popup, "#wallet-method");
-    await click(popup, "::-p-text(E2E Wallet)");
-    await click(popup, `button[aria-label^='Smart account ${address}']`);
+    // The service's login_hint binds the root and account: no pickers.
+    popup = await popupFrom(root, "#automate", "#review-heading");
+    expect(await popup.$("#signer-heading")).toBeNull();
+    expect(await popup.$("#account-heading")).toBeNull();
+    expect(await text(popup, "main")).toContain(`${address.slice(0, 6)}…${address.slice(-4)}`);
     await popup.waitForSelector("::-p-text(Approve and sign):not([disabled])");
     expect(await text(popup, "main")).toContain("0x000000000000000000000000000000000000dead");
     await click(popup, "::-p-text(Approve and sign)");

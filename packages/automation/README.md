@@ -50,7 +50,8 @@ plans.
 // Your backend, with the application credential:
 import { createAutomationServer } from "@oaath/automation/server";
 const automation = createAutomationServer({ baseUrl: AUTOMATION_URL, token: APPLICATION_KEY });
-const session = await automation.createSession({ userId: user.id, account: user.account });
+// userId is the OAAth signer id from the verified id_token (`signer.id`).
+const session = await automation.createSession({ userId: idToken.signer.id, account: idToken.sub });
 
 // The browser, with the session token only:
 import { createAutomation } from "@oaath/automation";

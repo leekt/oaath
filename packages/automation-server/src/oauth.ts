@@ -130,6 +130,9 @@ export async function startAuthorization(
     scope: "openid",
     state,
     nonce,
+    // The session's user is the OAAth signer the application's login proved;
+    // the issuer binds it and the account so the portal opens on them.
+    login_hint: `${plan.user_id}@${plan.account}`,
   });
   if (typeof pushed.request_uri !== "string") throw new ServiceError("issuer_unreadable", 503);
   const pending: PendingAuthorization = { verifier, nonce, expected, code: null };

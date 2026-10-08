@@ -115,6 +115,11 @@ pub enum RelayErrorCode {
     #[error("relay_id_token_hint_invalid")]
     #[serde(rename = "relay_id_token_hint_invalid")]
     IdTokenHintInvalid,
+    /// A PAR `login_hint` is malformed, comes with an `id_token_hint`, or
+    /// names a signer that is not an active member of the named account.
+    #[error("relay_login_hint_invalid")]
+    #[serde(rename = "relay_login_hint_invalid")]
+    LoginHintInvalid,
     /// An invariant the relay owns was violated.
     #[error("relay_internal")]
     #[serde(rename = "relay_internal")]
@@ -152,6 +157,7 @@ impl RelayErrorCode {
             Self::RequestBudgetExhausted => 429,
             Self::RateLimited => 429,
             Self::IdTokenHintInvalid => 400,
+            Self::LoginHintInvalid => 400,
             Self::Internal => 500,
         }
     }

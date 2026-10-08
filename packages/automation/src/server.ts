@@ -12,7 +12,12 @@ import { type AutomationClientOptions, createTransport } from "./transport.js";
 export function createAutomationServer(options: AutomationClientOptions) {
   const request = createTransport(options);
   return Object.freeze({
-    /** One hour, bound to this application, user and account. */
+    /**
+     * One hour, bound to this application, user and account. `userId` is the
+     * user's OAAth signer id (the id_token's `signer.id`); the service sends it
+     * with `account` as the issuer's `login_hint`, which refuses a signer that
+     * is not an active member of that account.
+     */
     createSession: (identity: Readonly<{ userId: string; account: Address }>) =>
       request<Session>("POST", "/v1/sessions", identity),
     /** Session-key custody for new plans: one key per user (default) or per application. */
