@@ -52,6 +52,7 @@ struct Tables {
     account_imports: HashMap<String, Value>,
     pending_grants: HashMap<String, Value>,
     revocations: HashMap<String, Value>,
+    write_budgets: HashMap<(String, u64), u64>,
 }
 
 #[derive(Default)]
@@ -546,6 +547,16 @@ impl RelayTransaction for MemoryTransaction {
             account_id,
             AccountImportRecord::parse,
         )
+    }
+
+    async fn spend_write_budget(&mut self, bucket: &str, window_start: u64) -> RelayResult<u64> {
+        let budgets = &mut self.staged.write_budgets;
+        budgets.retain(|(_, start), _| *start >= window_start);
+        let count = budgets
+            .entry((bucket.to_owned(), window_start))
+            .or_insert(0);
+        *count += 1;
+        Ok(*count)
     }
 
     async fn lock_revocation(&mut self, grant_id: &str) -> RelayResult<Option<RevocationRecord>> {

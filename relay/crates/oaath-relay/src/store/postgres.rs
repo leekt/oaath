@@ -258,6 +258,16 @@ pub fn schema_statements() -> Vec<String> {
     created_at bigint NOT NULL CHECK (created_at >= 0 AND created_at <= {max})
   )"
         ),
+        format!(
+            "CREATE TABLE oaath_write_budget_v1 (
+    bucket text NOT NULL,
+    window_start bigint NOT NULL CHECK (window_start >= 0 AND window_start <= {max}),
+    count bigint NOT NULL CHECK (count >= 1),
+    PRIMARY KEY (bucket, window_start)
+  )"
+        ),
+        "CREATE INDEX oaath_write_budget_window_v1 ON oaath_write_budget_v1 (window_start)"
+            .to_owned(),
         "CREATE TABLE oaath_revocation_v1 (
     grant_id text PRIMARY KEY
       REFERENCES oaath_relay_authorization_request_v1 (request_id),
@@ -1252,6 +1262,25 @@ impl RelayTransaction for PostgresTransaction {
             },
         )
         .await
+    }
+
+    async fn spend_write_budget(&mut self, bucket: &str, window_start: u64) -> RelayResult<u64> {
+        sqlx::query("DELETE FROM oaath_write_budget_v1 WHERE window_start < $1")
+            .bind(bigint(window_start))
+            .execute(&mut *self.transaction)
+            .await
+            .map_err(|_| RelayErrorCode::StoreUnavailable)?;
+        let count: i64 = sqlx::query_scalar(
+            "INSERT INTO oaath_write_budget_v1 (bucket, window_start, count) VALUES ($1, $2, 1) \
+             ON CONFLICT (bucket, window_start) \
+             DO UPDATE SET count = oaath_write_budget_v1.count + 1 RETURNING count",
+        )
+        .bind(bucket)
+        .bind(bigint(window_start))
+        .fetch_one(&mut *self.transaction)
+        .await
+        .map_err(|_| RelayErrorCode::StoreUnavailable)?;
+        u64::try_from(count).map_err(|_| RelayErrorCode::RecordUnreadable)
     }
 
     async fn lock_revocation(&mut self, grant_id: &str) -> RelayResult<Option<RevocationRecord>> {

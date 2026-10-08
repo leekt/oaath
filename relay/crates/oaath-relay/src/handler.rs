@@ -57,6 +57,7 @@ use crate::link::{
     read_link, remove_member, set_member_status,
 };
 use crate::member_grant::{assign_grant, member_grant_view, prepare_assignment};
+use crate::oauth::OAuthFailure;
 use crate::oauth::{
     LoginDecision, OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, grant,
     login_decision, operation, parse_form, pending, prepare_grant, push_authorization_request,
@@ -74,6 +75,7 @@ use crate::session::{
     sign_in, sign_out,
 };
 use crate::store::RelayStore;
+use crate::write_budget;
 
 const DEFAULT_REQUEST_TTL_MS: u64 = 300_000;
 const DEFAULT_CODE_TTL_MS: u64 = 60_000;
@@ -98,6 +100,8 @@ pub struct RelayOptions {
     pub chain: Option<Arc<ChainReader>>,
     /// Optional bundler; revocations are neither prepared nor submitted without it.
     pub bundler: Option<Arc<Bundler>>,
+    /// Public writes per route and client per minute; defaults to 30.
+    pub writes_per_minute: Option<u64>,
 }
 
 pub struct Relay {
@@ -110,6 +114,7 @@ pub struct Relay {
     oauth: Option<OAuthConfiguration>,
     chain: Option<Arc<ChainReader>>,
     bundler: Option<Arc<Bundler>>,
+    writes_per_minute: u64,
 }
 
 fn duration(value: Option<u64>, fallback: u64, maximum: u64) -> RelayResult<u64> {
@@ -258,6 +263,11 @@ impl Relay {
             oauth: options.oauth,
             chain: options.chain,
             bundler: options.bundler,
+            writes_per_minute: match options.writes_per_minute {
+                None => write_budget::DEFAULT_WRITES_PER_MINUTE,
+                Some(limit) if limit >= 1 => limit,
+                Some(_) => return Err(RelayErrorCode::Internal),
+            },
         })
     }
 
@@ -275,7 +285,31 @@ impl Relay {
 
     pub async fn handle(&self, request: Request<Body>) -> Response {
         let head = path_segments(request.uri().path()).first().copied();
-        if matches!(head, Some("oauth" | ".well-known")) {
+        let oauth = matches!(head, Some("oauth" | ".well-known"));
+        // Public writes spend the client's hard budget before anything else.
+        if let Some(route) = write_budget::budgeted_route(request.method(), request.uri().path())
+            && let Err(code) = write_budget::spend(
+                self.store.as_ref(),
+                self.clock.as_ref(),
+                request.headers(),
+                route,
+                self.writes_per_minute,
+            )
+            .await
+        {
+            tracing::debug!(code = %code, "write refused");
+            return http_response(if oauth {
+                let failure = OAuthFailure::from_code(code);
+                RelayReply {
+                    status: failure.status,
+                    body: serde_json::to_vec(&failure.body()).unwrap_or_default(),
+                    set_cookie: None,
+                }
+            } else {
+                failure(code)
+            });
+        }
+        if oauth {
             let path = request.uri().path().to_owned();
             let reply = match self.oauth_route(&path, request).await {
                 Ok(reply) => reply,

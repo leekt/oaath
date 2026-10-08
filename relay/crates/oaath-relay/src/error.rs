@@ -102,6 +102,10 @@ pub enum RelayErrorCode {
     #[error("relay_request_budget_exhausted")]
     #[serde(rename = "relay_request_budget_exhausted")]
     RequestBudgetExhausted,
+    /// This client's write budget for the route is spent for this window.
+    #[error("relay_rate_limited")]
+    #[serde(rename = "relay_rate_limited")]
+    RateLimited,
     /// An invariant the relay owns was violated.
     #[error("relay_internal")]
     #[serde(rename = "relay_internal")]
@@ -136,6 +140,7 @@ impl RelayErrorCode {
             Self::AccessDenied => 403,
             Self::CredentialRegistered => 409,
             Self::RequestBudgetExhausted => 429,
+            Self::RateLimited => 429,
             Self::Internal => 500,
         }
     }

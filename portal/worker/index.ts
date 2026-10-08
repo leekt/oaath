@@ -13,7 +13,9 @@
  *   spend a per-IP `WRITE_LIMIT` budget before they reach the relay.
  *
  * Only an allow-list of request headers reaches the relay, so client-supplied
- * forwarding headers (`x-forwarded-*`, `forwarded`, `cf-*`) never do, and
+ * forwarding headers (`x-forwarded-*`, `forwarded`, `cf-*`, `x-oaath-client-ip`)
+ * never do. The Worker sets `x-oaath-client-ip` itself from `cf-connecting-ip`:
+ * the relay spends its hard per-client write budget on it. And
  * request bodies are capped before they are forwarded. The OAuth surface never
  * carries a cookie in either direction.
  *
@@ -141,6 +143,9 @@ async function forward(request: Request, url: URL, env: Env, cors: boolean): Pro
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  // Cloudflare's own client address; the client's copy was never copied above.
+  const client = request.headers.get("cf-connecting-ip");
+  if (client) headers.set("x-oaath-client-ip", client);
   let upstream: Response;
   try {
     // The binding pins the destination; this URL only sets the Host the relay sees.
