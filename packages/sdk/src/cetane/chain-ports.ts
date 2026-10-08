@@ -55,6 +55,14 @@ export interface CetaneChainPortConfiguration {
   /** Omit for public-chain reads and direct-receipt observation without a submission route. */
   readonly bundlerUrl?: string;
   readonly paymasterUrl?: string;
+  /**
+   * The bundler pays chain gas itself (a relay such as bundle_rs in fast mode):
+   * every quoted operation carries `maxFeePerGas = 0` and
+   * `maxPriorityFeePerGas = 0`, so the account needs no funds and no paymaster.
+   * Gas limits still come from the bundler's `eth_estimateUserOperationGas`.
+   * Requires `bundlerUrl`; refused together with `paymasterUrl`.
+   */
+  readonly relayPaysGas?: boolean;
   readonly gas?: Readonly<KernelGasPolicy>;
 }
 
@@ -452,8 +460,15 @@ export function createCetaneChainPorts(
         "headers",
         "bundlerUrl",
         "paymasterUrl",
+        "relayPaysGas",
         "gas",
       ]);
+      if (config.relayPaysGas !== undefined && typeof config.relayPaysGas !== "boolean")
+        return invalid();
+      const relayPaysGas = config.relayPaysGas === true;
+      // A relay-paid chain has exactly one payer: the bundler.
+      if (relayPaysGas && (config.paymasterUrl !== undefined || config.bundlerUrl === undefined))
+        return invalid();
       const publicRpc = owner.pool(
         urls(config.publicRpcUrls),
         chainId,
@@ -577,7 +592,9 @@ export function createCetaneChainPorts(
         );
         if (nonce >> 64n !== BigInt(key)) return evidence();
         let quoted = gas(prepared.userOperation);
-        if (request.purpose !== "revalidate") {
+        if (request.purpose !== "revalidate" && relayPaysGas) {
+          quoted = { ...quoted, maxFeePerGas: "0", maxPriorityFeePerGas: "0" };
+        } else if (request.purpose !== "revalidate") {
           const fees = await client.estimateFeesPerGas().catch((error: unknown) => {
             if (error instanceof OaathRpcError) throw error;
             return evidence();

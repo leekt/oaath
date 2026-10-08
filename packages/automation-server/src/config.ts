@@ -17,6 +17,11 @@ export interface ChainEndpoints {
    * (paymaster-rs); null sends `{}`. Never logged.
    */
   readonly paymasterApiKey: string | null;
+  /**
+   * The bundler pays chain gas (bundle_rs fast mode): operations carry zero
+   * fees and need no funds. Never set together with a paymaster.
+   */
+  readonly relayPaysGas: boolean;
 }
 
 export interface AutomationServiceConfig {
@@ -138,6 +143,13 @@ export function configFromEnv(
     // A key without a paymaster would be silently unused.
     if (apiKey !== null && paymasterUrl === null)
       throw new ConfigError(`AUTOMATION_PAYMASTER_API_KEY_${chainId}`);
+    const relay = env[`AUTOMATION_RELAY_PAYS_GAS_${chainId}`]?.trim() ?? "";
+    if (!["", "true", "false"].includes(relay))
+      throw new ConfigError(`AUTOMATION_RELAY_PAYS_GAS_${chainId}`);
+    const relayPaysGas = relay === "true";
+    // A relay-paid chain has exactly one payer: the bundler.
+    if (relayPaysGas && paymasterUrl !== null)
+      throw new ConfigError(`AUTOMATION_RELAY_PAYS_GAS_${chainId}`);
     chains.set(
       chainId,
       Object.freeze({
@@ -145,6 +157,7 @@ export function configFromEnv(
         bundlerUrl: httpUrl(env, `AUTOMATION_BUNDLER_URL_${chainId}`),
         paymasterUrl,
         paymasterApiKey: apiKey,
+        relayPaysGas,
       }),
     );
   }

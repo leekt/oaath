@@ -30,6 +30,7 @@ first start; an older schema is refused and must be dropped and recreated
 | `AUTOMATION_BUNDLER_URL_<chainId>` | ERC-4337 bundler for that chain. Required. |
 | `AUTOMATION_PAYMASTER_URL_<chainId>` | Optional ERC-7677 paymaster; operations are self-funded without it. |
 | `AUTOMATION_PAYMASTER_API_KEY_<chainId>` | Optional key for that paymaster, sent as the ERC-7677 context `{ "apiKey": ... }` (as [paymaster-rs](https://github.com/leekt/paymaste_rs) accepts it) instead of `{}`. Requires the paymaster URL. |
+| `AUTOMATION_RELAY_PAYS_GAS_<chainId>` | Optional `true` when that chain's bundler pays gas itself ([bundle_rs](https://github.com/zerodevapp/bundle_rs) fast mode): operations carry zero fees and need no funds or paymaster. Refused together with a paymaster URL. |
 | `AUTOMATION_RPC_BUDGET`, `AUTOMATION_BUNDLER_BUDGET`, `AUTOMATION_PAYMASTER_BUDGET` | Hard request budgets per window; defaults 3000, 300 and 100. |
 | `AUTOMATION_BUDGET_WINDOW_SECONDS` | Budget window; default 600. Exhausted work waits for the next window. |
 

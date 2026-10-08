@@ -27,6 +27,7 @@ describe("configFromEnv", () => {
       bundlerUrl: "http://127.0.0.1:4337",
       paymasterUrl: null,
       paymasterApiKey: null,
+      relayPaysGas: false,
     });
     expect(config.budgets).toEqual({ rpc: 3000, bundler: 300, paymaster: 100, windowSeconds: 600 });
   });
@@ -47,6 +48,18 @@ describe("configFromEnv", () => {
     expect(() =>
       configFromEnv({ ...env, AUTOMATION_PAYMASTER_API_KEY_31337: "pm-key" }, [definition]),
     ).toThrow(expect.objectContaining({ variable: "AUTOMATION_PAYMASTER_API_KEY_31337" }));
+  });
+
+  it("captures a relay-paid bundler and refuses it alongside a paymaster", () => {
+    const config = configFromEnv({ ...env, AUTOMATION_RELAY_PAYS_GAS_31337: "true" }, [definition]);
+    expect(config.chains.get(31337)).toMatchObject({ paymasterUrl: null, relayPaysGas: true });
+    for (const extra of [
+      { AUTOMATION_PAYMASTER_URL_31337: "http://127.0.0.1:4338" },
+      { AUTOMATION_RELAY_PAYS_GAS_31337: "yes" },
+    ])
+      expect(() =>
+        configFromEnv({ ...env, AUTOMATION_RELAY_PAYS_GAS_31337: "true", ...extra }, [definition]),
+      ).toThrow(expect.objectContaining({ variable: "AUTOMATION_RELAY_PAYS_GAS_31337" }));
   });
 
   it.each([

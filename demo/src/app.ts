@@ -3,8 +3,9 @@
  * member until the root approves), send one covered call, have the root approve
  * one owner operation, and revoke in the portal.
  *
- * Every chain, bundler and paymaster request goes through this origin's Worker
- * (`/rpc/*`, `/paymaster/421614`), which holds the endpoints and budgets. A
+ * Every chain and bundler request goes through this origin's Worker
+ * (`/rpc/*`), which holds the endpoints and budgets. When `sponsored`, the
+ * bundler is a relay that pays gas itself, so operations carry zero fees. A
  * send is made once per click; a lost answer is observed, never resent.
  *
  * Section 6 schedules backend calls with `@oaath/automation`: the Worker turns
@@ -38,7 +39,6 @@ if (!configuration.ok) throw new Error("Demo configuration unavailable");
 const config = (await configuration.json()) as DemoConfig;
 const { issuer, clientId, chainId, target, selector } = config;
 const redirectUri = `${location.origin}/callback`;
-const paymasterUrl = `${location.origin}/paymaster/${chainId}`;
 const ENTRY_POINT = "0x433709009b8330fda32311df1c2afa402ed8d009";
 const STORAGE = {
   login: `oaath-demo-login:${issuer}`,
@@ -269,7 +269,7 @@ const oaath = createOAAth({
       [chainId]: {
         publicRpcUrls: [`${location.origin}/rpc/chain`],
         bundlerUrl: `${location.origin}/rpc/bundler`,
-        ...(config.sponsored ? { paymasterUrl } : {}),
+        ...(config.sponsored ? { relayPaysGas: true } : {}),
       },
     },
     // The Worker enforces the shared budget; these bound this page's share.
@@ -454,9 +454,6 @@ button("send").addEventListener("click", async () => {
     const operation = await grant.sendCalls({
       chain: chainId,
       calls: [call],
-      ...(config.sponsored
-        ? { payer: { kind: "paymaster-service", url: paymasterUrl, context: {} } }
-        : {}),
     });
     storage(STORAGE.operation, operation.id);
     await observe(operation);
@@ -508,10 +505,15 @@ button("owner-prepare").addEventListener("click", async () => {
         "latest",
       ])) as string,
     );
-    const fee = BigInt((await rpc("chain", "eth_gasPrice", [])) as string) * 2n;
+    // The relay pays gas for zero-fee operations; otherwise the account pays.
+    const fee = config.sponsored
+      ? 0n
+      : BigInt((await rpc("chain", "eth_gasPrice", [])) as string) * 2n;
     prepared = prepare(deployed, nonce & ((1n << 64n) - 1n), fee);
     const gas = (deployed ? 1_500_000n : 3_000_000n) + 1_200_000n;
-    const cost = `The account pays up to ${ether(gas * fee)}; fund it first if needed.`;
+    const cost = config.sponsored
+      ? "Gas is paid by the demo's relay."
+      : `The account pays up to ${ether(gas * fee)}; fund it first if needed.`;
     $("owner-cost").textContent = cost;
     $("owner-cost").hidden = false;
     $("owner-operation-details").hidden = false;

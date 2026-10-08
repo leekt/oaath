@@ -66,6 +66,7 @@ export function testConfig(
           bundlerUrl: "http://127.0.0.1:2",
           paymasterUrl: null,
           paymasterApiKey: null,
+          relayPaysGas: false,
         },
       ],
     ]),

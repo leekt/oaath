@@ -13,30 +13,29 @@ an owner operation, backend automation through
 | Route | Handling |
 | --- | --- |
 | `/`, `/callback`, `/assets/*` | The built page, GET/HEAD only, strict CSP (`connect-src` self and the issuer). |
-| `/config.json` | Issuer, `OAATH_CLIENT_ID` and chain settings from Worker vars; `sponsored` when the `PAYMASTER` binding and `PAYMASTER_API_KEY` are set. |
-| `/rpc/chain`, `/rpc/bundler` | Same-origin, allow-listed, per-IP budgeted JSON-RPC to `CHAIN_RPC_URL` / `BUNDLER_URL`. |
-| `/paymaster/421614` | Same-origin ERC-7677 proxy to paymaster-rs through the `PAYMASTER` VPC binding, with `Authorization: Bearer PAYMASTER_API_KEY`; sponsors only the demo's own call and replaces the context with `{}`. 503 without the binding or key. |
+| `/config.json` | Issuer, `OAATH_CLIENT_ID` and chain settings from Worker vars; `sponsored` when the `BUNDLER` binding is set. |
+| `/rpc/chain` | Same-origin, allow-listed, per-IP budgeted JSON-RPC to `CHAIN_RPC_URL`. |
+| `/rpc/bundler` | Same-origin, allow-listed, per-IP budgeted ERC-4337 JSON-RPC to bundle_rs through the `BUNDLER` VPC binding. `eth_sendUserOperation` and `eth_estimateUserOperationGas` accept only the demo's own call through EntryPoint 0.9. 503 without the binding. |
 | `/automation/session` | Same-origin, per-IP budgeted: verifies the login's id_token (issuer JWKS, this client) and creates a one-hour session at `AUTOMATION_URL` with the `AUTOMATION_APP_TOKEN` secret. 503 without it. |
 
 Every upstream request is made once, with no fallback; a send without an answer
-gets a bare 504 and is only observed afterwards. `pm_getPaymasterData` spends a
-per-IP budget and one global budget (`SPONSOR_GLOBAL_LIMIT`, a single-key
-Cloudflare rate limit, per minute). Set a budget in paymaster-rs's tenant
-configuration as well.
+gets a bare 504 and is only observed afterwards. `eth_sendUserOperation` also
+spends the per-IP `SEND_LIMIT` budget.
 
-Sponsorship uses [paymaster-rs](https://github.com/leekt/paymaste_rs), our own
-ERC-7677 service: Pimlico, ZeroDev and Alchemy paymasters do not support
-EntryPoint 0.9, which Kernel v4 accounts use. It listens on `127.0.0.1:4338`
-on the VM, so the Worker reaches it through a Workers VPC service. Create that
-service and put its id in `vpc_services[PAYMASTER].service_id` in
-`wrangler.jsonc` (it ships as the placeholder `PAYMASTER_VPC_SERVICE_ID`).
+Gas is paid by [bundle_rs](https://github.com/zerodevapp/bundle_rs) in its
+default fast mode: the page builds its chain ports with `relayPaysGas`, so every
+operation carries zero fees and the relay's executor pays chain gas. No account
+is funded and no paymaster is used (Pimlico, ZeroDev and Alchemy paymasters do
+not support EntryPoint 0.9, which Kernel v4 accounts use). bundle_rs listens on
+`127.0.0.1:4337` on the VM, so the Worker reaches it through a Workers VPC
+service. Create that service and put its id in `vpc_services[BUNDLER].service_id`
+in `wrangler.jsonc` (it ships as the placeholder `BUNDLER_VPC_SERVICE_ID`).
 
 ## Configure and deploy
 
 ```sh
 bun run --filter @oaath/demo test         # Worker unit tests
 bun run --filter @oaath/demo test:e2e     # relay binary, portal and demo Workers, Anvil, headless Chrome
-cd demo && bunx wrangler@4.147.0 secret put PAYMASTER_API_KEY   # optional: enables sponsorship
 bun run --filter @oaath/demo deploy:check
 cd demo && bunx wrangler@4.147.0 deploy
 ```

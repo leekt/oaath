@@ -7,7 +7,6 @@ import worker, { DEMO_AUTOMATION, type Env } from "../worker/index.js";
 import { DEMO_SELECTOR, DEMO_TARGET, ENTRY_POINT_V09, isDemoCall } from "../worker/rpc.js";
 
 const ORIGIN = "https://oaath-demo.taek.tech";
-const KEY = "pmrs_SECRET_test_key_123";
 const allow = { limit: async () => ({ success: true }) };
 
 function environment(overrides: { [K in keyof Env]?: Env[K] | undefined } = {}): Env {
@@ -21,14 +20,10 @@ function environment(overrides: { [K in keyof Env]?: Env[K] | undefined } = {}):
     OAATH_CLIENT_ID: "client-1",
     EXPLORER_TX_URL: "https://sepolia.arbiscan.io/tx/",
     CHAIN_RPC_URL: "https://chain.test/rpc",
-    BUNDLER_URL: "https://bundler.test/rpc",
     // The VPC binding; tests route it through the stubbed global fetch.
-    PAYMASTER: { fetch: (request: Request) => fetch(request) },
-    PAYMASTER_API_KEY: KEY,
+    BUNDLER: { fetch: (request: Request) => fetch(request) },
     RPC_LIMIT: allow,
     SEND_LIMIT: allow,
-    SPONSOR_LIMIT: allow,
-    SPONSOR_GLOBAL_LIMIT: allow,
     ...overrides,
   } as Env;
 }
@@ -77,8 +72,8 @@ function execute(
 
 const DEMO_CALL = execute(DEMO_TARGET, 0n, DEMO_SELECTOR);
 
-function sponsor(callData: string, method = "pm_getPaymasterData", chainId = "0x66eee") {
-  return rpc(method, [{ sender: `0x${"11".repeat(20)}`, callData }, ENTRY_POINT_V09, chainId, {}]);
+function relayed(callData: string, method = "eth_sendUserOperation", entryPoint = ENTRY_POINT_V09) {
+  return rpc(method, [{ sender: `0x${"11".repeat(20)}`, callData }, entryPoint]);
 }
 
 function upstream(answer: (request: Request) => Response | Promise<Response>) {
@@ -133,7 +128,7 @@ describe("demo worker pages", () => {
     expect((await worker.fetch(new Request("https://evil.test/"), env)).status).toBe(421);
   });
 
-  it("serves the client id and sponsorship flag from vars, never the key", async () => {
+  it("serves the client id and the relay-paid flag from vars and bindings", async () => {
     const config = await worker.fetch(new Request(`${ORIGIN}/config.json`), environment());
     const text = await config.text();
     expect(JSON.parse(text)).toMatchObject({
@@ -144,14 +139,11 @@ describe("demo worker pages", () => {
       selector: DEMO_SELECTOR,
       sponsored: true,
     });
-    expect(text).not.toContain(KEY);
-    for (const missing of [{ PAYMASTER_API_KEY: undefined }, { PAYMASTER: undefined }]) {
-      const unsponsored = await worker.fetch(
-        new Request(`${ORIGIN}/config.json`),
-        environment(missing),
-      );
-      expect((await unsponsored.json()).sponsored).toBe(false);
-    }
+    const unsponsored = await worker.fetch(
+      new Request(`${ORIGIN}/config.json`),
+      environment({ BUNDLER: undefined }),
+    );
+    expect((await unsponsored.json()).sponsored).toBe(false);
   });
 });
 
@@ -187,7 +179,7 @@ describe("demo worker proxies", () => {
       ["/rpc/chain", "eth_sendUserOperation"],
       ["/rpc/bundler", "eth_call"],
       ["/rpc/bundler", "debug_bundler_clearState"],
-      ["/paymaster/421614", "eth_chainId"],
+      ["/rpc/bundler", "pm_getPaymasterData"],
     ] as const) {
       const response = await post(path, rpc(method));
       expect((await response.json()).error.message).toBe("method not allowed by the demo");
@@ -226,23 +218,18 @@ describe("demo worker proxies", () => {
     expect(
       (await post("/rpc/chain", rpc("eth_chainId"), environment({ RPC_LIMIT: undefined }))).status,
     ).toBe(429);
-    const send = rpc("eth_sendUserOperation", [{}, ENTRY_POINT_V09]);
-    expect(
-      (await post("/rpc/bundler", send, environment({ SEND_LIMIT: spent(false) }))).status,
-    ).toBe(429);
     keys.length = 0;
     expect(
       (
         await post(
-          "/paymaster/421614",
-          sponsor(DEMO_CALL),
-          environment({ SPONSOR_GLOBAL_LIMIT: spent(false) }),
+          "/rpc/bundler",
+          relayed(DEMO_CALL),
+          environment({ SEND_LIMIT: spent(false) }),
           headers,
         )
       ).status,
     ).toBe(429);
-    // The global sponsorship budget is one key for everyone.
-    expect(keys).toEqual(["global"]);
+    expect(keys).toEqual(["203.0.113.9"]);
     expect(requests).toHaveLength(0);
   });
 
@@ -250,10 +237,7 @@ describe("demo worker proxies", () => {
     const requests = upstream(() => {
       throw new Error("connection reset");
     });
-    const response = await post(
-      "/rpc/bundler",
-      rpc("eth_sendUserOperation", [{ sender: "0x1" }, ENTRY_POINT_V09]),
-    );
+    const response = await post("/rpc/bundler", relayed(DEMO_CALL));
     expect(response.status).toBe(504);
     expect(await response.text()).toBe("");
     expect(requests).toHaveLength(1);
@@ -267,36 +251,42 @@ describe("demo worker proxies", () => {
   });
 });
 
-describe("demo paymaster", () => {
-  it("answers 503 without the paymaster binding or key", async () => {
+describe("demo relay", () => {
+  it("answers 503 without the bundler binding", async () => {
     const requests = upstream(() => Response.json({}));
-    for (const missing of [{ PAYMASTER_API_KEY: undefined }, { PAYMASTER: undefined }]) {
-      const response = await post("/paymaster/421614", sponsor(DEMO_CALL), environment(missing));
-      expect(response.status).toBe(503);
-    }
+    const response = await post(
+      "/rpc/bundler",
+      relayed(DEMO_CALL),
+      environment({ BUNDLER: undefined }),
+    );
+    expect(response.status).toBe(503);
     expect(requests).toHaveLength(0);
   });
 
-  it("sponsors only the demo's own call on 421614 through EntryPoint 0.9", async () => {
+  it("sends and estimates only the demo's own call through EntryPoint 0.9", async () => {
     const requests = upstream(() => Response.json({}));
-    const refusals = [
-      sponsor(execute(DEMO_TARGET, 1n, DEMO_SELECTOR)),
-      sponsor(execute(`0x${"ab".repeat(20)}`, 0n, DEMO_SELECTOR)),
-      sponsor(execute(DEMO_TARGET, 0n, "0xa9059cbb")),
-      sponsor(execute(DEMO_TARGET, 0n, `${DEMO_SELECTOR}00`)),
-      // A batch mode is refused even when its one call is the demo call.
-      sponsor(execute(DEMO_TARGET, 0n, DEMO_SELECTOR, `0x01${"00".repeat(31)}`)),
-      sponsor("0x"),
-      sponsor(DEMO_CALL, "pm_getPaymasterData", "0x1"),
-      rpc("pm_getPaymasterData", [{ callData: DEMO_CALL }, `0x${"00".repeat(20)}`, "0x66eee", {}]),
-    ];
-    for (const body of refusals) {
-      const answer = await (await post("/paymaster/421614", body)).json();
-      expect(answer.error.code).toBe(-32005);
+    for (const method of ["eth_sendUserOperation", "eth_estimateUserOperationGas"]) {
+      const refusals = [
+        relayed(execute(DEMO_TARGET, 1n, DEMO_SELECTOR), method),
+        relayed(execute(`0x${"ab".repeat(20)}`, 0n, DEMO_SELECTOR), method),
+        relayed(execute(DEMO_TARGET, 0n, "0xa9059cbb"), method),
+        relayed(execute(DEMO_TARGET, 0n, `${DEMO_SELECTOR}00`), method),
+        // A batch mode is refused even when its one call is the demo call.
+        relayed(execute(DEMO_TARGET, 0n, DEMO_SELECTOR, `0x01${"00".repeat(31)}`), method),
+        relayed("0x", method),
+        relayed(DEMO_CALL, method, `0x${"00".repeat(20)}`),
+        // A state override would simulate against another state.
+        rpc(method, [{ callData: DEMO_CALL }, ENTRY_POINT_V09, {}]),
+        rpc(method, [null, ENTRY_POINT_V09]),
+      ];
+      for (const body of refusals) {
+        const answer = await (await post("/rpc/bundler", body)).json();
+        expect(answer.error.code).toBe(-32005);
+      }
+      // One refused call refuses the whole batch.
+      const mixed = await post("/rpc/bundler", [relayed(DEMO_CALL, method), relayed("0x", method)]);
+      expect((await mixed.json()).error.code).toBe(-32005);
     }
-    expect((await post("/paymaster/421614", [sponsor(DEMO_CALL), sponsor(DEMO_CALL)])).status).toBe(
-      400,
-    );
     expect(requests).toHaveLength(0);
   });
 
@@ -317,52 +307,33 @@ describe("demo paymaster", () => {
     ).toBe(false);
   });
 
-  it("forwards through the binding with a bearer key and empty context, and never leaks the key", async () => {
-    const logged: unknown[] = [];
-    for (const level of ["log", "info", "warn", "error", "debug"] as const)
-      vi.spyOn(console, level).mockImplementation((...args) => void logged.push(...args));
+  it("forwards the demo call and receipt reads through the binding only", async () => {
     // Nothing reaches the public network: only the binding is called.
     const publicFetches = upstream(() => Response.json({}));
     const requests: Request[] = [];
-    let answer = async (request: Request) =>
-      // A provider echoing its request must not hand the key to the page.
-      Response.json({
-        jsonrpc: "2.0",
-        id: 1,
-        error: { code: -32000, message: `rejected ${request.headers.get("authorization")}` },
-      });
     const env = environment({
-      PAYMASTER: {
+      BUNDLER: {
         fetch: async (request: Request) => {
           requests.push(request.clone());
-          return answer(request);
+          const { id } = (await request.json()) as { id: number };
+          return Response.json({ jsonrpc: "2.0", id, result: "0x01" });
         },
       },
     });
-    const page = sponsor(DEMO_CALL);
-    (page.params[3] as Record<string, unknown>).apiKey = "page-chosen";
-    const response = await post("/paymaster/421614", page, env);
-    const text = await response.text();
-    expect(text).not.toContain(KEY);
-    expect(text).toContain("[redacted]");
-    expect(requests).toHaveLength(1);
-    expect(requests[0]!.headers.get("authorization")).toBe(`Bearer ${KEY}`);
-    expect([...requests[0]!.headers.keys()].sort()).toEqual(["authorization", "content-type"]);
-    const forwarded = (await requests[0]!.json()) as { params: unknown[] };
-    expect(forwarded.params[3]).toEqual({});
-    expect(publicFetches).toHaveLength(0);
-
-    answer = async () => {
-      throw new Error(`connection reset for Bearer ${KEY}`);
-    };
-    const lost = await post(
-      "/paymaster/421614",
-      sponsor(DEMO_CALL, "pm_getPaymasterStubData"),
-      env,
+    for (const body of [
+      relayed(DEMO_CALL, "eth_estimateUserOperationGas"),
+      relayed(DEMO_CALL),
+      rpc("eth_getUserOperationReceipt", [`0x${"11".repeat(32)}`]),
+    ]) {
+      const response = await post("/rpc/bundler", body, env);
+      expect(await response.json()).toEqual({ jsonrpc: "2.0", id: 1, result: "0x01" });
+    }
+    expect(requests).toHaveLength(3);
+    expect([...requests[0]!.headers.keys()]).toEqual(["content-type"]);
+    expect(((await requests[1]!.json()) as { params: unknown[] }).params).toEqual(
+      relayed(DEMO_CALL).params,
     );
-    expect(lost.status).toBe(504);
-    expect(await lost.text()).toBe("");
-    expect(JSON.stringify(logged)).not.toContain(KEY);
+    expect(publicFetches).toHaveLength(0);
   });
 });
 
