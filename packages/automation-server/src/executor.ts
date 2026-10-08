@@ -25,6 +25,7 @@
  */
 import { type ResolvedCall, resolveCalls } from "@oaath/automation";
 import { BudgetError } from "./budget.js";
+import type { ChainEndpoints } from "./config.js";
 import { type PlanRow, readPlan, type ServiceContext } from "./context.js";
 import type { Pool } from "./db.js";
 import { openGrant } from "./grant.js";
@@ -69,20 +70,32 @@ export interface OperationGateway {
 
 export type OpenGateway = (plan: PlanRow) => Promise<OperationGateway>;
 
+/**
+ * The ERC-7677 payer for a chain, or null when operations are self-funded. A
+ * configured API key travels in the context (`{ apiKey }`), as paymaster-rs
+ * accepts it; otherwise the context is `{}`.
+ */
+export function paymasterPayer(endpoints: ChainEndpoints | undefined) {
+  if (!endpoints || endpoints.paymasterUrl === null) return null;
+  return {
+    kind: "paymaster-service" as const,
+    url: endpoints.paymasterUrl,
+    context: endpoints.paymasterApiKey === null ? {} : { apiKey: endpoints.paymasterApiKey },
+  };
+}
+
 /** The default gateway: the plan's Grant handle over the budgeted chain ports. */
 export function grantGateway(context: ServiceContext): OpenGateway {
   return async (plan) => {
     const opened = await openGrant(context, plan);
     const chain = plan.terms.chainId;
-    const paymasterUrl = context.config.chains.get(chain)?.paymasterUrl ?? null;
+    const payer = paymasterPayer(context.config.chains.get(chain));
     return {
       async send(calls) {
         const operation = await opened.grant.sendCalls({
           chain,
           calls: calls.map((call) => ({ target: call.target, value: call.value, data: call.data })),
-          ...(paymasterUrl === null
-            ? {}
-            : { payer: { kind: "paymaster-service", url: paymasterUrl, context: {} } }),
+          ...(payer === null ? {} : { payer }),
         });
         await operation.close().catch(() => undefined);
         return operation.id;

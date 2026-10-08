@@ -21,12 +21,21 @@
     "EXPLORER_TX_URL": "https://sepolia.arbiscan.io/tx/",
     "CHAIN_RPC_URL": "https://sepolia-rollup.arbitrum.io/rpc",
     "BUNDLER_URL": "https://public.pimlico.io/v2/421614/rpc",
-    // The key is appended from the PIMLICO_API_KEY secret; unset, sponsorship answers 503.
-    "PAYMASTER_URL": "https://api.pimlico.io/v2/421614/rpc",
     // The hosted automation service (@oaath/automation-server). Section 6 stays
     // hidden until the AUTOMATION_APP_TOKEN secret holds the demo's credential there.
     "AUTOMATION_URL": "https://oaath-automation.taek.tech"
   },
+  // Sponsorship: paymaster-rs (leekt/paymaste_rs), because Pimlico, ZeroDev and
+  // Alchemy paymasters do not support EntryPoint 0.9 (Kernel v4). It is
+  // loopback-only on the VM, so it is reached through a Workers VPC service and
+  // authenticated with the PAYMASTER_API_KEY secret; either unset, sponsorship answers 503.
+  "vpc_services": [
+    {
+      "binding": "PAYMASTER",
+      // Workers VPC service `paymaster-rs`: 127.0.0.1:4338 on the OCI VM's loopback.
+      "service_id": "01a11b05-da4d-74c0-bdab-45b39c0074a1"
+    }
+  ],
   // Server-side calls to the hosted automation service go through its Worker directly.
   "services": [{ "binding": "AUTOMATION_SERVICE", "service": "oaath-automation" }],
   "ratelimits": [
