@@ -829,9 +829,19 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await click(popup, "::-p-text(Approve and sign)");
     await popup.waitForSelector("::-p-text(Authorization authorized)");
     await outcome(root, "automation-finalized", 180_000);
-    expect(await text(root, "#automation")).toMatch(
-      /ping 0: finalized · UserOperation 0x[0-9a-f]{64}/u,
+    // One row per ping: the first is included and links its transaction.
+    const pings = await root.$$eval("#automation-runs li", (rows) =>
+      rows.map((row) => ({
+        state: (row as HTMLElement).dataset.state,
+        link: row.querySelector("a")?.getAttribute("href") ?? null,
+      })),
     );
+    expect(pings).toHaveLength(3);
+    expect(pings[0]?.state).toBe("included");
+    expect(pings[0]?.link).toMatch(/^https:\/\/sepolia\.arbiscan\.io\/tx\/0x[0-9a-f]{64}$/u);
+    for (const ping of pings.slice(1))
+      expect(["scheduled", "sent", "included"]).toContain(ping.state);
+    await capture(root, "automation");
     expect(local.sent).toHaveLength(4);
     expect(local.sent[3]?.sender.toLowerCase()).toBe(address);
     expectRelayPaid(local.sent[3]);
