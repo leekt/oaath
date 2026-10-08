@@ -44,6 +44,10 @@ jobs:
         working-directory: relay
       - run: cargo test --workspace
         working-directory: relay
+      # The automation service end to end: this relay as the OAuth issuer, two
+      # service replicas over a throwaway PostgreSQL, and Anvil. Loopback only.
+      - run: bun run --filter @oaath/automation-server test:e2e
+        timeout-minutes: 8
       # Login with OAAth end to end: the relay binary built above, the real
       # portal Worker module, the built SPA, and headless Chrome. Loopback only.
       - run: bun run --filter @oaath/portal test:e2e
