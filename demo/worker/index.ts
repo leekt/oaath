@@ -106,7 +106,7 @@ export default {
     if (!reading || (!page && !asset)) return failure(404, "Not found");
     const served = await env.ASSETS.fetch(
       new Request(
-        `${env.DEMO_ORIGIN}${url.pathname === "/callback" ? "/callback.html" : url.pathname}`,
+        `${env.DEMO_ORIGIN}${url.pathname === "/" ? "/index.html" : url.pathname === "/callback" ? "/callback.html" : url.pathname}`,
         { method: request.method },
       ),
     );
