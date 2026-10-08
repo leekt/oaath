@@ -716,6 +716,11 @@ pub async fn prepare_revocation(
         (KernelAccountProfile::Existing(_), false) => return Err(UNREADABLE),
     };
 
+    // No signable request is returned for an unfunded deployment. A later
+    // preparation may retry after funding; this never authorizes submission.
+    if state.available_funds == Some(U256::ZERO) {
+        return Err(RelayErrorCode::InsufficientFunds);
+    }
     // The two bundler requests below are spent before they leave.
     let reserved = match &record {
         Some(record) => {
@@ -777,6 +782,23 @@ pub async fn prepare_revocation(
     op.call_gas_limit = decimal(estimate.get("callGasLimit"))?;
     op.verification_gas_limit = decimal(estimate.get("verificationGasLimit"))?;
     op.pre_verification_gas = decimal(estimate.get("preVerificationGas"))?;
+    if let Some(available) = state.available_funds {
+        let gas = [
+            &op.call_gas_limit,
+            &op.verification_gas_limit,
+            &op.pre_verification_gas,
+        ]
+        .into_iter()
+        .try_fold(U256::ZERO, |sum, value| {
+            let value = U256::from_str_radix(value, 10).map_err(|_| UNAVAILABLE)?;
+            sum.checked_add(value).ok_or(UNAVAILABLE)
+        })?;
+        let price = U256::from_str_radix(&op.max_fee_per_gas, 10).map_err(|_| UNAVAILABLE)?;
+        let required = gas.checked_mul(price).ok_or(UNAVAILABLE)?;
+        if available < required {
+            return Err(RelayErrorCode::InsufficientFunds);
+        }
+    }
     let request =
         compose_owner_operation_request(revocable.account.clone(), REVOCATION_CHAIN_ID, calls, op)
             .map_err(|_| UNAVAILABLE)?;

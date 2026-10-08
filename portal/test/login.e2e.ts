@@ -321,13 +321,13 @@ async function startDapp(grants = false) {
  * and personal_sign and eth_signTypedData_v4 with the fixture key; it records
  * every method asked.
  */
-async function installWallet(page: Page) {
+async function installWallet(page: Page, wallet = WALLET) {
   await page.exposeFunction("e2eWalletSignTypedData", (json: string) => {
     walletSignatures += 1;
-    return WALLET.sign({ hash: hashTypedData(JSON.parse(json)) });
+    return wallet.sign({ hash: hashTypedData(JSON.parse(json)) });
   });
   await page.exposeFunction("e2eWalletPersonalSign", (raw: `0x${string}`) =>
-    WALLET.signMessage({ message: { raw } }),
+    wallet.signMessage({ message: { raw } }),
   );
   await page.evaluateOnNewDocument((address: string) => {
     const methods: string[] = [];
@@ -359,7 +359,7 @@ async function installWallet(page: Page) {
         }),
       ),
     );
-  }, WALLET_ADDRESS);
+  }, wallet.address.toLowerCase());
 }
 
 async function click(page: Page, selector: string) {
@@ -2306,21 +2306,78 @@ describe("revoking an invalidated grant on chain", () => {
       ).json as { members: { signer_id: string; grant_id: string | null }[] };
       const dappSigner = members.members.find((member) => member.grant_id === grantId);
       if (!dappSigner) throw new Error("no dapp signer");
-      await relayCall(
-        `/portal/accounts/${account.account_id}/members/${dappSigner.signer_id}`,
-        root.cookie,
-        undefined,
-        "DELETE",
-      );
+      // Exercise the real owner UI: sign in, remove the member, and review the
+      // revocation. No signer session is injected into the browser.
+      const revocationDevice = await browser.createBrowserContext();
+      const ui = await revocationDevice.newPage();
+      await installWallet(ui, rootAccount);
+      await ui.goto(`${portal}/accounts`);
+      await click(ui, "::-p-text(Add signer)");
+      await click(ui, "#add-wallet-method");
+      await click(ui, "[aria-label='Available wallets'] button::-p-text(E2E Wallet)");
+      await click(ui, `button[aria-label='Smart account ${account.address}']`);
+      await click(ui, "button[aria-label^='Remove ']");
+      await click(ui, "::-p-text(Confirm removal)");
+      const action = installed ? "Revoke on chain" : "Invalidate on chain";
+      await ui.waitForSelector(`button::-p-text(${action})`);
+      const methods = () =>
+        ui.evaluate(() => (window as unknown as { walletMethods: string[] }).walletMethods);
+      const beforeSigning = await methods();
       const sentBefore = local.sent.length;
-      const { prepared: revocation, signed } = await rootRevokes(
-        grantId,
-        root.cookie,
-        rootProfile,
-        rootAccount,
-        account.address,
-        submitFromOaath,
+      if (!installed) {
+        await local.chain.rpc("anvil_setBalance", [account.address, "0x0"]);
+        await click(ui, `button::-p-text(${action})`);
+        await click(ui, "button::-p-text(Confirm and sign)");
+        await ui.waitForSelector("::-p-text(This account needs ETH on Arbitrum Sepolia)");
+        expect(await methods()).toEqual(beforeSigning);
+        expect(local.sent).toHaveLength(sentBefore);
+        await local.chain.rpc("anvil_setBalance", [account.address, toHex(10n ** 18n)]);
+      }
+      await click(ui, `button::-p-text(${action})`);
+      if (delivery === "dapp") {
+        const checkbox = await ui.waitForSelector(
+          "#revocations-heading + .member-actions input[type=checkbox]",
+        );
+        expect(await checkbox?.evaluate((input) => (input as HTMLInputElement).checked)).toBe(
+          false,
+        );
+        if (submitFromOaath) await checkbox?.click();
+      }
+      const preparation = ui
+        .waitForResponse(
+          (response) =>
+            new URL(response.url()).pathname === `/portal/grants/${grantId}/revocation/prepare`,
+        )
+        .then((response) => response.json() as Promise<Revocation>);
+      const signing = ui
+        .waitForResponse(
+          (response) =>
+            new URL(response.url()).pathname === `/portal/grants/${grantId}/revocation/sign`,
+        )
+        .then((response) => response.json() as Promise<Revocation>);
+      await click(ui, "button::-p-text(Confirm and sign)");
+      const [revocation, signed] = await Promise.all([preparation, signing]);
+      const afterSigning = await methods();
+      expect(afterSigning.filter((method) => method === "personal_sign").length).toBe(
+        beforeSigning.filter((method) => method === "personal_sign").length + 1,
       );
+      if (!revocation.request) throw new Error("no reviewed revocation");
+      const reviewed = parseOwnerOperationRequest(revocation.request);
+      expect(reviewed.userOperation.sender).toBe(account.address);
+      expect(reviewed.calls).toEqual(
+        revocation.action === "uninstall"
+          ? encodeKernelPermissionUninstallCalls({
+              account: account.address,
+              packages: revocation.packages as never,
+            })
+          : [
+              encodeKernelInstallNonceInvalidationCall({
+                account: account.address,
+                installNonce: revocation.install_nonce,
+              }),
+            ],
+      );
+      await revocationDevice.close();
       expect(revocation.delivery).toBe(delivery);
       if (!installed) {
         // Never installed (the account is not even deployed): the root's operation
