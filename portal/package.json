@@ -23,7 +23,7 @@
     "@noble/curves": "1.9.1",
     "@oaath/protocol": "workspace:*",
     "@oaath/sdk": "workspace:*",
-    "cetane": "0.0.4",
+    "cetane": "0.0.6",
     "class-variance-authority": "0.7.1",
     "lucide-react": "1.52.0",
     "react": "19.2.0",

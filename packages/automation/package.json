@@ -53,7 +53,7 @@
   },
   "dependencies": {
     "@oaath/protocol": "workspace:*",
-    "cetane": "0.0.4"
+    "cetane": "0.0.6"
   },
   "devDependencies": {
     "@types/node": "22.13.0"

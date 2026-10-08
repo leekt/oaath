@@ -497,14 +497,8 @@ export function createCetaneChainPorts(
             );
       const gasPolicy = captureKernelGasPolicy(chainId, config.gas);
       const client = createPublicClient({
-        chain: {
-          id: chainId,
-          name: `Chain ${chainId}`,
-          nativeAA: false,
-          // 2x base-fee headroom (Cetane's default): bundlers (e.g. Pimlico) refuse an op whose maxFeePerGas is
-          // below their own quote, and the cap costs nothing extra (the chain charges base + tip).
-          fees: { baseFeeMultiplier: 20000 },
-        },
+        // Fees come from Cetane's default policy (2x base fee plus the priority fee).
+        chain: { id: chainId, name: `Chain ${chainId}`, nativeAA: false },
         transport: custom({
           request: ({ method, params }) =>
             publicRpc(method, params as readonly unknown[] | undefined),
