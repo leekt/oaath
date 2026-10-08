@@ -10,6 +10,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import {
+  encodeKernelPermissionUninstallCalls,
   isKernelExistingAccountProfile,
   type KernelDerivedAccountProfile,
   type KernelExistingAccountProfile,
@@ -42,6 +43,10 @@ import { credentialKey } from "../key/credential.js";
 import { ecdsaKey, ecdsaWalletKey } from "../key/ecdsa.js";
 import { p256Key } from "../key/p256.js";
 import { webauthnVerifier } from "../key/webauthn.js";
+import {
+  type KernelAllChainApproval,
+  parseKernelAllChainApproval,
+} from "../permission/materialize.js";
 import type { KernelCall, KernelUserOperationGas, KeyProfile } from "../types.js";
 import { ownerOperator } from "./owner.js";
 
@@ -207,6 +212,66 @@ export function prepareOwnerOperation(
         signature,
       });
     },
+  });
+}
+
+export interface PrepareOwnerPermissionUninstallInput {
+  /** The Grant's factory-derived or existing Kernel 0.4.0 account profile. */
+  readonly account: PrepareOwnerOperationInput["account"];
+  readonly chainId: number;
+  /**
+   * The Grant's install approval (`token.authorization_details[0].enable`): its
+   * packages name the permission's signer and policies, prefixed by the
+   * permission ID.
+   */
+  readonly approval: Readonly<KernelAllChainApproval>;
+  readonly nonce: PrepareOwnerOperationInput["nonce"];
+  readonly gas: PrepareOwnerOperationInput["gas"];
+  readonly paymaster?: PrepareOwnerOperationInput["paymaster"];
+}
+
+/**
+ * The owner operation that uninstalls one installed Kernel 0.4.0 permission:
+ * its policies in reverse install order, then its signer. An installed
+ * permission means a deployed account, so no factory is included. An approval
+ * for another account fails with `kernel_runtime_binding_mismatch`.
+ */
+export function prepareOwnerPermissionUninstall(
+  value: PrepareOwnerPermissionUninstallInput,
+): Readonly<PreparedOwnerOperation> {
+  const keys = ["account", "chainId", "approval", "nonce", "gas"];
+  if (value !== null && typeof value === "object" && Object.hasOwn(value, "paymaster"))
+    keys.push("paymaster");
+  const input = exactInput(value, keys, "owner permission uninstall", new WeakSet());
+  if (typeof input.chainId !== "number") return inputInvalid("owner operation chain is invalid");
+  const approval = parseKernelAllChainApproval(input.approval);
+  const account = parseKernelAccountProfile(input.account);
+  const address = isKernelExistingAccountProfile(account)
+    ? existingAddress(account)
+    : account.factoryRoute === "kernel_factory"
+      ? deriveKernelV4RootAccountAddress({
+          initialPackages: rootPackages(account, input.chainId),
+          accountIndex: account.accountIndex,
+        })
+      : null;
+  if (address !== null && approval.account !== address)
+    return runtimeFail(
+      "kernel_runtime_binding_mismatch",
+      "the install approval belongs to another account",
+    );
+  return prepareOwnerOperation({
+    account: input.account as PrepareOwnerOperationInput["account"],
+    chainId: input.chainId,
+    deployed: true,
+    calls: encodeKernelPermissionUninstallCalls({
+      account: approval.account,
+      packages: approval.packages,
+    }),
+    nonce: input.nonce as PrepareOwnerOperationInput["nonce"],
+    gas: input.gas as PrepareOwnerOperationInput["gas"],
+    ...(Object.hasOwn(input, "paymaster")
+      ? { paymaster: input.paymaster as Readonly<PreparedPaymaster> | null }
+      : {}),
   });
 }
 

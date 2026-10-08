@@ -86,10 +86,12 @@ export type {
   OwnerOperationRelyingParty,
   PreparedOwnerOperation,
   PrepareOwnerOperationInput,
+  PrepareOwnerPermissionUninstallInput,
   VerifiedOwnerOperation,
 } from "./kernel/operator/owner-operation.js";
 export {
   prepareOwnerOperation,
+  prepareOwnerPermissionUninstall,
   verifyOwnerOperation,
 } from "./kernel/operator/owner-operation.js";
 export type { SessionOperatorInput } from "./kernel/operator/session.js";
