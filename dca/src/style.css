@@ -1,0 +1,114 @@
+/* The demo's look, shared: tokens, layout, journey, tasks, buttons and feedback. */
+@import "../../demo/src/style.css";
+
+.plan-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 20px;
+  margin: 24px 0 8px;
+}
+.plan-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  color: var(--ink-2);
+}
+.plan-form input,
+.plan-form select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--control-radius);
+  background: var(--plate);
+  color: var(--ink);
+  font: 450 1rem var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+.field {
+  position: relative;
+  display: block;
+}
+.field span {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-2);
+  font-weight: 450;
+}
+.plan-summary,
+.plan-form .actions {
+  grid-column: 1 / -1;
+}
+.plan-summary {
+  margin: 0;
+  padding: 12px 16px;
+  background: var(--sunken);
+  border-radius: var(--control-radius);
+  color: var(--ink);
+  font-size: 0.875rem;
+}
+.runs {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  font-size: 0.875rem;
+}
+.runs li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 9rem 4.5rem;
+  gap: 4px 16px;
+  align-items: baseline;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.runs strong {
+  font-weight: 550;
+}
+.runs li > span {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.runs .run-status {
+  color: var(--ink);
+}
+.runs [data-tone="active"] .run-status {
+  color: var(--accent);
+}
+.runs [data-tone="done"] .run-status {
+  color: var(--pass);
+}
+.runs [data-tone="failed"] .run-status {
+  color: var(--alert);
+}
+.runs a {
+  grid-column: 4;
+  font-size: 0.8125rem;
+}
+#plan-status {
+  font-size: 1.125rem;
+}
+@media (max-width: 680px) {
+  .journey ol {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .plan-form,
+  .permission-limits {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .permission-limits div + div {
+    border-left: 0;
+    padding-top: 10px;
+  }
+  .runs li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .runs a {
+    grid-column: auto;
+  }
+}
+.plan-summary:empty {
+  display: none;
+}

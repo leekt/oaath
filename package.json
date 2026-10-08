@@ -61,7 +61,8 @@
     "packages/*",
     "examples",
     "portal",
-    "demo"
+    "demo",
+    "dca"
   ],
   "trustedDependencies": [
     "esbuild"

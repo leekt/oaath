@@ -1,0 +1,30 @@
+{
+  "name": "@oaath/dca-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The hosted OAAth DCA example app and its Cloudflare Worker. Never a published package.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "taek <leekt216@gmail.com>",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy:check": "vite build && bunx wrangler@4.147.0 deploy --dry-run"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "5.3.0",
+    "@oaath/automation": "workspace:*",
+    "@oaath/sdk": "workspace:*",
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.0",
+    "viem": "2.55.8",
+    "vite": "8.2.0",
+    "vitest": "4.1.10"
+  }
+}

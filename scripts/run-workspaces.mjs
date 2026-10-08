@@ -24,7 +24,7 @@ const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 function workspaces() {
   const packages = new Map();
-  for (const parent of ["packages", "examples", "portal", "demo"]) {
+  for (const parent of ["packages", "examples", "portal", "demo", "dca"]) {
     const base = join(ROOT, parent);
     const directories =
       parent !== "packages"
