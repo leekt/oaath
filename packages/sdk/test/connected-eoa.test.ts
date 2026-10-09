@@ -1,3 +1,6 @@
+import { custom as cetaneCustom, createWalletClient as createCetaneWalletClient } from "cetane";
+import { generatePrivateKey, privateKeyToAccount } from "cetane/accounts";
+import { createExecution } from "cetane/execution/evm";
 import { createWalletClient, custom, decodeFunctionData } from "viem";
 import { entryPoint07Abi, toPackedUserOperation } from "viem/account-abstraction";
 import { describe, expect, it, vi } from "vitest";
@@ -101,6 +104,124 @@ function fixture(
 }
 
 describe("connected EOA fallback", () => {
+  it("captures a Cetane local signer with a lazy address without contacting the wallet", () => {
+    const signer = privateKeyToAccount(generatePrivateKey());
+    expect(Object.getOwnPropertyDescriptor(signer, "address")?.get).toBeTypeOf("function");
+    const rpc = vi.fn(async () => {
+      throw new Error("wallet must not be contacted during capture");
+    });
+    const wallet = createCetaneWalletClient({
+      chain: { id: 143, name: "Fixture", nativeAA: false, execution: createExecution() },
+      account: { address: signer.address },
+      signer,
+      transport: cetaneCustom({ request: rpc }),
+    });
+    const payer = captureConnectedEoa({ kind: "connected-eoa", wallet }, new WeakSet());
+    expect(payer.address).toBe(signer.address.toLowerCase());
+    expect(payer.localSend).toBeTypeOf("function");
+    expect(Object.isFrozen(payer)).toBe(true);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("reads only the signer capability once and captures the local send", async () => {
+    const sign = vi.fn();
+    const readSign = vi.fn(() => sign);
+    const readAddress = vi.fn(() => {
+      throw new Error("unrelated signer field must not be read");
+    });
+    const signer = Object.defineProperties(
+      {},
+      {
+        sign: { get: readSign },
+        address: { get: readAddress },
+      },
+    );
+    const rpc = vi.fn();
+    const send = vi.fn(async () => transactionHash);
+    const wallet = { account: { address }, signer, request: rpc, sendTransaction: send };
+    const payer = captureConnectedEoa({ kind: "connected-eoa", wallet }, new WeakSet());
+    wallet.sendTransaction = vi.fn(async () => {
+      throw new Error("replaced send must not be used");
+    });
+    expect(await payer.localSend?.({ to: address, data: "0x", value: 0n })).toBe(transactionHash);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(readSign).toHaveBeenCalledTimes(1);
+    expect(readAddress).not.toHaveBeenCalled();
+    expect(sign).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "signer", 1, {}, { sign: undefined }, { sign: "sign" }])(
+    "rejects an invalid signer before contacting the wallet: %s",
+    (signer) => {
+      const rpc = vi.fn();
+      const send = vi.fn();
+      expect(() =>
+        captureConnectedEoa(
+          {
+            kind: "connected-eoa",
+            wallet: { account: { address }, signer, request: rpc, sendTransaction: send },
+          },
+          new WeakSet(),
+        ),
+      ).toThrowError(expect.objectContaining({ code: "oaath_client_input_invalid" }));
+      expect(rpc).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an unreadable signer capability without retaining its error", () => {
+    const readSign = vi.fn(() => {
+      throw new Error("private signer details");
+    });
+    const signer = Object.defineProperty({}, "sign", { get: readSign });
+    expect(() =>
+      captureConnectedEoa(
+        {
+          kind: "connected-eoa",
+          wallet: { account: { address }, signer, request: vi.fn(), sendTransaction: vi.fn() },
+        },
+        new WeakSet(),
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "oaath_client_input_invalid",
+        message: "connected fee payer signer is invalid",
+      }),
+    );
+    expect(readSign).toHaveBeenCalledTimes(1);
+  });
+
+  it("still requires a local send capability when a signer is present", () => {
+    expect(() =>
+      captureConnectedEoa(
+        {
+          kind: "connected-eoa",
+          wallet: { account: { address }, signer: { sign: vi.fn() }, request: vi.fn() },
+        },
+        new WeakSet(),
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "oaath_client_input_invalid",
+        message: "local fee payer sendTransaction is missing",
+      }),
+    );
+  });
+
+  it.each(["wallet", "account"])("keeps the %s data boundary strict", (boundary) => {
+    const read = vi.fn();
+    const wallet = { account: { address }, request: vi.fn() };
+    Object.defineProperty(boundary === "wallet" ? wallet : wallet.account, "extra", {
+      enumerable: true,
+      get: read,
+    });
+    expect(() =>
+      captureConnectedEoa({ kind: "connected-eoa", wallet }, new WeakSet()),
+    ).toThrowError(expect.objectContaining({ code: "oaath_client_input_invalid" }));
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it.each([true, false])(
     "uses the local wallet only after a conclusive rejection: %s",
     async (conclusive) => {
