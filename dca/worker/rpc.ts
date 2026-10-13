@@ -21,7 +21,7 @@
  * executor pays chain gas), reached through the `BUNDLER` Workers VPC binding.
  * The automation service sends every plan operation through its own bundler.
  *
- * Only `content-type` reaches a provider. Upstream URLs are never logged or
+ * The bundler receives its server-owned credential in each JSON-RPC envelope; chain RPC receives no credential. Upstream URLs are never logged or
  * returned; provider answers pass through unchanged only when they are JSON-RPC.
  *
  * @author taek <leekt216@gmail.com>
@@ -42,6 +42,8 @@ export interface ProxyEnv {
   readonly TUSD_TOKEN?: string;
   /** Workers VPC service: bundle_rs on the VM's loopback. Unset: the bundler route answers 503. */
   readonly BUNDLER?: { fetch(request: Request): Promise<Response> };
+  /** Server-owned bundler client credential; never accepted from the browser. */
+  readonly BUNDLER_API_KEY?: string;
 }
 
 export type Role = "chain" | "bundler";
@@ -59,7 +61,9 @@ export const TIMEOUT_MS = 15_000;
 
 /** The tUSD token the relay mints, or null when the relay or the token is not configured. */
 export function mintToken(env: ProxyEnv): `0x${string}` | null {
-  return env.BUNDLER && /^0x[0-9a-fA-F]{40}$/u.test(env.TUSD_TOKEN ?? "")
+  return env.BUNDLER &&
+    env.BUNDLER_API_KEY?.trim() &&
+    /^0x[0-9a-fA-F]{40}$/u.test(env.TUSD_TOKEN ?? "")
     ? (env.TUSD_TOKEN?.toLowerCase() as `0x${string}`)
     : null;
 }
@@ -227,13 +231,19 @@ export async function proxy(role: Role, request: Request, env: ProxyEnv): Promis
       return tooMany();
   }
 
+  const forwardedCalls =
+    role === "bundler"
+      ? captured.map((call) => ({ ...call, apiKey: env.BUNDLER_API_KEY!.trim() }))
+      : captured;
   const forwarded = new Request(
     // The VPC binding pins the bundler's destination; this URL only sets its path.
     role === "chain" ? env.CHAIN_RPC_URL : "http://bundler.internal/",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(batch ? captured : captured[0]),
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(batch ? forwardedCalls : forwardedCalls[0]),
       // Workers accepts only "follow" or "manual"; a 3xx is not ok and is refused below.
       redirect: "manual",
       signal: AbortSignal.timeout(TIMEOUT_MS),

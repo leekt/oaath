@@ -13,9 +13,9 @@ an owner operation, backend automation through
 | Route | Handling |
 | --- | --- |
 | `/`, `/callback`, `/assets/*` | The built page, GET/HEAD only, strict CSP (`connect-src` self and the issuer). |
-| `/config.json` | Issuer, `OAATH_CLIENT_ID` and chain settings from Worker vars; `sponsored` when the `BUNDLER` binding is set. |
+| `/config.json` | Issuer, `OAATH_CLIENT_ID` and chain settings from Worker vars; `sponsored` when the `BUNDLER` binding and `BUNDLER_API_KEY` secret are set. |
 | `/rpc/chain` | Same-origin, allow-listed, per-IP budgeted JSON-RPC to `CHAIN_RPC_URL`. |
-| `/rpc/bundler` | Same-origin, allow-listed, per-IP budgeted ERC-4337 JSON-RPC to bundle_rs through the `BUNDLER` VPC binding. `eth_sendUserOperation` and `eth_estimateUserOperationGas` accept only the demo's own call through EntryPoint 0.9. 503 without the binding. |
+| `/rpc/bundler` | Same-origin, allow-listed, per-IP budgeted ERC-4337 JSON-RPC to bundle_rs through the `BUNDLER` VPC binding. `eth_sendUserOperation` and `eth_estimateUserOperationGas` accept only the demo's own call through EntryPoint 0.9. 503 without the binding or its API key. |
 | `/automation/session` | Same-origin, per-IP budgeted: verifies the login's id_token (issuer JWKS, this client) and creates a one-hour session at `AUTOMATION_URL` with the `AUTOMATION_APP_TOKEN` secret. 503 without it. |
 
 Every upstream request is made once, with no fallback; a send without an answer
@@ -32,6 +32,8 @@ service. Create that service and put its id in `vpc_services[BUNDLER].service_id
 in `wrangler.jsonc` (it ships as the placeholder `BUNDLER_VPC_SERVICE_ID`).
 
 ## Configure and deploy
+
+Set the existing bundler client credential with `cd demo && bunx wrangler@4.147.0 secret put BUNDLER_API_KEY`. The Worker adds it as a `apiKey` field only to bundler JSON-RPC requests; it never appears in browser configuration or chain-RPC requests.
 
 ```sh
 bun run --filter @oaath/demo test         # Worker unit tests

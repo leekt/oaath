@@ -24,6 +24,7 @@ cargo run -p oaath-relay -- --create-schema   # with OAATH_POSTGRES_URL: create 
 | `OAATH_RPC_421614` | Optional JSON-RPC URL for chain 421614, read only to prove an imported account's root and to read a revocation's permission state; without it imports and revocations are refused. |
 | `OAATH_WRITES_PER_MINUTE` | Hard budget of public writes (client and signer registration, PAR, sign-in challenges) per route and client address per minute; default 30. The client address is the `x-oaath-client-ip` the portal Worker sets from `cf-connecting-ip`; requests without it come from inside the relay's network and are not budgeted. Over budget answers 429 `relay_rate_limited`. |
 | `OAATH_BUNDLER_421614` | Optional bundler JSON-RPC URL for chain 421614 (Pimlico: it uses `pimlico_getUserOperationGasPrice`). It estimates and submits root-signed revocations, one attempt each, within a budget of 32 bundler requests per revocation, and never resubmits. Without it no revocation is prepared. |
+| `OAATH_BUNDLER_API_KEY_421614` | Optional server-only JSON-RPC `apiKey` credential for the configured revocation bundler. Required when that endpoint enforces client authentication. |
 
 `--create-schema` creates the current PostgreSQL schema and fails if any object
 already exists. There are no migrations: an older schema is recreated. Logs

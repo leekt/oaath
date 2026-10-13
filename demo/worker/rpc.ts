@@ -20,7 +20,7 @@
  * which Kernel v4 accounts use. It listens only on the VM's loopback, so the
  * Worker reaches it through the `BUNDLER` Workers VPC service binding.
  *
- * Only `content-type` reaches a provider. Upstream URLs are never logged or
+ * The bundler receives its server-owned credential in each JSON-RPC envelope; chain RPC receives no credential. Upstream URLs are never logged or
  * returned; provider answers pass through unchanged only when they are JSON-RPC.
  *
  * @author taek <leekt216@gmail.com>
@@ -39,11 +39,13 @@ export interface ProxyEnv {
   readonly CHAIN_RPC_URL: string;
   /** Workers VPC service: bundle_rs on the VM's loopback. Unset: the bundler route answers 503. */
   readonly BUNDLER?: { fetch(request: Request): Promise<Response> };
+  /** Server-owned bundler client credential; never accepted from the browser. */
+  readonly BUNDLER_API_KEY?: string;
 }
 
 /** True when the relay that pays every operation's gas is bound. */
 export function relayConfigured(env: ProxyEnv): boolean {
-  return Boolean(env.BUNDLER);
+  return Boolean(env.BUNDLER && env.BUNDLER_API_KEY?.trim());
 }
 
 export type Role = "chain" | "bundler";
@@ -211,13 +213,19 @@ export async function proxy(role: Role, request: Request, env: ProxyEnv): Promis
       return tooMany();
   }
 
+  const forwardedCalls =
+    role === "bundler"
+      ? captured.map((call) => ({ ...call, apiKey: env.BUNDLER_API_KEY!.trim() }))
+      : captured;
   const forwarded = new Request(
     // The VPC binding pins the bundler's destination; this URL only sets its path.
     role === "chain" ? env.CHAIN_RPC_URL : "http://bundler.internal/",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(batch ? captured : captured[0]),
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(batch ? forwardedCalls : forwardedCalls[0]),
       // Workers accepts only "follow" or "manual"; a 3xx is not ok and is refused below.
       redirect: "manual",
       signal: AbortSignal.timeout(TIMEOUT_MS),

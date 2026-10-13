@@ -25,6 +25,7 @@ describe("configFromEnv", () => {
     expect(config.chains.get(31337)).toEqual({
       rpcUrl: "http://127.0.0.1:8545",
       bundlerUrl: "http://127.0.0.1:4337",
+      bundlerApiKey: null,
       paymasterUrl: null,
       paymasterApiKey: null,
       relayPaysGas: false,
@@ -37,6 +38,17 @@ describe("configFromEnv", () => {
     expect(() => configFromEnv({ ...env, AUTOMATION_MAX_OPEN_SLOTS: "0" }, [definition])).toThrow(
       expect.objectContaining({ variable: "AUTOMATION_MAX_OPEN_SLOTS" }),
     );
+  });
+
+  it("captures the bundler credential separately from the paymaster credential", () => {
+    const config = configFromEnv(
+      { ...env, AUTOMATION_BUNDLER_API_KEY_31337: " bundler-test-key " },
+      [definition],
+    );
+    expect(config.chains.get(31337)).toMatchObject({
+      bundlerApiKey: "bundler-test-key",
+      paymasterApiKey: null,
+    });
   });
 
   it("captures an optional paymaster API key only alongside its paymaster", () => {

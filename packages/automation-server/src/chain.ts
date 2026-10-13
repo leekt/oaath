@@ -28,9 +28,11 @@ export function createBudgetedChains(
     paymaster: new RequestBudget("paymaster", config.budgets.paymaster, windowMs, clock),
   };
   const roles = new Map<string, RequestBudget>();
+  const bundlerKeys = new Map<string, string>();
   for (const endpoints of config.chains.values()) {
     roles.set(endpoints.rpcUrl, budgets.rpc);
     roles.set(endpoints.bundlerUrl, budgets.bundler);
+    if (endpoints.bundlerApiKey) bundlerKeys.set(endpoints.bundlerUrl, endpoints.bundlerApiKey);
     if (endpoints.paymasterUrl !== null) roles.set(endpoints.paymasterUrl, budgets.paymaster);
   }
   let ports: ReadonlyMap<number, Readonly<CetaneChainCapability>> | null = null;
@@ -66,7 +68,17 @@ export function createBudgetedChains(
             exhaustedUntil = Math.ceil(budget.retryAt / 1000);
             throw error;
           }
-          return fetcher(request);
+          if (budget !== budgets.bundler) return fetcher(request);
+          const headers = new Headers(request.headers);
+          headers.delete("authorization");
+          headers.delete("x-api-key");
+          const apiKey = bundlerKeys.get(url) ?? bundlerKeys.get(request.url);
+          const payload = await request.clone().json();
+          const authenticate = (call: Record<string, unknown>) => ({ ...call, apiKey });
+          const body = JSON.stringify(
+            Array.isArray(payload) ? payload.map(authenticate) : authenticate(payload),
+          );
+          return fetcher(new Request(request, { headers, body, redirect: "manual" }));
         },
       },
     );

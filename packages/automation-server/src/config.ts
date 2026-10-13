@@ -10,6 +10,8 @@ import { type AutomationDefinition, parseAutomation } from "@oaath/automation";
 export interface ChainEndpoints {
   readonly rpcUrl: string;
   readonly bundlerUrl: string;
+  /** Server-owned JSON-RPC `apiKey` credential for this chain's bundler; never logged. */
+  readonly bundlerApiKey: string | null;
   /** An ERC-7677 paymaster service; operations are self-funded without it. */
   readonly paymasterUrl: string | null;
   /**
@@ -157,6 +159,7 @@ export function configFromEnv(
       Object.freeze({
         rpcUrl: httpUrl(env, `AUTOMATION_RPC_URL_${chainId}`),
         bundlerUrl: httpUrl(env, `AUTOMATION_BUNDLER_URL_${chainId}`),
+        bundlerApiKey: env[`AUTOMATION_BUNDLER_API_KEY_${chainId}`]?.trim() || null,
         paymasterUrl,
         paymasterApiKey: apiKey,
         relayPaysGas,

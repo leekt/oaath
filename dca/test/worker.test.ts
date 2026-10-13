@@ -27,6 +27,7 @@ function environment(overrides: { [K in keyof Env]?: Env[K] | undefined } = {}):
     AUTOMATION_APP_TOKEN: APP_TOKEN,
     TUSD_TOKEN: TUSD,
     // The VPC binding; tests route it through the stubbed global fetch.
+    BUNDLER_API_KEY: "test-bundler-key",
     BUNDLER: { fetch: (request: Request) => fetch(request) },
     RPC_LIMIT: allow,
     SEND_LIMIT: allow,
@@ -87,6 +88,21 @@ describe("dca worker pages", () => {
     expect(asset.headers.get("cache-control")).toContain("immutable");
   });
 
+  it("serves the brand favicon for reads, with a refreshable cache", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await worker.fetch(
+        new Request(`${ORIGIN}/favicon.svg`, { method }),
+        environment(),
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("public, max-age=3600");
+    }
+    const method = "POST";
+    expect(
+      (await worker.fetch(new Request(`${ORIGIN}/favicon.svg`, { method }), environment())).status,
+    ).toBe(404);
+  });
+
   it("refuses unknown paths, writes to pages, and other hosts", async () => {
     const env = environment();
     expect((await worker.fetch(new Request(`${ORIGIN}/index.html`), env)).status).toBe(404);
@@ -122,6 +138,48 @@ describe("dca worker pages", () => {
 });
 
 describe("dca chain proxy", () => {
+  it("authenticates bundler estimates with only the server-owned credential", async () => {
+    const requests = upstream(async (request) => {
+      if ((await request.clone().json()).apiKey !== "test-bundler-key")
+        return Response.json({ jsonrpc: "2.0", id: 1, error: { code: -32001 } });
+      return Response.json({ jsonrpc: "2.0", id: 1, result: { callGasLimit: "0x100" } });
+    });
+    const response = await post(
+      "/rpc/bundler",
+      { ...relayed(MINT_CALL, "eth_estimateUserOperationGas"), apiKey: "browser-controlled" },
+      environment(),
+      { authorization: "Bearer browser-controlled", "x-api-key": "browser-controlled" },
+    );
+    expect((await response.json()).result).toEqual({ callGasLimit: "0x100" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.headers.get("x-api-key")).toBeNull();
+    expect(requests[0]!.headers.get("authorization")).toBeNull();
+  });
+
+  it("keeps the bundler credential out of chain reads and public configuration", async () => {
+    const requests = upstream(() => Response.json({ jsonrpc: "2.0", id: 1, result: "0x66eee" }));
+    await post(
+      "/rpc/chain",
+      { ...rpc("eth_chainId"), apiKey: "browser-controlled" },
+      environment(),
+      {
+        authorization: "Bearer browser-controlled",
+      },
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.headers.get("authorization")).toBeNull();
+    expect(await requests[0]!.clone().text()).not.toContain("apiKey");
+    const config = await worker.fetch(new Request(`${ORIGIN}/config.json`), environment());
+    expect(await config.text()).not.toContain("test-bundler-key");
+    const response = await post(
+      "/rpc/bundler",
+      relayed(MINT_CALL),
+      environment({ BUNDLER_API_KEY: undefined }),
+    );
+    expect(response.status).toBe(503);
+    expect(requests).toHaveLength(1);
+  });
+
   it("forwards a read once to its one upstream", async () => {
     const requests = upstream(() => Response.json({ jsonrpc: "2.0", id: 1, result: "0x01" }));
     const call = rpc("eth_call", [{ to: ACCOUNT, data: "0x70a08231" }, "latest"]);

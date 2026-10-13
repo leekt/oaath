@@ -86,7 +86,12 @@ async fn run() -> Result<(), String> {
     let bundler = match std::env::var("OAATH_BUNDLER_421614") {
         Ok(url) if !url.is_empty() => Some(Arc::new(
             Bundler::new(IMPORT_CHAIN_ID, &url)
-                .ok_or("OAATH_BUNDLER_421614 must be an http(s) URL")?,
+                .ok_or("OAATH_BUNDLER_421614 must be an http(s) URL")?
+                .with_api_key(
+                    std::env::var("OAATH_BUNDLER_API_KEY_421614")
+                        .ok()
+                        .as_deref(),
+                ),
         )),
         _ => None,
     };

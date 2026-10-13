@@ -27,9 +27,9 @@ throwaway Kernel v4 account of a key it generates and keeps in
 | Route | Handling |
 | --- | --- |
 | `/`, `/callback`, `/assets/*` | The built page, GET/HEAD only, strict CSP (`connect-src` self, the issuer and the service). |
-| `/config.json` | Issuer, `OAATH_CLIENT_ID`, chain and the service URL from Worker vars; `automation: null` without the app credential; `mint: null` without the `BUNDLER` binding or `TUSD_TOKEN`. |
+| `/config.json` | Issuer, `OAATH_CLIENT_ID`, chain and the service URL from Worker vars; `automation: null` without the app credential; `mint: null` without the `BUNDLER` binding, `BUNDLER_API_KEY` secret or `TUSD_TOKEN`. |
 | `/rpc/chain` | Same-origin, per-IP `RPC_LIMIT`, allow-listed reads to `CHAIN_RPC_URL`, for balances and the mint account. |
-| `/rpc/bundler` | Same-origin, per-IP `RPC_LIMIT`, plus `SEND_LIMIT` per send, to bundle_rs (relay-paid) over the `BUNDLER` VPC binding. Estimates and sends only one zero-value `TUSD_TOKEN.mint(any, 1000e6)` through EntryPoint 0.9; receipts pass through. 503 without the binding or token. |
+| `/rpc/bundler` | Same-origin, per-IP `RPC_LIMIT`, plus `SEND_LIMIT` per send, to bundle_rs (relay-paid) over the `BUNDLER` VPC binding. Estimates and sends only one zero-value `TUSD_TOKEN.mint(any, 1000e6)` through EntryPoint 0.9; receipts pass through. 503 without the binding, API key or token. |
 | `/automation/session` | Same-origin, per-IP budgeted: verifies the login's id_token (issuer JWKS, this client) and creates a one-hour session at the service with the `AUTOMATION_APP_TOKEN` secret, through the `AUTOMATION_SERVICE` binding. 503 without the secret. |
 
 The page offers every definition the service loads whose id starts with
@@ -61,7 +61,7 @@ In order:
    Register again whenever the relay's
    database is recreated.
 4. **Worker secret.** `cd dca && bunx wrangler@4.147.0 secret put AUTOMATION_APP_TOKEN`
-   with the same token.
+   with the same token. Also set `BUNDLER_API_KEY` with `wrangler secret put` to the bundler client credential. Only the Worker sends it to the bundler, as the JSON-RPC `apiKey` field. Configure `AUTOMATION_BUNDLER_API_KEY_421614` separately in the automation service's private environment.
 5. **Worker.** `bun run build` at the root (wrangler bundles the built
    `@oaath/automation`), then `cd dca && bunx wrangler@4.147.0 deploy`.
 

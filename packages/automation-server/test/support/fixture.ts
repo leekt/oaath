@@ -64,6 +64,7 @@ export function testConfig(
         {
           rpcUrl: "http://127.0.0.1:1",
           bundlerUrl: "http://127.0.0.1:2",
+          bundlerApiKey: null,
           paymasterUrl: null,
           paymasterApiKey: null,
           relayPaysGas: false,

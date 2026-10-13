@@ -2,7 +2,7 @@
  * The `oaath-demo.taek.tech` edge: serves the demo SPA, its runtime config, and
  * the demo's only paths to a chain.
  *
- * - `/`, `/callback`, `/assets/*`: built assets (GET/HEAD only), strict CSP.
+ * - `/`, `/callback`, `/assets/*`, `/favicon.svg`: built assets (GET/HEAD only), strict CSP.
  * - `/config.json`: issuer, client id and chain settings from Worker vars, so
  *   the client id changes without a rebuild.
  * - `/rpc/chain`, `/rpc/bundler`: the Arbitrum Sepolia JSON-RPC proxy, and the
@@ -120,7 +120,8 @@ export default {
       );
 
     const page = url.pathname === "/" || url.pathname === "/callback";
-    const asset = /^\/assets\/[A-Za-z0-9][\w.-]*\.(?:js|css|woff2)$/u.test(url.pathname);
+    const favicon = url.pathname === "/favicon.svg";
+    const asset = favicon || /^\/assets\/[A-Za-z0-9][\w.-]*\.(?:js|css|woff2)$/u.test(url.pathname);
     if (!reading || (!page && !asset)) return failure(404, "Not found");
     const served = await env.ASSETS.fetch(
       new Request(
@@ -136,7 +137,13 @@ export default {
             "X-Frame-Options": "DENY",
             "Cache-Control": "no-store",
           }
-        : { "Cache-Control": served.ok ? "public, max-age=31536000, immutable" : "no-store" },
+        : {
+            "Cache-Control": served.ok
+              ? favicon
+                ? "public, max-age=3600"
+                : "public, max-age=31536000, immutable"
+              : "no-store",
+          },
     );
   },
 };
