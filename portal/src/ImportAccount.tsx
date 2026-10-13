@@ -1,3 +1,4 @@
+import { Input as SchematicInput, Button as SchematicAction } from "./schematic/components";
 /**
  * "Import an existing account": checks that the signed-in signer is the root of
  * a deployed Kernel v4 account on Arbitrum Sepolia and lists every installed
@@ -39,12 +40,12 @@ const MODULE_KIND: Readonly<Record<number, string>> = {
 function ModuleRow({ module }: { module: InventoryModule }) {
   return (
     <li className={`module module-${module.origin}`}>
-      <span className="choice-text">
-        <span className="choice-title">
+      <span className="ds-choice-copy">
+        <span className="ds-choice-title">
           {module.label}
           {module.count > 1 ? ` ×${module.count}` : ""}
         </span>
-        <span className="choice-detail">
+        <span className="ds-choice-description">
           {MODULE_KIND[module.moduleType] ?? "Module"} ·{" "}
           <span className="mono" title={module.module}>
             {shortAddress(module.module)}
@@ -119,7 +120,7 @@ export function ImportAccount({
       </p>
       <form onSubmit={check}>
         <label htmlFor="import-address">Account address</label>
-        <input
+        <SchematicInput
           id="import-address"
           className="mono"
           value={address}
@@ -130,9 +131,14 @@ export function ImportAccount({
           disabled={busy}
           required
         />
-        <button type="submit" className="secondary" disabled={busy || address.trim() === ""}>
+        <SchematicAction
+          type="submit"
+          variant="secondary"
+          className="secondary"
+          disabled={busy || address.trim() === ""}
+        >
           Check account
-        </button>
+        </SchematicAction>
       </form>
       {busy && (
         <p className="quiet" aria-live="polite">
@@ -146,12 +152,12 @@ export function ImportAccount({
               <span className="check-mark" aria-hidden="true">
                 {STATUS_MARK[check.status]}
               </span>
-              <span className="choice-text">
-                <span className="choice-title">
+              <span className="ds-choice-copy">
+                <span className="ds-choice-title">
                   {check.label}
                   <span className="visually-hidden"> {STATUS_TEXT[check.status]}</span>
                 </span>
-                <span className="choice-detail">{check.detail}</span>
+                <span className="ds-choice-description">{check.detail}</span>
               </span>
             </li>
           ))}
@@ -189,7 +195,7 @@ export function ImportAccount({
           </p>
           {caveats && (
             <label className="acknowledge">
-              <input
+              <SchematicInput
                 type="checkbox"
                 checked={acknowledged}
                 onChange={(event) => setAcknowledged(event.target.checked)}
@@ -197,14 +203,15 @@ export function ImportAccount({
               I understand the modules outside OAAth keep their authority over this account.
             </label>
           )}
-          <button
+          <SchematicAction
             type="button"
+            variant="primary"
             className="primary"
             disabled={busy || (caveats && !acknowledged)}
             onClick={submit}
           >
             Import and sign
-          </button>
+          </SchematicAction>
           <p className="quiet">
             You sign once with {signer.label} to confirm this reading. Nothing is sent on-chain.
           </p>

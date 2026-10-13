@@ -1,3 +1,4 @@
+import { Button as SchematicAction } from "./schematic/components";
 /**
  * The "Login with OAAth" popup: sign in with a signer, then choose an account,
  * then return to the dapp. Signing in proves the signer (a passkey assertion
@@ -22,6 +23,7 @@ import {
   transactionIdFromRequestUri,
 } from "./api.js";
 import { Developers } from "./Developers.js";
+import { Join } from "./Join.js";
 import { GrantReview } from "./GrantReview.js";
 import { LinkApproval, LinkRequest, ManageAccounts } from "./Links.js";
 import { OperationReview } from "./OperationReview.js";
@@ -87,6 +89,7 @@ function boundStep(transaction: PortalTransaction): Step | null {
 }
 
 export function App() {
+  if (location.pathname === "/join") return <Join />;
   const params = new URLSearchParams(location.search);
   const link = /^\/link\/([A-Za-z0-9._~-]{1,256})$/u.exec(location.pathname)?.[1];
   if (link) return <LinkApproval linkId={link} />;
@@ -121,7 +124,7 @@ function Landing() {
             One account for every app. Sign in with a passkey or a wallet, and choose what each app
             can do.
           </p>
-          <a className="primary home-action" href="/accounts">
+          <a className="ds-button home-action" href="/accounts">
             Manage your accounts <ArrowRight size={18} aria-hidden="true" />
           </a>
         </div>
@@ -346,9 +349,14 @@ function Authorize({ transactionId }: { transactionId: string }) {
               : "The signer you signed in with isn't available in this browser, for example a passkey on another device."}
           </p>
           <div className="actions">
-            <button type="button" className="primary" onClick={() => setStep({ name: "signer" })}>
+            <SchematicAction
+              type="button"
+              variant="primary"
+              className="primary"
+              onClick={() => setStep({ name: "signer" })}
+            >
               Use a different signer
-            </button>
+            </SchematicAction>
           </div>
           <CancelButton onCancel={cancel} disabled={false} />
         </section>
@@ -462,9 +470,9 @@ function AccountStep({
       </h1>
       <p className="quiet">
         Signing in as {signer.label}{" "}
-        <button type="button" className="link" onClick={onBack}>
+        <SchematicAction type="button" variant="ghost" className="link" onClick={onBack}>
           Change
-        </button>
+        </SchematicAction>
       </p>
       {accounts === null && !error && (
         <p className="quiet" aria-live="polite">
@@ -479,12 +487,12 @@ function AccountStep({
         </p>
       )}
       {accounts && accounts.length > 0 && (
-        <ul className="choices">
+        <ul className="ds-choice-list">
           {accounts.map((account) => (
             <li key={account.account_id}>
-              <button
+              <SchematicAction
                 type="button"
-                className="choice"
+                variant="choice"
                 // The owner suspended this signer: it cannot sign in as the account.
                 disabled={busy || account.status === "suspended"}
                 aria-label={`Smart account ${account.address}, ${ROLE_LABEL[account.role]}${
@@ -493,21 +501,21 @@ function AccountStep({
                 onClick={() => onChosen(account)}
               >
                 <span className="badge badge-account" aria-hidden="true" />
-                <span className="choice-text">
-                  <span className="choice-title mono">{shortAddress(account.address)}</span>
-                  <span className="choice-detail">
+                <span className="ds-choice-copy">
+                  <span className="ds-choice-title mono">{shortAddress(account.address)}</span>
+                  <span className="ds-choice-description">
                     Smart account · {ROLE_LABEL[account.role]}
                     {"address" in account.profile && " · Imported"}
                     {account.status === "suspended" && " · Suspended by the owner"}
                   </span>
                 </span>
-              </button>
+              </SchematicAction>
             </li>
           ))}
         </ul>
       )}
       <div className="actions">
-        <button
+        <SchematicAction
           type="button"
           className={
             accounts?.some((account) => account.status === "active") ? "secondary" : "primary"
@@ -516,10 +524,11 @@ function AccountStep({
           onClick={create}
         >
           Create account
-        </button>
+        </SchematicAction>
         {!rootOnly && (
-          <button
+          <SchematicAction
             type="button"
+            variant="secondary"
             className="secondary"
             aria-expanded={linking}
             aria-controls="link-request"
@@ -527,10 +536,11 @@ function AccountStep({
             onClick={() => setLinking(!linking)}
           >
             Link to an existing account
-          </button>
+          </SchematicAction>
         )}
-        <button
+        <SchematicAction
           type="button"
+          variant="secondary"
           className="secondary"
           aria-expanded={importing}
           aria-controls="import-account"
@@ -538,7 +548,7 @@ function AccountStep({
           onClick={() => setImporting(!importing)}
         >
           Import an existing account
-        </button>
+        </SchematicAction>
       </div>
       {linking && <LinkRequest signer={signer} onApproved={linked} />}
       {importing && (

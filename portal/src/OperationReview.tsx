@@ -1,3 +1,4 @@
+import { Button as SchematicAction } from "./schematic/components";
 /**
  * Owner-operation review: the exact transaction a dapp asks the account's root
  * to sign. Everything shown comes from the request the portal re-captured and
@@ -47,7 +48,7 @@ function Call({ call }: { call: OwnerOperationRequest["calls"][number] }) {
         {selector === null ? "Send" : (name ?? <span className="mono">{selector}</span>)}
       </span>{" "}
       to <span className="mono">{call.target}</span>
-      <span className="choice-detail">
+      <span className="ds-choice-description">
         Sends {ether(call.value)}
         {selector !== null && ` · ${(call.data.length - 2) / 2} bytes of call data`}
       </span>
@@ -154,18 +155,30 @@ export function OperationReview({
         </p>
       )}
       <div className="actions">
-        <button type="button" className="primary" disabled={!request || busy} onClick={approve}>
+        <SchematicAction
+          type="button"
+          variant="primary"
+          className="primary"
+          disabled={!request || busy}
+          onClick={approve}
+        >
           Approve and sign
-        </button>
+        </SchematicAction>
       </div>
       {(error ?? reviewed.error) && (
         <p className="error" role="alert">
           {error ?? reviewed.error}
         </p>
       )}
-      <button type="button" className="cancel" disabled={busy} onClick={onCancel}>
+      <SchematicAction
+        type="button"
+        variant="ghost"
+        className="cancel"
+        disabled={busy}
+        onClick={onCancel}
+      >
         Cancel and return to the app
-      </button>
+      </SchematicAction>
     </section>
   );
 }

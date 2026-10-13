@@ -1,8 +1,7 @@
+import { Textarea as SchematicTextarea, Radio } from "./schematic/components";
 /** OAuth app configuration owned by the freshly authenticated signer. */
 import { Field } from "@base-ui/react/field";
 import { Input } from "@base-ui/react/input";
-import { Radio } from "@base-ui/react/radio";
-import { RadioGroup } from "@base-ui/react/radio-group";
 import { ArrowLeft, ArrowRight, Check, Copy, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type OAuthClient, type OAuthClientInput, PortalApiError, portalApi } from "./api.js";
@@ -267,10 +266,11 @@ function ClientEditor({
           : "Give your app a name and a place to return after sign-in."}
       </p>
       <div className="console-columns">
-        <form onSubmit={save} className="client-form" aria-label="App configuration">
-          <Field.Root className="console-field" disabled={busy}>
-            <Field.Label>App name</Field.Label>
+        <form onSubmit={save} className="client-form ds-form" aria-label="App configuration">
+          <Field.Root className="console-field ds-field" disabled={busy}>
+            <Field.Label className="ds-label">App name</Field.Label>
             <Input
+              className="ds-input"
               id="client-name"
               required
               maxLength={128}
@@ -279,13 +279,15 @@ function ClientEditor({
               autoFocus
               autoComplete="off"
             />
-            <Field.Description>
+            <Field.Description className="ds-field-note">
               People see this name when they sign in to your app.
             </Field.Description>
           </Field.Root>
-          <div className="console-field">
-            <label htmlFor="client-redirects">Callback URLs</label>
-            <textarea
+          <div className="console-field ds-field">
+            <label className="ds-label" htmlFor="client-redirects">
+              Callback URLs
+            </label>
+            <SchematicTextarea
               id="client-redirects"
               className="mono"
               rows={4}
@@ -310,33 +312,26 @@ function ClientEditor({
               The account owner always signs first. This chooses who submits the signed revocation
               on chain.
             </p>
-            <RadioGroup
-              value={delivery}
-              onValueChange={setDelivery}
-              disabled={busy}
-              aria-label="Revocation delivery"
-            >
-              <label htmlFor="delivery-relay">
-                <Radio.Root id="delivery-relay" value="relay" className="console-radio">
-                  <Radio.Indicator />
-                </Radio.Root>
-                <span>
-                  OAAth
-                  <span className="choice-detail">OAAth submits it for the account owner.</span>
-                </span>
-              </label>
-              <label htmlFor="delivery-dapp">
-                <Radio.Root id="delivery-dapp" value="dapp" className="console-radio">
-                  <Radio.Indicator />
-                </Radio.Root>
-                <span>
-                  My app
-                  <span className="choice-detail">
-                    Your app must retrieve and submit it. The owner can still ask OAAth to submit.
-                  </span>
-                </span>
-              </label>
-            </RadioGroup>
+            <div className="ds-radio-group" role="radiogroup" aria-label="Revocation delivery">
+              <Radio
+                name="delivery"
+                value="relay"
+                checked={delivery === "relay"}
+                disabled={busy}
+                onChange={() => setDelivery("relay")}
+                label="OAAth"
+                hint="OAAth submits it for the account owner."
+              />
+              <Radio
+                name="delivery"
+                value="dapp"
+                checked={delivery === "dapp"}
+                disabled={busy}
+                onChange={() => setDelivery("dapp")}
+                label="My app"
+                hint="Your app must retrieve and submit it. The owner can still ask OAAth to submit."
+              />
+            </div>
           </fieldset>
           {error && (
             <p className="error" role="alert">

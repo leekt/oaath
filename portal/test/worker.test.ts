@@ -37,6 +37,7 @@ describe("portal worker", () => {
     for (const path of [
       "/",
       "/authorize?client_id=a&request_uri=b",
+      "/join",
       "/link/Ab_c-1",
       "/requests/Ab_c-1",
       "/accounts",
@@ -50,6 +51,18 @@ describe("portal worker", () => {
     const asset = await call("/assets/index-abc123.js");
     expect(await asset.text()).toBe("asset");
     expect(asset.headers.get("cache-control")).toContain("immutable");
+  });
+
+  it("serves the brand favicon for reads, with a refreshable cache", async () => {
+    const recorded = environment();
+    for (const method of ["GET", "HEAD"]) {
+      const response = await call("/favicon.svg", { method }, recorded);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("public, max-age=3600");
+    }
+    const method = "POST";
+    expect((await call("/favicon.svg", { method }, recorded)).status).toBe(404);
+    expect(recorded.requests).toHaveLength(0);
   });
 
   it("refuses unknown paths, writes to pages, and other hosts", async () => {

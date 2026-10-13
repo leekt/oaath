@@ -1,3 +1,4 @@
+import { Button as SchematicAction } from "./schematic/components";
 /**
  * Grant review: what the dapp's signer may do with this account, and the one
  * root signature that approves it. Everything shown comes from the request the
@@ -122,7 +123,7 @@ export function GrantTerms({
                 {SELECTORS[call.selector] ?? <span className="mono">{call.selector}</span>}
               </span>{" "}
               on <span className="mono">{call.target}</span>
-              <span className="choice-detail">Sends up to {ether(call.valueLimit)}</span>
+              <span className="ds-choice-description">Sends up to {ether(call.valueLimit)}</span>
             </li>
           ))}
         </ul>
@@ -231,18 +232,30 @@ export function GrantReview({
         </p>
       )}
       <div className="actions">
-        <button type="button" className="primary" disabled={!request || busy} onClick={approve}>
+        <SchematicAction
+          type="button"
+          variant="primary"
+          className="primary"
+          disabled={!request || busy}
+          onClick={approve}
+        >
           Approve and sign
-        </button>
+        </SchematicAction>
       </div>
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
-      <button type="button" className="cancel" disabled={busy} onClick={onCancel}>
+      <SchematicAction
+        type="button"
+        variant="ghost"
+        className="cancel"
+        disabled={busy}
+        onClick={onCancel}
+      >
         Cancel and return to the app
-      </button>
+      </SchematicAction>
     </section>
   );
 }

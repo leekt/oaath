@@ -1,3 +1,4 @@
+import { Input as SchematicInput, Button as SchematicAction } from "./schematic/components";
 /**
  * Removing an invalidated grant's permission on chain: the account root signs
  * one owner operation that uninstalls it, and OAAth submits it (or the dapp
@@ -132,7 +133,7 @@ export function RevokeOnChain({
     (view?.status === "not_installed" && view.action === "invalidate");
   return (
     <div className="member-actions">
-      <p className="choice-detail" aria-live="polite" data-revocation={view?.status ?? ""}>
+      <p className="ds-choice-description" aria-live="polite" data-revocation={view?.status ?? ""}>
         Grant <span className="mono">{shortAddress(grantId)}</span>:{" "}
         {view
           ? view.status === "not_installed" && view.action === "invalidate"
@@ -141,18 +142,19 @@ export function RevokeOnChain({
           : "Checking on chain…"}
       </p>
       {actionable && !confirming && (
-        <button
+        <SchematicAction
           type="button"
+          variant="secondary"
           className="secondary"
           disabled={busy}
           onClick={() => setConfirming(true)}
         >
           {view?.action === "invalidate" ? "Invalidate on chain" : "Revoke on chain"}
-        </button>
+        </SchematicAction>
       )}
       {view && actionable && confirming && (
         <>
-          <p className="choice-detail">
+          <p className="ds-choice-description">
             {view.action === "invalidate"
               ? "You sign one operation that makes this grant's approval unusable on the account."
               : "You sign one operation that removes this permission from the account."}
@@ -161,8 +163,8 @@ export function RevokeOnChain({
               : " OAAth submits it."}
           </p>
           {view.delivery === "dapp" && (
-            <label className="choice-detail">
-              <input
+            <label className="ds-choice-description">
+              <SchematicInput
                 type="checkbox"
                 checked={submitFromOaath}
                 disabled={busy}
@@ -171,17 +173,24 @@ export function RevokeOnChain({
               Submit this revocation from OAAth now
             </label>
           )}
-          <button type="button" className="danger" disabled={busy} onClick={revoke}>
-            Confirm and sign
-          </button>
-          <button
+          <SchematicAction
             type="button"
+            variant="destructive"
+            className="danger"
+            disabled={busy}
+            onClick={revoke}
+          >
+            Confirm and sign
+          </SchematicAction>
+          <SchematicAction
+            type="button"
+            variant="ghost"
             className="link"
             disabled={busy}
             onClick={() => setConfirming(false)}
           >
             Not now
-          </button>
+          </SchematicAction>
         </>
       )}
       {error && (

@@ -1,30 +1,31 @@
-// shadcn/ui Base UI Button, themed with this portal's CSS instead of Tailwind.
-// Source: https://ui.shadcn.com/r/styles/base-nova/button.json (MIT).
-import { Button as ButtonPrimitive } from "@base-ui/react/button";
-import { cva, type VariantProps } from "class-variance-authority";
-
-const buttonVariants = cva("button", {
-  variants: {
-    variant: {
-      default: "button-primary",
-      outline: "button-outline",
-      ghost: "button-ghost",
-      choice: "choice",
-    },
-  },
-  defaultVariants: { variant: "default" },
-});
-
+import { Button as Primitive } from "@base-ui/react/button";
+import { buttonClass } from "../../schematic/components";
+type Variant = "default" | "outline" | "ghost" | "choice";
 export function Button({
-  className,
-  variant,
+  className = "",
+  variant = "default",
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: Primitive.Props & { variant?: Variant }) {
+  const classes = (extra: string) =>
+    buttonClass({
+      variant:
+        variant === "default"
+          ? "dark"
+          : variant === "choice"
+            ? "choice"
+            : variant === "ghost"
+              ? "ghost"
+              : "secondary",
+      className: variant === "choice" ? `choice ${extra}` : extra,
+    });
   return (
-    <ButtonPrimitive
+    <Primitive
       type="button"
-      data-slot="button"
-      className={buttonVariants({ variant, className })}
+      className={
+        typeof className === "function"
+          ? (state) => classes(className(state) || "")
+          : classes(className)
+      }
       {...props}
     />
   );

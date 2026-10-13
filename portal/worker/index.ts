@@ -2,7 +2,7 @@
  * The `oaath.taek.tech` edge: serves the portal SPA and forwards protocol and
  * portal API traffic to the relay through one Workers VPC service binding.
  *
- * - `/`, `/authorize`, `/link/{id}`, `/requests/{id}`, `/accounts`, `/developers`, `/assets/*`: built assets
+ * - `/`, `/authorize`, `/link/{id}`, `/requests/{id}`, `/accounts`, `/developers`, `/assets/*`, `/favicon.svg`: built assets
  *   (GET/HEAD only).
  * - `/oauth/*`, `/.well-known/*`: public OAuth surface; cross-site allowed with
  *   credential-free CORS, because dapps call it from their own origins.
@@ -205,12 +205,14 @@ export default {
     const page =
       url.pathname === "/" ||
       url.pathname === "/authorize" ||
+      url.pathname === "/join" ||
       url.pathname === "/accounts" ||
       url.pathname === "/developers" ||
       /^\/(?:link|requests)\/[A-Za-z0-9._~-]{1,256}$/u.test(url.pathname);
-    const asset = /^\/assets\/[A-Za-z0-9][\w.-]*\.(?:js|css|woff2?|svg|png|ico)$/u.test(
-      url.pathname,
-    );
+    const favicon = url.pathname === "/favicon.svg";
+    const asset =
+      favicon ||
+      /^\/assets\/[A-Za-z0-9][\w.-]*\.(?:js|css|woff2?|svg|png|ico)$/u.test(url.pathname);
     if (!reading || (!page && !asset)) return failure(404, "Not found");
     // Every page is the one SPA document; the query string stays with the browser.
     const served = await env.ASSETS.fetch(
@@ -225,7 +227,11 @@ export default {
             "Cache-Control": "no-store",
           }
         : {
-            "Cache-Control": served.ok ? "public, max-age=31536000, immutable" : "no-store",
+            "Cache-Control": served.ok
+              ? favicon
+                ? "public, max-age=3600"
+                : "public, max-age=31536000, immutable"
+              : "no-store",
           },
     );
   },

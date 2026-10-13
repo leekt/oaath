@@ -1,3 +1,4 @@
+import { Button as SchematicAction } from "./schematic/components";
 /**
  * App access asked for by a member that does not own the account.
  *
@@ -126,11 +127,18 @@ export function AskOwner({
         {url}
       </p>
       <div className="actions">
-        <button type="button" className="primary" disabled={busy} onClick={ask}>
-          Send request to the owner
-        </button>
-        <button
+        <SchematicAction
           type="button"
+          variant="primary"
+          className="primary"
+          disabled={busy}
+          onClick={ask}
+        >
+          Send request to the owner
+        </SchematicAction>
+        <SchematicAction
+          type="button"
+          variant="secondary"
           className="secondary"
           onClick={() =>
             navigator.clipboard.writeText(url).then(
@@ -140,7 +148,7 @@ export function AskOwner({
           }
         >
           {copied ? "Copied" : "Copy link"}
-        </button>
+        </SchematicAction>
       </div>
       {error && (
         <p className="error" role="alert">
@@ -215,29 +223,31 @@ export function PendingRequests({
   return (
     <section aria-labelledby="requests-heading" className="members">
       <h2 id="requests-heading">Pending requests</h2>
-      <ul className="choices">
+      <ul className="ds-choice-list">
         {requests.map((view) => (
           <li key={view.request_id} className="request">
             <RequestSummary view={view} />
             <div className="actions">
-              <button
+              <SchematicAction
                 type="button"
+                variant="primary"
                 className="primary"
                 disabled={busy}
                 aria-label={`Approve ${view.client_name}`}
                 onClick={() => run(() => approveRequest(view, signer, account))}
               >
                 Approve and sign
-              </button>
-              <button
+              </SchematicAction>
+              <SchematicAction
                 type="button"
+                variant="secondary"
                 className="secondary"
                 disabled={busy}
                 aria-label={`Reject ${view.client_name}`}
                 onClick={() => run(() => portalApi.rejectPending(view.request_id))}
               >
                 Reject
-              </button>
+              </SchematicAction>
             </div>
           </li>
         ))}
@@ -316,9 +326,9 @@ export function RequestPage({ requestId }: { requestId: string }) {
           <p className="error" role="alert">
             {failure}
           </p>
-          <button type="button" className="link" onClick={changeSigner}>
+          <SchematicAction type="button" variant="ghost" className="link" onClick={changeSigner}>
             Use another signer
-          </button>
+          </SchematicAction>
         </section>
       )}
       {signer && !failure && !view && (
@@ -342,22 +352,24 @@ export function RequestPage({ requestId }: { requestId: string }) {
           </p>
           {view.status === "pending" && (
             <div className="actions">
-              <button
+              <SchematicAction
                 type="button"
+                variant="primary"
                 className="primary"
                 disabled={busy}
                 onClick={() => run(() => approveRequest(view, signer, account))}
               >
                 Approve and sign
-              </button>
-              <button
+              </SchematicAction>
+              <SchematicAction
                 type="button"
+                variant="secondary"
                 className="secondary"
                 disabled={busy}
                 onClick={() => run(() => portalApi.rejectPending(view.request_id))}
               >
                 Reject
-              </button>
+              </SchematicAction>
             </div>
           )}
           {error && (

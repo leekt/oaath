@@ -11,7 +11,7 @@ SDK's own preparation and refuses a relay request that differs from it.
 
 | Route | Handling |
 | --- | --- |
-| `/`, `/authorize`, `/accounts`, `/link/{id}`, `/requests/{id}`, `/assets/*` | The built SPA (`ASSETS`), GET/HEAD only, with a strict CSP. |
+| `/`, `/authorize`, `/join`, `/accounts`, `/link/{id}`, `/requests/{id}`, `/assets/*` | The built SPA (`ASSETS`), GET/HEAD only, with a strict CSP. |
 | `/oauth/*`, `/.well-known/*` | Forwarded to the relay; credential-free CORS for dapps on other origins. |
 | `/portal/*` | Forwarded to the relay; same-origin only, with the session cookie (`Path=/portal`) passed both ways. |
 | `/rpc/421614` | Same-origin, budgeted, read-only Arbitrum Sepolia reads for account import (`worker/rpc.ts`). |
@@ -21,6 +21,16 @@ registration, PAR, signer registration and sign-in challenges spend a per-IP
 `WRITE_LIMIT` budget first.
 
 ## Bindings
+
+Keyline opens `/join` to set up a recipient's signer and `/link/{id}` for the
+owner's existing membership review. Their fragment supplies the expected account,
+display label, exact return origin and random state. The portal refuses a link
+for a different account before displaying approval. The popup returns only a
+public request pointer and observed status via `oaath.membership-handoff/v1`
+postMessage to that exact origin; it returns no session or signature. Keyline
+checks the sender window, issuer, state, account and request. This UI handoff is
+not an authentication API: a recipient still needs a verified OIDC login after
+membership approval. OAAth's existing relay remains the sole membership owner.
 
 | Binding | Kind | Purpose |
 | --- | --- | --- |

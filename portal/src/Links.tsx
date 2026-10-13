@@ -1,3 +1,5 @@
+import { NativeSelect, Radio } from "./schematic/components";
+import { Input as SchematicInput, Button as SchematicAction } from "./schematic/components";
 /**
  * Adding a signer to an existing account, and the owner's members view.
  *
@@ -27,6 +29,7 @@ import { PendingRequests } from "./Requests.js";
 import { RevokeOnChain } from "./Revocation.js";
 import { Frame, message, Notice, QrCode, SignerStep } from "./shared.js";
 import { type RememberedSigner, rememberSigner, shortAddress, signerDetail } from "./signers.js";
+import { membershipContext, matchingMembership, returnMembership } from "./membership-handoff.js";
 
 const POLL_MS = 2_000;
 
@@ -125,8 +128,9 @@ export function LinkRequest({
         <p className="mono link-url" id="link-url">
           {url}
         </p>
-        <button
+        <SchematicAction
           type="button"
+          variant="secondary"
           className="secondary"
           onClick={() =>
             navigator.clipboard.writeText(url).then(
@@ -136,7 +140,7 @@ export function LinkRequest({
           }
         >
           {copied ? "Copied" : "Copy link"}
-        </button>
+        </SchematicAction>
         <p className="quiet" aria-live="polite" id="link-status">
           {status === "pending" && "Waiting for the owner's approval…"}
           {status === "approved" && "Approved. Choose the account above."}
@@ -156,7 +160,7 @@ export function LinkRequest({
       </p>
       <label>
         Account address
-        <input
+        <SchematicInput
           id="link-account"
           className="mono"
           required
@@ -169,7 +173,7 @@ export function LinkRequest({
       </label>
       <label>
         Name for this signer
-        <input
+        <SchematicInput
           id="link-label"
           required
           maxLength={64}
@@ -177,9 +181,9 @@ export function LinkRequest({
           onChange={(event) => setLabel(event.target.value)}
         />
       </label>
-      <button type="submit" className="primary" disabled={busy}>
+      <SchematicAction type="submit" variant="primary" className="primary" disabled={busy}>
         Request access
-      </button>
+      </SchematicAction>
       {error && (
         <p className="error" role="alert">
           {error}
@@ -191,6 +195,7 @@ export function LinkRequest({
 
 /** `/link/{id}`: the owner reviews and signs; the requester sees the status. */
 export function LinkApproval({ linkId }: { linkId: string }) {
+  const [handoff] = useState(() => membershipContext(location.hash));
   const [signer, setSigner] = useState<RememberedSigner | null>(null);
   const [link, setLink] = useState<PortalLink | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -198,16 +203,24 @@ export function LinkApproval({ linkId }: { linkId: string }) {
   useEffect(() => {
     if (!signer) return;
     setFailure(null);
-    portalApi
-      .link(linkId)
-      .then(setLink, (error: unknown) =>
+    portalApi.link(linkId).then(
+      (value) => {
+        if (handoff && !matchingMembership(handoff, value)) {
+          setFailure(
+            "This request is for a different account. Return to Keyline and ask for a new invite.",
+          );
+          return;
+        }
+        setLink(value);
+      },
+      (error: unknown) =>
         setFailure(
           error instanceof PortalApiError && error.status === 404
             ? "This request doesn't exist. Ask for a new link."
             : linkMessage(error),
         ),
-      );
-  }, [linkId, signer]);
+    );
+  }, [linkId, signer, handoff]);
 
   const changeSigner = () => {
     portalApi.signOut().catch(() => {});
@@ -215,6 +228,15 @@ export function LinkApproval({ linkId }: { linkId: string }) {
     setFailure(null);
     setSigner(null);
   };
+
+  if (location.hash && !handoff)
+    return (
+      <Frame>
+        <Notice title="This approval link is incomplete">
+          Return to Keyline and open the approval link again.
+        </Notice>
+      </Frame>
+    );
 
   return (
     <Frame variant={link?.status === "approved" ? "workspace" : "auth"}>
@@ -234,9 +256,9 @@ export function LinkApproval({ linkId }: { linkId: string }) {
           <p className="error" role="alert">
             {failure}
           </p>
-          <button type="button" className="link" onClick={changeSigner}>
+          <SchematicAction type="button" variant="ghost" className="link" onClick={changeSigner}>
             Use another signer
-          </button>
+          </SchematicAction>
         </section>
       )}
       {signer && !failure && !link && (
@@ -255,6 +277,22 @@ export function LinkApproval({ linkId }: { linkId: string }) {
         ) : (
           <LinkReview link={link} linkId={linkId} signer={signer} onChange={setLink} />
         ))}
+      {handoff && link && link.status !== "pending" && (
+        <section>
+          <SchematicAction
+            variant="primary"
+            onClick={() => {
+              try {
+                returnMembership(handoff, link);
+              } catch {
+                setFailure("The Keyline window is closed. Return to your Keyline invite.");
+              }
+            }}
+          >
+            Return to Keyline
+          </SchematicAction>
+        </section>
+      )}
     </Frame>
   );
 }
@@ -350,45 +388,40 @@ function LinkReview({
         <dt>New signer</dt>
         <dd>
           {KIND_LABEL[link.signer.kind] ?? link.signer.kind} “{link.label}”
-          <span className="choice-detail mono">{signerDetail(link.signer.profile)}</span>
+          <span className="ds-choice-description mono">{signerDetail(link.signer.profile)}</span>
         </dd>
         <dt>Request expires</dt>
         <dd>{expires}</dd>
       </dl>
       <fieldset className="access">
         <legend>Access</legend>
-        <label>
-          <input
-            type="radio"
-            name="access"
-            checked={access === "login"}
-            onChange={() => setAccess("login")}
-          />
-          Sign in only
-          <span className="choice-detail">
-            Can sign in to apps as this account. Can't move funds or approve transactions.
-          </span>
-        </label>
+        <Radio
+          name="access"
+          value="login"
+          checked={access === "login"}
+          onChange={setAccess}
+          label="Sign in only"
+          hint="Can sign in to apps as this account. Can't move funds or approve transactions."
+        />
         {templates.map((template) => (
-          <label key={template.template_id} className={policyCapable ? undefined : "disabled"}>
-            <input
-              type="radio"
-              name="access"
-              disabled={!policyCapable}
-              checked={access === template.template_id}
-              onChange={() => setAccess(template.template_id)}
-            />
-            Sign in and spend within “{template.name}”
-            <span className="choice-detail">{templateSummary(template)}</span>
-          </label>
+          <Radio
+            key={template.template_id}
+            name="access"
+            value={template.template_id}
+            disabled={!policyCapable}
+            checked={access === template.template_id}
+            onChange={setAccess}
+            label={`Sign in and spend within “${template.name}”`}
+            hint={templateSummary(template)}
+          />
         ))}
         {templates.length === 0 && (
-          <p className="choice-detail">
+          <p className="ds-choice-description">
             Add a policy under Your accounts to let a signer spend within limits.
           </p>
         )}
         {!policyCapable && templates.length > 0 && (
-          <p className="choice-detail">This kind of key can only sign in.</p>
+          <p className="ds-choice-description">This kind of key can only sign in.</p>
         )}
       </fieldset>
       <p className="quiet">
@@ -396,17 +429,24 @@ function LinkReview({
         {access === "login" ? "." : "; the signer's first payment installs the policy."}
       </p>
       <div className="actions">
-        <button type="button" className="primary" disabled={busy} onClick={() => run(approve)}>
-          Approve and sign
-        </button>
-        <button
+        <SchematicAction
           type="button"
+          variant="primary"
+          className="primary"
+          disabled={busy}
+          onClick={() => run(approve)}
+        >
+          Approve and sign
+        </SchematicAction>
+        <SchematicAction
+          type="button"
+          variant="secondary"
           className="secondary"
           disabled={busy}
           onClick={() => run(() => portalApi.rejectLink(linkId))}
         >
           Reject
-        </button>
+        </SchematicAction>
       </div>
       {busy && (
         <p className="quiet" aria-live="polite">
@@ -567,7 +607,7 @@ function Members({ account, signer }: { account: PortalAccount; signer: Remember
           </p>
         )}
         {members && (
-          <ul className="choices">
+          <ul className="ds-choice-list">
             {entries(members).map(({ signer_id, name, member, grants }) => {
               const pending = confirming?.signerId === signer_id ? confirming.action : null;
               const toggle = member.status === "suspended" ? "restore" : "suspend";
@@ -579,14 +619,14 @@ function Members({ account, signer }: { account: PortalAccount; signer: Remember
               return (
                 <li key={signer_id}>
                   <div className="choice member">
-                    <span className="choice-text">
-                      <span className="choice-title">
+                    <span className="ds-choice-copy">
+                      <span className="ds-choice-title">
                         {name}
                         {member.status === "suspended" && (
                           <span className="status-badge"> Suspended</span>
                         )}
                       </span>
-                      <span className="choice-detail">
+                      <span className="ds-choice-description">
                         {ROLE_LABEL[member.role]} · {KIND_LABEL[member.kind] ?? member.kind} ·{" "}
                         <span className="mono">{signerDetail(member.profile)}</span>
                         {grants > 0 && ` · ${grants} polic${grants === 1 ? "y" : "ies"}`}
@@ -594,50 +634,54 @@ function Members({ account, signer }: { account: PortalAccount; signer: Remember
                     </span>
                     {member.role !== "root" && pending && (
                       <div className="member-actions">
-                        <p className="choice-detail">{CONFIRM[pending].note}</p>
-                        <button
+                        <p className="ds-choice-description">{CONFIRM[pending].note}</p>
+                        <SchematicAction
                           type="button"
+                          variant="destructive"
                           className="danger"
                           disabled={busy}
                           onClick={() => act(member, pending)}
                         >
                           {CONFIRM[pending].label}
-                        </button>
-                        <button
+                        </SchematicAction>
+                        <SchematicAction
                           type="button"
+                          variant="ghost"
                           className="link"
                           disabled={busy}
                           onClick={() => setConfirming(null)}
                         >
                           Keep as is
-                        </button>
+                        </SchematicAction>
                       </div>
                     )}
                     {member.role !== "root" && !pending && (
                       <div className="member-actions">
-                        <button
+                        <SchematicAction
                           type="button"
+                          variant="secondary"
                           className="secondary"
                           disabled={busy}
                           aria-label={`${toggle === "suspend" ? "Suspend" : "Restore"} ${name}`}
                           onClick={() => setConfirming({ signerId: signer_id, action: toggle })}
                         >
                           {toggle === "suspend" ? "Suspend" : "Restore"}
-                        </button>
-                        <button
+                        </SchematicAction>
+                        <SchematicAction
                           type="button"
+                          variant="secondary"
                           className="secondary"
                           disabled={busy}
                           aria-label={`Remove ${name}`}
                           onClick={() => setConfirming({ signerId: signer_id, action: "remove" })}
                         >
                           Remove
-                        </button>
+                        </SchematicAction>
                       </div>
                     )}
                     {assignable && !pending && (
                       <div className="member-actions">
-                        <select
+                        <NativeSelect
                           aria-label={`Policy for ${name}`}
                           value={assigning[signer_id] ?? ""}
                           onChange={(event) =>
@@ -650,15 +694,16 @@ function Members({ account, signer }: { account: PortalAccount; signer: Remember
                               {template.name}
                             </option>
                           ))}
-                        </select>
-                        <button
+                        </NativeSelect>
+                        <SchematicAction
                           type="button"
+                          variant="secondary"
                           className="secondary"
                           disabled={busy || !assigning[signer_id]}
                           onClick={() => assign(member, assigning[signer_id] ?? "")}
                         >
                           Give policy and sign
-                        </button>
+                        </SchematicAction>
                       </div>
                     )}
                   </div>
@@ -746,23 +791,23 @@ export function ManageAccounts() {
           <p className="quiet">Choose an account to manage its members, policies and app access.</p>
           {accounts?.length === 0 && <p className="quiet">This signer owns no account.</p>}
           {accounts && accounts.length > 0 && (
-            <ul className="choices">
+            <ul className="ds-choice-list">
               {accounts.map((account) => (
                 <li key={account.account_id}>
-                  <button
+                  <SchematicAction
                     type="button"
-                    className="choice"
+                    variant="choice"
                     aria-label={`Smart account ${account.address}`}
                     onClick={() => setChosen(account)}
                   >
                     <span className="badge badge-account" aria-hidden="true" />
-                    <span className="choice-text">
-                      <span className="choice-title mono">{shortAddress(account.address)}</span>
-                      <span className="choice-detail">
+                    <span className="ds-choice-copy">
+                      <span className="ds-choice-title mono">{shortAddress(account.address)}</span>
+                      <span className="ds-choice-description">
                         Smart account · Owner{"address" in account.profile && " · Imported"}
                       </span>
                     </span>
-                  </button>
+                  </SchematicAction>
                 </li>
               ))}
             </ul>
@@ -778,9 +823,14 @@ export function ManageAccounts() {
             </div>
             <span className="role-label">Owner</span>
           </div>
-          <button type="button" className="link" onClick={() => setChosen(null)}>
+          <SchematicAction
+            type="button"
+            variant="ghost"
+            className="link"
+            onClick={() => setChosen(null)}
+          >
             All accounts
-          </button>
+          </SchematicAction>
           <Members account={chosen} signer={signer} />
         </section>
       )}

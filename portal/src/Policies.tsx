@@ -1,3 +1,4 @@
+import { Input as SchematicInput, Button as SchematicAction } from "./schematic/components";
 /**
  * An account's policy templates, for its owner: named spending limits a
  * signer can be given when it is added or later. A template is configuration
@@ -129,18 +130,19 @@ export function Policies({
         access.
       </p>
       {templates.length === 0 && <p className="quiet">No policies yet.</p>}
-      <ul className="choices">
+      <ul className="ds-choice-list">
         {templates.map((template) => (
           <li key={template.template_id}>
             <div className="choice member">
-              <span className="choice-text">
-                <span className="choice-title">{template.name}</span>
-                <span className="choice-detail">{templateSummary(template)}</span>
+              <span className="ds-choice-copy">
+                <span className="ds-choice-title">{template.name}</span>
+                <span className="ds-choice-description">{templateSummary(template)}</span>
               </span>
               <div className="member-actions">
                 {deleting === template.template_id ? (
-                  <button
+                  <SchematicAction
                     type="button"
+                    variant="destructive"
                     className="danger"
                     disabled={busy}
                     onClick={() =>
@@ -153,11 +155,12 @@ export function Policies({
                     }
                   >
                     Confirm delete
-                  </button>
+                  </SchematicAction>
                 ) : (
                   <>
-                    <button
+                    <SchematicAction
                       type="button"
+                      variant="secondary"
                       className="secondary"
                       disabled={busy}
                       aria-label={`Edit ${template.name}`}
@@ -166,16 +169,17 @@ export function Policies({
                       }
                     >
                       Edit
-                    </button>
-                    <button
+                    </SchematicAction>
+                    <SchematicAction
                       type="button"
+                      variant="secondary"
                       className="secondary"
                       disabled={busy}
                       aria-label={`Delete ${template.name}`}
                       onClick={() => setDeleting(template.template_id)}
                     >
                       Delete
-                    </button>
+                    </SchematicAction>
                   </>
                 )}
               </div>
@@ -184,20 +188,21 @@ export function Policies({
         ))}
       </ul>
       {!editing && (
-        <button
+        <SchematicAction
           type="button"
+          variant="secondary"
           className="secondary"
           disabled={busy}
           onClick={() => setEditing({ id: null, draft: EMPTY })}
         >
           New policy
-        </button>
+        </SchematicAction>
       )}
       {editing && (
         <form className="link-request policy-editor" onSubmit={save} aria-label="Policy">
           <label>
             Name
-            <input
+            <SchematicInput
               id="policy-name"
               required
               maxLength={64}
@@ -210,7 +215,7 @@ export function Policies({
               <legend>Allowed call {index + 1}</legend>
               <label>
                 Contract
-                <input
+                <SchematicInput
                   className="mono policy-target"
                   required
                   pattern="0x[0-9a-fA-F]{40}"
@@ -227,7 +232,7 @@ export function Policies({
               </label>
               <label>
                 Function selector
-                <input
+                <SchematicInput
                   className="mono"
                   required
                   pattern="0x[0-9a-fA-F]{8}"
@@ -244,7 +249,7 @@ export function Policies({
               </label>
               <label>
                 Value limit (wei)
-                <input
+                <SchematicInput
                   className="mono"
                   required
                   inputMode="numeric"
@@ -260,28 +265,30 @@ export function Policies({
                 />
               </label>
               {editing.draft.calls.length > 1 && (
-                <button
+                <SchematicAction
                   type="button"
+                  variant="ghost"
                   className="link"
                   onClick={() =>
                     set({ calls: editing.draft.calls.filter((_, at) => at !== index) })
                   }
                 >
                   Remove this call
-                </button>
+                </SchematicAction>
               )}
             </fieldset>
           ))}
-          <button
+          <SchematicAction
             type="button"
+            variant="ghost"
             className="link"
             onClick={() => set({ calls: [...editing.draft.calls, { ...EMPTY.calls[0]! }] })}
           >
             Add another call
-          </button>
+          </SchematicAction>
           <label>
             Operations per chain
-            <input
+            <SchematicInput
               id="policy-count"
               required
               inputMode="numeric"
@@ -291,7 +298,7 @@ export function Policies({
             />
           </label>
           <label className="inline">
-            <input
+            <SchematicInput
               type="checkbox"
               checked={editing.draft.daily}
               onChange={(event) => set({ daily: event.target.checked })}
@@ -300,7 +307,7 @@ export function Policies({
           </label>
           <label>
             Valid for (days)
-            <input
+            <SchematicInput
               id="policy-days"
               required
               inputMode="decimal"
@@ -309,12 +316,18 @@ export function Policies({
             />
           </label>
           <div className="actions">
-            <button type="submit" className="primary" disabled={busy}>
+            <SchematicAction type="submit" variant="primary" className="primary" disabled={busy}>
               Save policy
-            </button>
-            <button type="button" className="link" disabled={busy} onClick={() => setEditing(null)}>
+            </SchematicAction>
+            <SchematicAction
+              type="button"
+              variant="ghost"
+              className="link"
+              disabled={busy}
+              onClick={() => setEditing(null)}
+            >
               Cancel
-            </button>
+            </SchematicAction>
           </div>
         </form>
       )}

@@ -1,25 +1,5 @@
-/* OAAth: a calm task-focused portal. Fonts are bundled; no remote assets. */
+/* Schematic portal layout. Shared tokens and local fonts are loaded by main.tsx. */
 :root {
-  --ground: #f2f4f7;
-  --plate: #fff;
-  --sunken: #f6f8fb;
-  --ink: #202631;
-  --ink-2: #616977;
-  --rule: #dce1e8;
-  --rule-strong: #a9b2c0;
-  --accent: #2459c4;
-  --accent-hover: #17489f;
-  --tint: #edf3ff;
-  --tint-ink: #224a8a;
-  --alert: #aa2b2b;
-  --alert-wash: #fff0f0;
-  --pass: #27664d;
-  --focus: #2459c4;
-  --sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  --mono: "JetBrains Mono Variable", ui-monospace, monospace;
-  --radius: 14px;
-  --control-radius: 8px;
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: light;
 }
 *,
@@ -36,19 +16,19 @@ body {
   min-width: 320px;
   background: var(--ground);
   color: var(--ink);
-  font: 400 1rem / 1.55 var(--sans);
+  font: var(--type-body);
   -webkit-font-smoothing: antialiased;
 }
 ::selection {
-  background: var(--tint-ink);
-  color: var(--plate);
+  background: var(--select-soft);
+  color: var(--ink);
 }
 input,
 select,
 button,
 textarea {
-  accent-color: var(--accent);
-  caret-color: var(--accent);
+  accent-color: var(--select);
+  caret-color: var(--select);
 }
 button,
 input,
@@ -64,7 +44,7 @@ summary {
   -webkit-tap-highlight-color: transparent;
 }
 a {
-  color: var(--accent);
+  color: var(--link);
   text-underline-offset: 0.22em;
 }
 a:hover {
@@ -123,40 +103,13 @@ p {
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
-.shell {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-}
-.masthead,
-.site-footer {
-  width: min(100% - 64px, 1080px);
-  margin-inline: auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-.masthead {
-  min-height: 112px;
-}
-.mark {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 1.375rem;
-  font-weight: 650;
-  letter-spacing: -0.04em;
-  color: var(--ink);
-  text-decoration: none;
-}
 .mark svg {
   width: 35px;
   height: 35px;
   padding: 7px;
   color: var(--plate);
-  background: var(--accent);
-  border-radius: 11px;
+  background: var(--ink);
+  border-radius: var(--r-panel);
 }
 .masthead nav {
   display: flex;
@@ -171,38 +124,6 @@ p {
 .masthead nav a[aria-current] {
   color: var(--accent);
 }
-.site-footer {
-  padding: 40px 0 28px;
-  color: var(--ink-2);
-  font-size: 0.75rem;
-  margin-top: auto;
-}
-.frame {
-  width: min(100% - 64px, 1080px);
-  margin: 48px auto;
-}
-.frame-auth {
-  max-width: 640px;
-  padding: 48px;
-  background: var(--plate);
-  border-radius: var(--radius);
-}
-.frame-auth:has(> .client) {
-  max-width: 1080px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.06fr);
-  gap: 0 72px;
-  align-items: start;
-}
-.frame-auth > :not(.client) {
-  min-width: 0;
-  grid-column: 2;
-}
-.client {
-  grid-column: 1;
-  grid-row: 1 / span 12;
-  padding: 0 8px 24px 0;
-}
 .context-title {
   font-size: 2.5rem;
   font-weight: 480;
@@ -215,12 +136,12 @@ p {
   margin-top: 0;
 }
 .intro-icon {
-  color: var(--accent);
+  color: var(--ink-3);
   background: var(--tint);
   width: 52px;
   height: 52px;
   padding: 12px;
-  border-radius: 16px;
+  border-radius: var(--r-panel);
 }
 .client .quiet {
   overflow-wrap: anywhere;
@@ -283,83 +204,22 @@ summary {
 .connection-details p {
   margin: 12px 0 0;
 }
-.choices {
-  list-style: none;
-  padding: 0;
-  margin: 24px 0;
-  display: grid;
-  gap: 10px;
-}
-.choices > li {
-  min-width: 0;
-  border: 1px solid var(--rule);
-  border-radius: 10px;
-}
-.choices > li.quiet {
+.ds-choice-list > li.quiet {
   padding: 16px;
 }
-.choice {
-  position: relative;
-  display: flex;
-  width: 100%;
-  min-height: 76px;
-  align-items: center;
-  gap: 18px;
-  padding: 18px 20px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--plate);
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-}
-button.choice {
-  padding-right: 46px;
-  cursor: pointer;
-}
-button.choice::after {
-  content: "";
-  position: absolute;
-  right: 22px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  border: solid var(--ink-2);
-  border-width: 1.5px 1.5px 0 0;
-  transform: translateY(-50%) rotate(45deg);
-}
-button.choice:hover:not(:disabled) {
-  background: var(--sunken);
-}
-button.choice:disabled {
-  color: var(--ink-2);
-  cursor: not-allowed;
-  background: var(--sunken);
-}
-button.choice:disabled::after {
-  display: none;
-}
+
+
+
+
+
 .choice svg {
   flex: none;
   color: var(--tint-ink);
   stroke-width: 1.6;
 }
-.choice-text {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.choice-title {
-  font-weight: 600;
-  font-size: 0.9375rem;
-  line-height: 1.35;
-}
-.choice-detail {
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--ink-2);
-}
+
+
+
 .badge {
   position: relative;
   width: 28px;
@@ -389,7 +249,7 @@ button.choice:disabled::after {
 }
 
 .badge-account::before {
-  background: var(--accent);
+  background: var(--ink);
 }
 
 .actions {
@@ -421,18 +281,18 @@ button.choice:disabled::after {
 }
 .primary,
 .button-primary {
-  color: var(--plate);
-  background: var(--accent);
+  color: var(--signal-ink);
+  background: var(--signal);
   border: 1px solid transparent;
 }
 .primary:hover:not(:disabled),
 .button-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  color: var(--plate);
+  background: var(--signal-hover);
+  color: var(--signal-ink);
 }
 .secondary,
 .button-outline {
-  color: var(--accent);
+  color: var(--ink-3);
   background: var(--plate);
   border: 1px solid var(--rule);
 }
@@ -447,7 +307,7 @@ button.choice:disabled::after {
   border: 1px solid transparent;
 }
 .danger:hover:not(:disabled) {
-  background: #852121;
+  background: var(--fail);
 }
 .button-ghost,
 .link,
@@ -459,7 +319,7 @@ button.choice:disabled::after {
   padding: 8px 0;
   border: 0;
   background: transparent;
-  color: var(--accent);
+  color: var(--ink-3);
   font-size: 0.875rem;
   font-weight: 550;
   text-align: left;
@@ -516,7 +376,7 @@ button:disabled {
   margin: 24px 0;
   padding: 24px;
   border: 1px dashed var(--rule-strong);
-  border-radius: 10px;
+  border-radius: var(--r-panel);
   color: var(--ink-2);
 }
 .error {
@@ -533,7 +393,7 @@ button:disabled {
   background: var(--tint);
   color: var(--tint-ink);
   font-size: 0.875rem;
-  border-radius: 10px;
+  border-radius: var(--r-panel);
 }
 .review {
   display: grid;
@@ -641,7 +501,7 @@ input[type="checkbox"] {
   padding: 8px;
   background: var(--plate);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--r-panel);
 }
 fieldset {
   min-width: 0;
@@ -659,7 +519,7 @@ fieldset {
   font-size: 0.875rem;
   font-weight: 600;
 }
-.access label {
+.access label:not(.ds-check) {
   display: grid;
   grid-template-columns: auto 1fr;
   column-gap: 12px;
@@ -667,7 +527,7 @@ fieldset {
   font-weight: 550;
   cursor: pointer;
 }
-.access .choice-detail {
+.access label .ds-choice-description {
   grid-column: 2;
   font-weight: 400;
 }
@@ -692,7 +552,7 @@ fieldset {
   background: var(--tint);
   color: var(--tint-ink);
   font-size: 0.75rem;
-  border-radius: 6px;
+  border-radius: var(--r-panel);
 }
 .members {
   margin-top: 40px;
@@ -744,7 +604,7 @@ fieldset {
   padding: 2px 7px;
   background: var(--alert-wash);
   color: var(--alert);
-  border-radius: 5px;
+  border-radius: var(--r-panel);
   font-size: 0.75rem;
   font-weight: 550;
 }
@@ -851,7 +711,7 @@ fieldset {
 .home-start p:last-child {
   margin-bottom: 0;
   padding-top: 20px;
-  border-top: 1px solid #c9d9f5;
+  border-top: 1px solid var(--rule-strong);
 }
 .home-guide {
   border-top: 1px solid var(--rule);
@@ -880,7 +740,7 @@ fieldset {
 .home-guide svg {
   width: 22px;
   flex: none;
-  color: var(--accent);
+  color: var(--ink-3);
 }
 .home-guide p {
   margin: 0;
@@ -900,26 +760,7 @@ fieldset {
     border-top: 1px solid var(--rule);
   }
 }
-@media (min-width: 1100px) and (min-height: 820px) {
-  .shell-auth .frame {
-    margin-block: auto;
-  }
-}
 @media (max-width: 800px) {
-  .frame-auth:has(> .client) {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 28px;
-    max-width: 620px;
-  }
-  .frame-auth > :not(.client),
-  .client {
-    grid-column: 1;
-    grid-row: auto;
-  }
-  .client {
-    padding: 0 0 24px;
-    border-bottom: 1px solid var(--rule);
-  }
   .context-title {
     font-size: 2rem;
     margin: 20px 0 12px;
@@ -942,18 +783,6 @@ fieldset {
   body {
     background: var(--plate);
   }
-  .masthead,
-  .site-footer,
-  .frame {
-    width: calc(100% - 40px);
-  }
-  .masthead {
-    min-height: 84px;
-  }
-  .frame {
-    margin: 20px auto 32px;
-  }
-  .frame-auth,
   .frame-workspace {
     padding: 0;
     border-radius: 0;
@@ -961,18 +790,8 @@ fieldset {
   h1 {
     font-size: 1.7rem;
   }
-  .site-footer {
-    border-top: 1px solid var(--rule);
-    padding: 24px 0;
-    align-items: start;
-    font-size: 0.6875rem;
-    gap: 16px;
-  }
   .site-footer span:last-child {
     text-align: right;
-  }
-  .choice {
-    padding: 16px;
   }
   .actions {
     display: grid;
@@ -1003,7 +822,7 @@ fieldset {
   a {
     transition:
       background-color 160ms var(--ease),
-      border-color 160ms var(--ease),
+      border-color var(--dur-fast) var(--ease),
       color 160ms var(--ease);
   }
   .method-panel {
@@ -1300,10 +1119,41 @@ fieldset {
   flex: none;
   white-space: nowrap;
 }
-.console-delivery .choice-detail {
+.console-delivery .ds-choice-description {
   display: block;
   margin-top: 3px;
 }
 .console-success > svg {
   flex: none;
 }
+
+/* Schematic structure and explicit waiting states. */
+.frame-workspace,
+.request {
+  border: var(--frame-w) solid var(--frame);
+}
+.secondary,
+.button-outline {
+  border-color: var(--frame);
+}
+
+/* Portal-specific content; shell, fields, actions and frames are shared. */
+.shell { min-height:100dvh; display:flex; flex-direction:column; }
+.masthead,.site-footer { width:100%; margin-inline:0; }
+.frame { width:100%; margin:var(--space-7) 0; }
+.frame-auth { max-width:560px; margin-inline:auto; }
+.frame-auth:has(> .client) { max-width:none; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:var(--space-7); align-items:start; }
+.frame-auth > :not(.client) { min-width:0; grid-column:2; }
+.client { grid-column:1; grid-row:1; padding:0; }
+.context-title { font-weight:700; font-size:32px; margin-block:var(--space-6); }
+.site-footer { padding:var(--space-6) 0 0; margin-top:auto; font-size:12px; color:var(--muted); border-top:var(--hair-w) solid var(--rule); }
+@media(max-width:900px) { .frame-auth:has(> .client) { grid-template-columns:1fr; gap:var(--space-6); } .frame-auth > :not(.client),.client { grid-column:auto; grid-row:auto; } }
+
+.home-intro { gap:var(--space-7); padding:var(--space-6) 0 var(--space-7); }
+.home-intro h1 { font:700 clamp(32px,4vw,var(--fs-display-xl))/1.1 var(--font-display); letter-spacing:var(--tracking-display); margin-bottom:var(--space-5); }
+.lede { font-size:var(--fs-body-lg); }
+.home-start { padding:var(--space-6); }
+.home-start h2 { font-size:var(--fs-title); margin:var(--space-5) 0 var(--space-3); }
+.home-guide { gap:var(--space-7); padding:var(--space-6) 0; }
+.home-guide h2 { font-size:var(--fs-title); font-weight:700; }
+@media(max-width:900px) { .home-intro,.home-guide { grid-template-columns:1fr; } }

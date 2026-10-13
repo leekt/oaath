@@ -916,6 +916,23 @@ describe("portal in Chrome", () => {
     await page.close();
   });
 
+  it("blocks a Keyline handoff for a different account before offering approval", async () => {
+    const page = await openPortal([GRANT_SIGNER]);
+    const hash = new URLSearchParams({
+      return_origin: "https://keyline.taek.tech",
+      state: "a".repeat(43),
+      account: `0x${"22".repeat(20)}`,
+      label: "Recipient",
+    });
+    await page.goto(`${origin}/link/link-tampered#${hash}`);
+    await page.locator("#wallet-method").click();
+    await clickText(page, "Test Wallet");
+    await page.waitForSelector("::-p-text(This request is for a different account)");
+    expect(await page.$("::-p-text(Approve and sign)")).toBeNull();
+    expect(await walletMethods(page)).not.toContain("eth_signTypedData_v4");
+    await page.close();
+  });
+
   it("shows the owner a link request and refuses to sign a digest it did not derive", async () => {
     const page = await browser.newPage();
     await page.setViewport({ width: 390, height: 844 });

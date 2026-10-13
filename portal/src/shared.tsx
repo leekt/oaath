@@ -1,13 +1,15 @@
+import { Button as SchematicAction } from "./schematic/components";
 /**
  * Pieces every portal page shares: the frame, notices, error copy, QR codes, and the
  * signer step that ends in a fresh session for the chosen signer.
  *
  * @author taek <leekt216@gmail.com>
  */
-import { ArrowLeft, Fingerprint, KeyRound, Plus, Trash2, Wallet } from "lucide-react";
+import { ArrowLeft, Fingerprint, Plus, Trash2, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { encode } from "uqr";
 import { PortalApiError, portalApi } from "./api.js";
+import { AppShell, Wordmark, Surface } from "./schematic/components";
 import { Button } from "./components/ui/button.js";
 import { signInPasskey, signInUnknownPasskey, signInWallet } from "./session.js";
 import {
@@ -120,7 +122,10 @@ export function SignerStep({
     setError(null);
     try {
       const signer = await choose();
-      if (!signer) throw Object.assign(new Error("unknown passkey"), { code: "passkey-unknown" });
+      if (!signer)
+        throw Object.assign(new Error("unknown passkey"), {
+          code: "passkey-unknown",
+        });
       rememberSigner(signer);
       onChosen(signer);
     } catch (failure) {
@@ -138,7 +143,9 @@ export function SignerStep({
 
   async function add(create: () => Promise<NewSigner>, wallet: AnnouncedWallet | null = null) {
     const created = await create();
-    const { signer_id } = await portalApi.registerSigner({ profile: created.profile });
+    const { signer_id } = await portalApi.registerSigner({
+      profile: created.profile,
+    });
     return signIn({ ...created, signer_id, lastUsedAt: Date.now() }, wallet);
   }
 
@@ -184,7 +191,7 @@ export function SignerStep({
         <p className="quiet">Your passkey or wallet confirms it's you. This approves nothing.</p>
         {panel === "methods" && (
           <>
-            <ul className="choices method-choices" aria-label="Sign-in methods">
+            <ul className="ds-choice-list" aria-label="Sign-in methods">
               <li>
                 <Button
                   id="passkey-method"
@@ -194,9 +201,11 @@ export function SignerStep({
                   onClick={() => open("passkeys")}
                 >
                   <Fingerprint size={24} aria-hidden="true" />
-                  <span className="choice-text">
-                    <span className="choice-title">Passkey</span>
-                    <span className="choice-detail">Your face, fingerprint or device PIN</span>
+                  <span className="ds-choice-copy">
+                    <span className="ds-choice-title">Passkey</span>
+                    <span className="ds-choice-description">
+                      Your face, fingerprint or device PIN
+                    </span>
                   </span>
                 </Button>
               </li>
@@ -209,9 +218,9 @@ export function SignerStep({
                   onClick={() => open("wallets")}
                 >
                   <Wallet size={24} aria-hidden="true" />
-                  <span className="choice-text">
-                    <span className="choice-title">Wallet</span>
-                    <span className="choice-detail">Choose a browser wallet</span>
+                  <span className="ds-choice-copy">
+                    <span className="ds-choice-title">Wallet</span>
+                    <span className="ds-choice-description">Choose a browser wallet</span>
                   </span>
                 </Button>
               </li>
@@ -225,7 +234,7 @@ export function SignerStep({
           </>
         )}
         {(panel === "passkeys" || panel === "wallets") && saved.length > 0 && (
-          <ul className="choices" aria-label="Saved signers">
+          <ul className="ds-choice-list" aria-label="Saved signers">
             {saved.map((signer) => (
               <li key={signer.signer_id} className="saved-signer">
                 <Button
@@ -235,9 +244,11 @@ export function SignerStep({
                   onClick={() => run(() => signIn(signer))}
                 >
                   <span className={`badge badge-${signer.kind}`} aria-hidden="true" />
-                  <span className="choice-text">
-                    <span className="choice-title">{signer.label}</span>
-                    <span className="choice-detail mono">{signerDetail(signer.profile)}</span>
+                  <span className="ds-choice-copy">
+                    <span className="ds-choice-title">{signer.label}</span>
+                    <span className="ds-choice-description mono">
+                      {signerDetail(signer.profile)}
+                    </span>
                   </span>
                 </Button>
                 <Button
@@ -274,7 +285,7 @@ export function SignerStep({
           </ul>
         )}
         {(panel === "passkeys" || panel === "add") && (
-          <ul className="choices" aria-label="Add signer">
+          <ul className="ds-choice-list" aria-label="Add signer">
             <li>
               <Button
                 variant="choice"
@@ -282,9 +293,9 @@ export function SignerStep({
                 onClick={() => run(() => add(() => createPasskey(signers)))}
               >
                 <Fingerprint size={24} aria-hidden="true" />
-                <span className="choice-text">
-                  <span className="choice-title">New passkey</span>
-                  <span className="choice-detail">Save a passkey to this device</span>
+                <span className="ds-choice-copy">
+                  <span className="ds-choice-title">New passkey</span>
+                  <span className="ds-choice-description">Save a passkey to this device</span>
                 </span>
               </Button>
             </li>
@@ -297,9 +308,9 @@ export function SignerStep({
                   onClick={() => open("wallets")}
                 >
                   <Wallet size={24} aria-hidden="true" />
-                  <span className="choice-text">
-                    <span className="choice-title">Wallet</span>
-                    <span className="choice-detail">Connect a browser wallet</span>
+                  <span className="ds-choice-copy">
+                    <span className="ds-choice-title">Wallet</span>
+                    <span className="ds-choice-description">Connect a browser wallet</span>
                   </span>
                 </Button>
               </li>
@@ -316,7 +327,7 @@ export function SignerStep({
                   : "Looking for browser wallets…"}
               </p>
             ) : (
-              <ul className="choices" aria-label="Available wallets">
+              <ul className="ds-choice-list" aria-label="Available wallets">
                 {wallets.map((wallet) => (
                   <li key={wallet.info.uuid}>
                     <Button
@@ -325,9 +336,9 @@ export function SignerStep({
                       onClick={() => run(() => add(() => connectWallet(wallet), wallet))}
                     >
                       <Wallet size={24} aria-hidden="true" />
-                      <span className="choice-text">
-                        <span className="choice-title">{wallet.info.name}</span>
-                        <span className="choice-detail">Sign in with your wallet</span>
+                      <span className="ds-choice-copy">
+                        <span className="ds-choice-title">{wallet.info.name}</span>
+                        <span className="ds-choice-description">Sign in with your wallet</span>
                       </span>
                     </Button>
                   </li>
@@ -361,9 +372,15 @@ export function SignerStep({
 
 export function CancelButton({ onCancel, disabled }: { onCancel: () => void; disabled: boolean }) {
   return (
-    <button type="button" className="cancel" disabled={disabled} onClick={onCancel}>
+    <SchematicAction
+      type="button"
+      variant="ghost"
+      className="cancel"
+      disabled={disabled}
+      onClick={onCancel}
+    >
       Cancel and return to the app
-    </button>
+    </SchematicAction>
   );
 }
 
@@ -375,17 +392,13 @@ export function Frame({
   variant?: "auth" | "workspace" | "landing";
 }) {
   return (
-    <div className={`shell shell-${variant}`}>
-      <header className="masthead">
-        {variant === "auth" ? (
-          <span className="mark">
-            <KeyRound aria-hidden="true" /> OAAth
-          </span>
-        ) : (
-          <a className="mark" href="/" aria-label="OAAth home">
-            <KeyRound aria-hidden="true" /> OAAth
-          </a>
-        )}
+    <AppShell className={`shell shell-${variant}`}>
+      <header className="masthead ds-header">
+        <Wordmark
+          as={variant === "auth" ? "span" : "a"}
+          href={variant === "auth" ? undefined : "/"}
+          sub="OAAth"
+        />
         {variant === "auth" ? (
           <span className="quiet small">Account portal</span>
         ) : (
@@ -405,12 +418,14 @@ export function Frame({
           </nav>
         )}
       </header>
-      <main className={`frame frame-${variant}`}>{children}</main>
-      <footer className="site-footer">
+      <Surface as="main" className={`frame frame-${variant}`}>
+        {children}
+      </Surface>
+      <footer className="site-footer ds-footer">
         <span>OAAth · Your account, your choice.</span>
         <span>Proof of concept</span>
       </footer>
-    </div>
+    </AppShell>
   );
 }
 
@@ -440,8 +455,8 @@ export function QrCode({ text, label }: { text: string; label: string }) {
       aria-label={label}
       shapeRendering="crispEdges"
     >
-      <rect width={size} height={size} fill="#fff" />
-      <path d={cells.join("")} fill="#000" />
+      <rect width={size} height={size} fill="var(--panel)" />
+      <path d={cells.join("")} fill="var(--ink)" />
     </svg>
   );
 }
