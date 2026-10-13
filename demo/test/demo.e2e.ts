@@ -554,6 +554,7 @@ beforeAll(async () => {
     OAATH_CLIENT_ID: "",
     EXPLORER_TX_URL: "https://sepolia.arbiscan.io/tx/",
     CHAIN_RPC_URL: local.chain.url,
+    BUNDLER_API_KEY: "test-bundler-key",
     // The bundle_rs VPC binding, pointed at the fixture bundler.
     BUNDLER: {
       fetch: (request: Request) =>
@@ -681,8 +682,10 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
       oaath_accounts: [{ address, role: "root", status: "active" }],
     });
 
-    // 2. The invite link names this demo and the account.
-    expect(await text(root, "#invite-url")).toBe(`${demo}/?invite=${address}`);
+    // 2. Invitation creation belongs to Keyline, with the chosen account preselected.
+    expect(await root.$eval("#keyline-invite", (node) => (node as HTMLAnchorElement).href)).toBe(
+      `https://keyline.taek.tech/?account=${address}#team`,
+    );
 
     // 3. The root's Grant: the popup opens on the review for the signer and
     // account the login chose, and asks for one signature only.
@@ -732,12 +735,11 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     expect(local.sent[1]?.factory ?? null).toBeNull();
     expectRelayPaid(local.sent[1]);
 
-    // The member: another browser profile opens the invite and joins with a new passkey.
+    // The member joins in the portal; Keyline tests own the invitation handoff.
     const device = await browser.createBrowserContext();
-    const member = await openDemo(`${demo}/?invite=${address}`, device);
-    expect(await text(member, "#join-account")).toBe(address);
+    const member = await openDemo(demo, device);
     await capture(member, "invitation");
-    popup = await popupFrom(member, "#join");
+    popup = await popupFrom(member, "#login");
     const authenticator = await addAuthenticator(popup);
     await click(popup, "::-p-text(Add signer)");
     await click(popup, "::-p-text(New passkey)");
@@ -762,7 +764,6 @@ describe("the hosted OAAth demo on a local Arbitrum Sepolia", () => {
     await rootPortal.waitForSelector("::-p-text(Signer added)");
     await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
     await outcome(member, "signed-in");
-    expect(await member.$eval("#s-join", (node) => (node as HTMLElement).hidden)).toBe(true);
     expect(await text(member, "#login")).toBe("Sign in again");
     expect(JSON.parse(await text(member, "#identity"))).toMatchObject({
       account: address,

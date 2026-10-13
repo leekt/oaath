@@ -161,7 +161,6 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // ---- static text --------------------------------------------------------------
 
 $<HTMLAnchorElement>("portal-link").href = issuer;
-$<HTMLAnchorElement>("accounts-link").href = `${issuer}/accounts`;
 $<HTMLAnchorElement>("revoke-link").href = `${issuer}/accounts`;
 $("target").textContent = target;
 $("selector").textContent = selector;
@@ -173,7 +172,6 @@ $("status").textContent =
 // ---- 1. login, 2. invite ------------------------------------------------------
 
 let login: OaathLogin | null = null;
-const invited = new URLSearchParams(location.search).get("invite");
 
 function role(summary: Pick<OaathLogin, "account" | "accounts">) {
   return summary.accounts.find((entry) => entry.address === summary.account)?.role ?? "unknown";
@@ -201,14 +199,13 @@ function showIdentity(summary: Pick<OaathLogin, "account" | "signer" | "accounts
   $("identity-account").textContent = `${summary.account.slice(0, 8)}…${summary.account.slice(-6)}`;
   if (login) {
     button("login").textContent = "Sign in again";
-    button("login").classList.replace("button-primary", "button-outline");
-    if (summary.account.toLowerCase() === invited?.toLowerCase() && current !== "unknown")
-      $("s-join").hidden = true;
+    button("login").classList.replace("ds-button--dark", "ds-button--secondary");
     step("login", "done", "Signed in");
     step("grant", "current", "Review permission");
   }
   $("s-invite").hidden = current !== "root";
-  $("invite-url").textContent = `${location.origin}/?invite=${summary.account}`;
+  $<HTMLAnchorElement>("keyline-invite").href =
+    `https://keyline.taek.tech/?account=${summary.account}#team`;
   $("s-owner").hidden = current !== "root" || login === null;
   $("s-automate").hidden = config.automation === null || login === null;
 }
@@ -239,35 +236,6 @@ async function signIn(source: HTMLButtonElement) {
 }
 
 button("login").addEventListener("click", () => signIn(button("login")));
-async function copy(source: HTMLButtonElement, value: string) {
-  feedbackHost = source.closest<HTMLElement>("section") ?? feedbackHost;
-  try {
-    await navigator.clipboard.writeText(value);
-    const label = source.textContent ?? "Copy";
-    source.textContent = "Copied";
-    setTimeout(() => {
-      source.textContent = label;
-    }, 2_000);
-  } catch {
-    show(
-      "copy-unavailable",
-      "Copy isn't available. Open the details and copy the address or link manually.",
-    );
-  }
-}
-button("copy-invite").addEventListener("click", () =>
-  copy(button("copy-invite"), $("invite-url").textContent ?? ""),
-);
-
-if (invited && /^0x[0-9a-fA-F]{40}$/u.test(invited)) {
-  $("s-join").hidden = false;
-  $("join-account").textContent = invited.toLowerCase();
-  button("join").addEventListener("click", () => signIn(button("join")));
-  button("copy-join").addEventListener("click", () =>
-    copy(button("copy-join"), invited.toLowerCase()),
-  );
-}
-
 // ---- 3. grant, 4. send ----------------------------------------------------------
 
 const oaath = createOAAth({
@@ -300,7 +268,7 @@ async function showAccount() {
   $("account").textContent = account;
   $("s-send").hidden = false;
   $("call-empty").hidden = true;
-  button("grant").classList.replace("button-primary", "button-outline");
+  button("grant").classList.replace("ds-button--primary", "ds-button--secondary");
   button("grant").dataset.idleLabel = "Request new permission";
   if (button("grant").getAttribute("aria-busy") !== "true")
     button("grant").textContent = "Request new permission";
@@ -366,8 +334,8 @@ async function settle(result: Awaited<ReturnType<typeof connection.requestPermis
   $("permission-details").hidden = false;
   if ("state" in result && result.state === "pending") {
     button("redeem").hidden = false;
-    button("redeem").classList.replace("button-outline", "button-primary");
-    button("grant").classList.replace("button-primary", "button-outline");
+    button("redeem").classList.replace("ds-button--secondary", "ds-button--primary");
+    button("grant").classList.replace("ds-button--primary", "ds-button--secondary");
     button("grant").dataset.idleLabel = "Request new permission";
     if (button("grant").getAttribute("aria-busy") !== "true")
       button("grant").textContent = "Request new permission";
@@ -417,7 +385,6 @@ try {
 
 $("startup-message").hidden = true;
 button("login").disabled = false;
-button("join").disabled = false;
 button("grant").disabled = false;
 button("grant").addEventListener("click", async () => {
   busy(button("grant"), true, "Waiting for review…");

@@ -158,7 +158,7 @@ function signedIn(account: string) {
   $("identity-summary").hidden = false;
   $("identity-account").textContent = `${account.slice(0, 8)}…${account.slice(-6)}`;
   $("login").textContent = "Sign in again";
-  $("login").classList.replace("button-primary", "button-outline");
+  $("login").classList.replace("ds-button--dark", "ds-button--secondary");
   badge("login", "Signed in", "done");
   step("login", "done");
   if (config.mint) {
