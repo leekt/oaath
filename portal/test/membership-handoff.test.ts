@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { membershipContext, matchingMembership } from "../src/membership-handoff.js";
+import { matchingMembership, membershipContext } from "../src/membership-handoff.js";
 
 const account = `0x${"11".repeat(20)}`;
 const fragment = (origin = "https://keyline.taek.tech") =>

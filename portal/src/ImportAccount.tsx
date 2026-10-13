@@ -1,4 +1,3 @@
-import { Input as SchematicInput, Button as SchematicAction } from "./schematic/components";
 /**
  * "Import an existing account": checks that the signed-in signer is the root of
  * a deployed Kernel v4 account on Arbitrum Sepolia and lists every installed
@@ -18,6 +17,7 @@ import {
   signAccountImport,
 } from "./account-import.js";
 import { type PortalAccount, portalApi } from "./api.js";
+import { Button as SchematicAction, Input as SchematicInput } from "./schematic/components";
 import { message } from "./shared.js";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 

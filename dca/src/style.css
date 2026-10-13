@@ -15,8 +15,6 @@
   color: var(--ink-2);
 }
 
-
-
 .plan-summary,
 .plan-form .actions {
   grid-column: 1 / -1;

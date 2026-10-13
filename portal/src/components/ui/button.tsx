@@ -1,5 +1,6 @@
 import { Button as Primitive } from "@base-ui/react/button";
 import { buttonClass } from "../../schematic/components";
+
 type Variant = "default" | "outline" | "ghost" | "choice";
 export function Button({
   className = "",

@@ -21,7 +21,9 @@
  * executor pays chain gas), reached through the `BUNDLER` Workers VPC binding.
  * The automation service sends every plan operation through its own bundler.
  *
- * The bundler receives its server-owned credential in each JSON-RPC envelope; chain RPC receives no credential. Upstream URLs are never logged or
+ * The bundler receives its server-owned credential in each JSON-RPC envelope;
+ * chain RPC receives no credential. Client headers and extra body fields are
+ * dropped. Upstream URLs are never logged or
  * returned; provider answers pass through unchanged only when they are JSON-RPC.
  *
  * @author taek <leekt216@gmail.com>

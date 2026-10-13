@@ -6,6 +6,9 @@
  * state and owner      run.status, by this module (op_hash/op_nonce: the journal adapter)
  *                      due -> claimed -> prepared -> submitted -> observed -> finalized
  *                      terminal: finalized | failed | skipped
+ * plan effects         setup observed included and successful (or finalized):
+ *                      authorized -> active; setup failed (even after inclusion):
+ *                      authorized|active|paused -> failed
  * persisted evidence   calls before send; op hash + nonce journaled before any
  *                      signature or send (see ./store.ts); transaction hash on inclusion
  * resource occupied?   one open run per (plan, lane) (unique index), so one
@@ -55,6 +58,12 @@ export interface RunRow {
 export type Observation = Readonly<{
   status: "finalized" | "dropped" | "superseded" | "abandoned" | "pending" | "unreadable";
   transactionHash: `0x${string}` | null;
+  /**
+   * The UserOperation's outcome while the SDK journal records it included but
+   * not yet final; absent otherwise. The same evidence the SDK requires before
+   * an explicit lane may run beside the install.
+   */
+  inclusion?: "success" | "reverted";
   /** Finalized execution facts, only for `finalized`. */
   execution: Readonly<{
     sender: string;
@@ -124,6 +133,9 @@ export function grantGateway(context: ServiceContext): OpenGateway {
           return {
             status: outcome.status,
             transactionHash: outcome.transactionHash,
+            ...(outcome.state === "included" && outcome.outcome !== null
+              ? { inclusion: outcome.outcome }
+              : {}),
             execution:
               execution === null
                 ? null
@@ -176,15 +188,28 @@ function backoff(observations: number): number {
   return Math.min(60, 2 ** Math.min(observations + 1, 6));
 }
 
-/** Plan effects of a terminal run, fenced on the plan's own state. */
+/** Activates a plan whose setup is included and successful (or final); fenced on `authorized`. */
+async function activatePlan(pool: Pool, run: RunRow): Promise<void> {
+  await pool.query(
+    "UPDATE automation_plans SET status='active', revision=revision+1, diagnostic=NULL WHERE id=$1 AND status='authorized'",
+    [run.plan_id],
+  );
+}
+
+/**
+ * Plan effects of a terminal run, fenced on the plan's own state. A setup
+ * that ends failed fails its plan even after inclusion activated it (a
+ * reorganized or reverted install): no further occurrence is admitted.
+ */
 async function settlePlan(pool: Pool, run: RunRow, finalized: boolean): Promise<void> {
-  if (run.kind === "setup")
-    await pool.query(
-      finalized
-        ? "UPDATE automation_plans SET status='active', revision=revision+1, diagnostic=NULL WHERE id=$1 AND status='authorized'"
-        : "UPDATE automation_plans SET status='failed', revision=revision+1, diagnostic='setup_failed' WHERE id=$1 AND status='authorized'",
-      [run.plan_id],
-    );
+  if (run.kind === "setup") {
+    if (finalized) await activatePlan(pool, run);
+    else
+      await pool.query(
+        "UPDATE automation_plans SET status='failed', revision=revision+1, diagnostic='setup_failed' WHERE id=$1 AND status IN ('authorized','active','paused')",
+        [run.plan_id],
+      );
+  }
   if (run.kind === "cancel")
     await pool.query(
       `UPDATE automation_plans SET status='cancelled', revision=revision+1,
@@ -226,7 +251,7 @@ async function observe(
   const now = context.now();
   const seen = await gateway.observe(run.op_hash, runLane(run));
   if (seen === null || seen.status === "pending" || seen.status === "unreadable") {
-    await update(
+    const changed = await update(
       context.pool,
       run,
       `status=$4, observations=observations+1, next_attempt_at=$5, reason=$6, transaction_hash=COALESCE($7::text, transaction_hash), ${release}`,
@@ -237,6 +262,10 @@ async function observe(
         seen?.transactionHash ?? null,
       ],
     );
+    // An included, successful setup activates the plan before finality; its
+    // occurrences run on their own lanes while the setup is still observed.
+    if (changed && run.kind === "setup" && seen?.inclusion === "success")
+      await activatePlan(context.pool, run);
     return;
   }
   if (seen.status === "abandoned") {

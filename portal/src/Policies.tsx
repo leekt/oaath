@@ -1,4 +1,3 @@
-import { Input as SchematicInput, Button as SchematicAction } from "./schematic/components";
 /**
  * An account's policy templates, for its owner: named spending limits a
  * signer can be given when it is added or later. A template is configuration
@@ -8,6 +7,7 @@ import { Input as SchematicInput, Button as SchematicAction } from "./schematic/
  */
 import { useState } from "react";
 import { type PolicyTemplate, type PolicyTemplateInput, portalApi } from "./api.js";
+import { Button as SchematicAction, Input as SchematicInput } from "./schematic/components";
 import { message } from "./shared.js";
 
 const DAY = 86_400;

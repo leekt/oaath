@@ -147,6 +147,9 @@ export function configFromEnv(
     // A key without a paymaster would be silently unused.
     if (apiKey !== null && paymasterUrl === null)
       throw new ConfigError(`AUTOMATION_PAYMASTER_API_KEY_${chainId}`);
+    const bundlerApiKey = env[`AUTOMATION_BUNDLER_API_KEY_${chainId}`]?.trim() || null;
+    if (bundlerApiKey !== null && /[\r\n\0]/u.test(bundlerApiKey))
+      throw new ConfigError(`AUTOMATION_BUNDLER_API_KEY_${chainId}`);
     const relay = env[`AUTOMATION_RELAY_PAYS_GAS_${chainId}`]?.trim() ?? "";
     if (!["", "true", "false"].includes(relay))
       throw new ConfigError(`AUTOMATION_RELAY_PAYS_GAS_${chainId}`);
@@ -159,7 +162,7 @@ export function configFromEnv(
       Object.freeze({
         rpcUrl: httpUrl(env, `AUTOMATION_RPC_URL_${chainId}`),
         bundlerUrl: httpUrl(env, `AUTOMATION_BUNDLER_URL_${chainId}`),
-        bundlerApiKey: env[`AUTOMATION_BUNDLER_API_KEY_${chainId}`]?.trim() || null,
+        bundlerApiKey,
         paymasterUrl,
         paymasterApiKey: apiKey,
         relayPaysGas,

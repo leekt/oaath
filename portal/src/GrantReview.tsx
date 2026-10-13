@@ -1,4 +1,3 @@
-import { Button as SchematicAction } from "./schematic/components";
 /**
  * Grant review: what the dapp's signer may do with this account, and the one
  * root signature that approves it. Everything shown comes from the request the
@@ -17,6 +16,7 @@ import {
   portalApi,
 } from "./api.js";
 import { RootSigningError, reviewedRequest, signGrantApproval } from "./root-signing.js";
+import { Button as SchematicAction } from "./schematic/components";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 
 /** Well-known ERC-20 selectors; anything else is shown as its hex selector. */

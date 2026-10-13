@@ -1,4 +1,3 @@
-import { Button as SchematicAction } from "./schematic/components";
 /**
  * The "Login with OAAth" popup: sign in with a signer, then choose an account,
  * then return to the dapp. Signing in proves the signer (a passkey assertion
@@ -23,11 +22,12 @@ import {
   transactionIdFromRequestUri,
 } from "./api.js";
 import { Developers } from "./Developers.js";
-import { Join } from "./Join.js";
 import { GrantReview } from "./GrantReview.js";
+import { Join } from "./Join.js";
 import { LinkApproval, LinkRequest, ManageAccounts } from "./Links.js";
 import { OperationReview } from "./OperationReview.js";
 import { AskOwner, RequestPage } from "./Requests.js";
+import { Button as SchematicAction } from "./schematic/components";
 import { signInPasskey, signInWallet } from "./session.js";
 import { CancelButton, Frame, message, Notice, SignerStep } from "./shared.js";
 import {

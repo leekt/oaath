@@ -1,4 +1,3 @@
-import { Button as SchematicAction } from "./schematic/components";
 /**
  * App access asked for by a member that does not own the account.
  *
@@ -22,6 +21,7 @@ import {
 } from "./api.js";
 import { GrantTerms, grantFailure, when } from "./GrantReview.js";
 import { reviewedRequest, signGrantApproval } from "./root-signing.js";
+import { Button as SchematicAction } from "./schematic/components";
 import { CancelButton, Frame, message, Notice, QrCode, SignerStep } from "./shared.js";
 import { type RememberedSigner, shortAddress, signerDetail } from "./signers.js";
 

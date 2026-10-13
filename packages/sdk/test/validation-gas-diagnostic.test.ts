@@ -209,26 +209,23 @@ describe("AA23 empty validation revert diagnostic", () => {
     }
   });
 
-  it("reports a send diagnostic without resubmitting or releasing its lane", async () => {
+  it("rejects a send the bundler refused with its diagnostic, sending it once", async () => {
     const { chain, sent } = fixture(revert(), true);
     const realm = createRealm({ chain });
     try {
       const grant = await (await realm.oaath.connect()).requestPermission(permissionInput());
-      const operation = await grant.sendCalls(sendCallsInput());
-      const failure = {
-        stage: "send",
-        code: "account-validation",
-        entryPointCode: "AA23",
-        retryable: false,
-      };
-      expect(operation.outcome).toMatchObject({ status: "pending", diagnostic, failure });
-      expect(await operation.wait({ attempts: 1 })).toMatchObject({
-        status: "pending",
-        diagnostic,
-        failure,
-      });
+      // A JSON-RPC error answer is a conclusive rejection (#514): the caller gets the
+      // entry-point diagnostic at once, and nothing is resubmitted or observed.
       await expect(grant.sendCalls(sendCallsInput())).rejects.toMatchObject({
-        code: "oaath_client_state_conflict",
+        code: "oaath_client_submission_rejected",
+        rpcCode: -32500,
+        diagnostic,
+        failure: {
+          stage: "send",
+          code: "account-validation",
+          entryPointCode: "AA23",
+          retryable: false,
+        },
       });
       expect(sent()).toBe(1);
     } finally {

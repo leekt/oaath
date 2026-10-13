@@ -20,7 +20,9 @@
  * which Kernel v4 accounts use. It listens only on the VM's loopback, so the
  * Worker reaches it through the `BUNDLER` Workers VPC service binding.
  *
- * The bundler receives its server-owned credential in each JSON-RPC envelope; chain RPC receives no credential. Upstream URLs are never logged or
+ * The bundler receives its server-owned credential in each JSON-RPC envelope;
+ * chain RPC receives no credential. Client headers and extra body fields are
+ * dropped. Upstream URLs are never logged or
  * returned; provider answers pass through unchanged only when they are JSON-RPC.
  *
  * @author taek <leekt216@gmail.com>

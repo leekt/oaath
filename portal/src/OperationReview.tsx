@@ -1,4 +1,3 @@
-import { Button as SchematicAction } from "./schematic/components";
 /**
  * Owner-operation review: the exact transaction a dapp asks the account's root
  * to sign. Everything shown comes from the request the portal re-captured and
@@ -12,6 +11,7 @@ import type { PortalAccount } from "./api.js";
 import { CHAINS, ether, SELECTORS } from "./GrantReview.js";
 import { reviewedOperation, signOperation } from "./operation-signing.js";
 import { RootSigningError } from "./root-signing.js";
+import { Button as SchematicAction } from "./schematic/components";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 
 function gwei(wei: string): string {

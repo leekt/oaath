@@ -71,8 +71,17 @@ export function captureConnectedEoa(
   if (typeof wallet.request !== "function") return fail("connected fee payer request is missing");
   const local = account.type === "local" || wallet.signer !== undefined;
   if (wallet.signer !== undefined) {
-    const signer = captureRecord(wallet.signer, "connected fee payer signer", context, fail);
-    if (typeof signer.sign !== "function") return fail("local fee payer signer is missing");
+    // A signer is a borrowed capability, not a data record. Cetane accounts carry
+    // a lazy address getter; read only the sign capability, exactly once.
+    const signer = wallet.signer;
+    if (!signer || typeof signer !== "object") return fail("connected fee payer signer is invalid");
+    let sign: unknown;
+    try {
+      sign = (signer as Record<string, unknown>).sign;
+    } catch {
+      return fail("connected fee payer signer is invalid");
+    }
+    if (typeof sign !== "function") return fail("local fee payer signer is missing");
   }
   if (local && typeof wallet.sendTransaction !== "function")
     return fail("local fee payer sendTransaction is missing");

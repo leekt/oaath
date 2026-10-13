@@ -44,6 +44,9 @@ const include = (context: ServiceContext, key: string) =>
     "UPDATE automation_runs SET status='observed', op_hash=$2, transaction_hash=$2 WHERE run_key=$1",
     [key, `0x${"ef".repeat(32)}`],
   );
+const schedule = async (context: ServiceContext) =>
+  (await context.pool.query("SELECT terms FROM automation_plans WHERE id=$1", [PLAN])).rows[0].terms
+    .schedule as { endAt: number };
 const status = async (context: ServiceContext) =>
   (await context.pool.query("SELECT status FROM automation_plans WHERE id=$1", [PLAN])).rows[0]
     .status;
@@ -55,24 +58,85 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
   });
   afterAll(() => cluster?.stop());
 
-  it("admits no occurrence until setup finalized, even while setup is included", async () => {
+  it("keeps an authorized plan waiting for setup past its first slot, then admits by activation", async () => {
     const clock = { now: START - 50 };
     const context = await testContext(await cluster.database(), clock);
     await insertPlan(context, "authorized");
     await tick(context);
     expect(await lanes(context)).toEqual([{ run_key: "setup", lane: 0, status: "due" }]);
-    await include(context, "setup");
-    clock.now = START + 10;
+    // Setup sent, not yet included, while slot 0's window passes: no occurrence, no expiry.
+    await context.pool.query("UPDATE automation_runs SET status='submitted' WHERE run_key='setup'");
+    clock.now = START + 3600 + 10;
     await tick(context);
     expect((await runs(context)).map((run) => run.run_key)).toEqual(["setup"]);
-    await context.pool.query(
-      "UPDATE automation_runs SET status='finalized' WHERE run_key='setup'; UPDATE automation_plans SET status='active'",
-    );
+    expect(await status(context)).toBe("authorized");
+    // Included and successful: the executor activates the plan; setup still awaits finality.
+    await include(context, "setup");
+    await context.pool.query("UPDATE automation_plans SET status='active'");
     await tick(context);
     expect(await lanes(context)).toEqual([
-      { run_key: "setup", lane: 0, status: "finalized" },
-      { run_key: "occurrence:0", lane: 0, status: "due" },
+      { run_key: "setup", lane: 0, status: "observed" },
+      { run_key: "occurrence:0", lane: 1, status: "skipped" },
+      { run_key: "occurrence:1", lane: 2, status: "due" },
     ]);
+    await context.pool.end();
+  });
+
+  it("expires an authorized plan whose setup is never included by the Grant end", async () => {
+    const clock = { now: START - 50 };
+    const context = await testContext(await cluster.database(), clock);
+    await insertPlan(context, "authorized");
+    await tick(context);
+    await context.pool.query("UPDATE automation_runs SET status='submitted' WHERE run_key='setup'");
+    const { endAt } = await schedule(context);
+    clock.now = endAt - 1;
+    await tick(context);
+    expect(await status(context)).toBe("authorized");
+    clock.now = endAt;
+    await tick(context);
+    const plan = (await context.pool.query("SELECT status, diagnostic FROM automation_plans")).rows;
+    expect(plan).toEqual([{ status: "expired", diagnostic: "setup_not_included" }]);
+    // The sent setup is still only observed; nothing else is admitted.
+    expect(await runs(context)).toEqual([{ run_key: "setup", status: "submitted", reason: null }]);
+    await context.pool.end();
+  });
+
+  it("skips every slot past the approved Grant's end", async () => {
+    const clock = { now: START + 10 };
+    const context = await testContext(await cluster.database(), clock);
+    await insertPlan(context, "active");
+    // The approved policy ends during slot 1's window, before slot 2 opens.
+    await context.pool.query(
+      "UPDATE automation_plans SET permission=jsonb_build_object('validUntil', $1::bigint)",
+      [START + 3600 + 99],
+    );
+    await context.pool.query(
+      `INSERT INTO automation_runs(plan_id,run_key,kind,lane,scheduled_at,status)
+       VALUES($1,'setup','setup',0,$2,'finalized')`,
+      [PLAN, START - 50],
+    );
+    await tick(context);
+    clock.now = START + 3600 + 1;
+    await tick(context);
+    const rows = (
+      await context.pool.query(
+        "SELECT run_key, status, reason, closes_at FROM automation_runs WHERE kind='occurrence' ORDER BY slot",
+      )
+    ).rows;
+    expect(rows).toEqual([
+      { run_key: "occurrence:0", status: "due", reason: null, closes_at: START + 600 },
+      { run_key: "occurrence:1", status: "due", reason: null, closes_at: START + 3600 + 100 },
+      {
+        run_key: "occurrence:2",
+        status: "skipped",
+        reason: "grant_expired",
+        closes_at: START + 3600 + 100,
+      },
+    ]);
+    await context.pool.query("UPDATE automation_runs SET status='finalized'");
+    clock.now = START + 3600 + 100;
+    await tick(context);
+    expect(await status(context)).toBe("completed");
     await context.pool.end();
   });
 
@@ -90,8 +154,8 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
     clock.now = START + 3600 + 1;
     await tick(context);
     expect((await lanes(context)).slice(1)).toEqual([
-      { run_key: "occurrence:0", lane: 0, status: "observed" },
-      { run_key: "occurrence:1", lane: 1, status: "due" },
+      { run_key: "occurrence:0", lane: 1, status: "observed" },
+      { run_key: "occurrence:1", lane: 2, status: "due" },
     ]);
     await context.pool.end();
   });
@@ -130,7 +194,7 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
     clock.now = START + 3 * 3600 + 1;
     await tick(context);
     expect((await lanes(context)).slice(4)).toEqual([
-      { run_key: "occurrence:3", lane: 3, status: "due" },
+      { run_key: "occurrence:3", lane: 4, status: "due" },
     ]);
     await context.pool.end();
   });
@@ -169,8 +233,8 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
     clock.now = START + 3600 + 1;
     await Promise.all([tick(a), tick(b), tick(a), tick(b)]);
     expect((await lanes(a)).slice(1)).toEqual([
-      { run_key: "occurrence:0", lane: 0, status: "due" },
-      { run_key: "occurrence:1", lane: 1, status: "due" },
+      { run_key: "occurrence:0", lane: 1, status: "due" },
+      { run_key: "occurrence:1", lane: 2, status: "due" },
     ]);
     await a.pool.end();
     await b.pool.end();

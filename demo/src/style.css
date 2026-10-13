@@ -583,7 +583,6 @@ pre:empty {
   margin: 0;
 }
 @media (max-width: 900px) {
-
   .network-context {
     max-width: 180px;
   }
@@ -796,10 +795,31 @@ pre:empty {
 }
 
 /* App-specific progress content uses Schematic's page and task layout. */
-.intro p { margin-top:var(--space-3); color:var(--muted); font-size:14px; line-height:1.6; }
-.journey { padding-top:var(--space-4); }
-.journey-title { margin-bottom:var(--space-5); }
-.task-heading { gap:var(--space-3); margin-bottom:var(--space-3); }
-.task > p { margin-bottom:var(--space-5); }
-.network-context { padding-top:var(--space-1); }
-@media(max-width:900px) { .journey { position:static; padding-top:0; } }
+.intro p {
+  margin-top: var(--space-3);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.journey {
+  padding-top: var(--space-4);
+}
+.journey-title {
+  margin-bottom: var(--space-5);
+}
+.task-heading {
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.task > p {
+  margin-bottom: var(--space-5);
+}
+.network-context {
+  padding-top: var(--space-1);
+}
+@media (max-width: 900px) {
+  .journey {
+    position: static;
+    padding-top: 0;
+  }
+}

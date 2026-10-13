@@ -8,9 +8,12 @@
  * The account root approves the plan's Grant through the portal API exactly as
  * the portal does: sign in, create an account, prepare, sign, decide. The
  * service then runs the setup operation (deploy + enable + approve + open) and
- * two due occurrences (real swaps). It observes a held operation repeatedly
- * without sending it again, and while the first occurrence is included but not
- * final, the second is sent on time on its own Kernel nonce lane.
+ * two due occurrences (real swaps). Finality is held throughout, as on a rollup
+ * awaiting L1: the plan activates once setup is included, and the first
+ * occurrence is sent on its own Kernel nonce lane while setup is not final. It
+ * observes a held operation repeatedly without sending it again, and while the
+ * first occurrence is included but not final, the second is sent on time on
+ * its own lane.
  *
  * Opt-in: `bun run --filter @oaath/automation-server test:e2e` (needs cargo,
  * Anvil and PostgreSQL binaries).
@@ -475,7 +478,7 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
     anvil?.stop();
   });
 
-  it("authorizes, runs setup, and sends a due slot while the previous one awaits finality, never resending", async () => {
+  it("authorizes, activates on setup inclusion, and sends due slots before earlier operations finalize, never resending", async () => {
     const market = await deployMarket(anvil);
     const definition = dcaAutomation({
       chainId: CHAIN_ID,
@@ -551,6 +554,8 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
       session.token,
       {},
     );
+    // Included operations stay short of finality until the end of the test.
+    bundler.state.holdFinality = true;
     const redirect = await root.approve(authorizationUrl);
     const callback = await fetch(redirect, { redirect: "manual" });
     expect(await callback.text()).toBe("Authorization authorized. You can close this window.");
@@ -559,12 +564,18 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
     );
 
     // Setup: deploy the account, enable the permission, approve and open the plan.
+    // Its inclusion, not its finality, activates the plan.
     await until(
       async () => (await call("GET", `/v1/plans/${plan.id}`, session.token)).status === "active",
-      "setup to finalize",
+      "setup to be included",
       60,
     );
     expect(bundler.state.sends).toBe(1);
+    const setupRun = async () =>
+      (await call("GET", `/v1/plans/${plan.id}/runs`, session.token)).runs.find(
+        (entry: { kind: string }) => entry.kind === "setup",
+      );
+    expect((await setupRun())?.status).toBe("observed");
 
     // The first occurrence's operation is accepted but held out of the chain.
     bundler.state.hold = true;
@@ -582,8 +593,8 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
       "repeated observation of the held operation",
     );
     expect(bundler.state.sends).toBe(2);
-    // Included but not final, as a rollup operation awaiting L1 finality.
-    bundler.state.holdFinality = true;
+    // Slot 0 was sent on its own lane while setup was still included, not final.
+    expect((await setupRun())?.status).toBe("observed");
     await bundler.release();
     await until(
       async () => (await run(0))?.status === "observed",
@@ -608,8 +619,8 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
     expect(
       nonces.rows.map((row) => [row.run_key, row.lane, (BigInt(row.op_nonce) >> 64n) & 0xffffn]),
     ).toEqual([
-      ["occurrence:0", 0, 0n],
-      ["occurrence:1", 1, 1n],
+      ["occurrence:0", 1, 1n],
+      ["occurrence:1", 2, 2n],
     ]);
 
     await bundler.finalize();
@@ -621,6 +632,7 @@ describe.skipIf(!ENABLED)("automation service end to end", () => {
         }, `slot ${slot} to finalize`),
       ),
     );
+    await until(async () => (await setupRun())?.status === "finalized", "setup to finalize", 150);
     expect(finalized.map((entry) => entry.operation)).toEqual([
       submitted.operation,
       second.operation,

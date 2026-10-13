@@ -1,4 +1,3 @@
-import { Button as SchematicAction } from "./schematic/components";
 /**
  * Pieces every portal page shares: the frame, notices, error copy, QR codes, and the
  * signer step that ends in a fresh session for the chosen signer.
@@ -9,8 +8,8 @@ import { ArrowLeft, Fingerprint, Plus, Trash2, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { encode } from "uqr";
 import { PortalApiError, portalApi } from "./api.js";
-import { AppShell, Wordmark, Surface } from "./schematic/components";
 import { Button } from "./components/ui/button.js";
+import { AppShell, Button as SchematicAction, Surface, Wordmark } from "./schematic/components";
 import { signInPasskey, signInUnknownPasskey, signInWallet } from "./session.js";
 import {
   type AnnouncedWallet,

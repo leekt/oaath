@@ -33,7 +33,7 @@ in `wrangler.jsonc` (it ships as the placeholder `BUNDLER_VPC_SERVICE_ID`).
 
 ## Configure and deploy
 
-Set the existing bundler client credential with `cd demo && bunx wrangler@4.147.0 secret put BUNDLER_API_KEY`. The Worker adds it as a `apiKey` field only to bundler JSON-RPC requests; it never appears in browser configuration or chain-RPC requests.
+Set the existing bundler client credential with `cd demo && bunx wrangler@4.147.0 secret put BUNDLER_API_KEY`. The Worker adds it as an `apiKey` field only to bundler JSON-RPC requests; it never appears in browser configuration or chain-RPC requests.
 
 ```sh
 bun run --filter @oaath/demo test         # Worker unit tests

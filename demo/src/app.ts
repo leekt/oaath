@@ -111,11 +111,13 @@ function failed(error: unknown) {
   const message =
     code === "access_denied"
       ? "The request was declined. You can start a new request when you're ready."
-      : code === "uncertain"
-        ? "The submission has no confirmed answer yet. Reload to observe it; do not send it again."
-        : code === "oaath_client_submission_rejected"
-          ? `The bundler rejected the call (RPC ${(error as { rpcCode?: number | null }).rpcCode ?? "error"}). Nothing was submitted; you can send a new call.`
-          : `The action couldn't complete (${code}). No automatic retry was made. Check your connection and the account portal before continuing.`;
+      : (error as { rpcCode?: unknown } | null)?.rpcCode === -32001
+        ? "The bundler refused this site's API key (RPC -32001). Nothing was submitted."
+        : code === "uncertain"
+          ? "The submission has no confirmed answer yet. Reload to observe it; do not send it again."
+          : code === "oaath_client_submission_rejected"
+            ? `The bundler rejected the call (RPC ${(error as { rpcCode?: number | null }).rpcCode ?? "error"}). Nothing was submitted; you can send a new call.`
+            : `The action couldn't complete (${code}). No automatic retry was made. Check your connection and the account portal before continuing.`;
   console.error("[oaath-demo]", code, error);
   show(code, message);
   $("feedback").dataset.tone = "error";

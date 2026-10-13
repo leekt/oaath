@@ -1,4 +1,3 @@
-import { Textarea as SchematicTextarea, Radio } from "./schematic/components";
 /** OAuth app configuration owned by the freshly authenticated signer. */
 import { Field } from "@base-ui/react/field";
 import { Input } from "@base-ui/react/input";
@@ -6,6 +5,7 @@ import { ArrowLeft, ArrowRight, Check, Copy, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type OAuthClient, type OAuthClientInput, PortalApiError, portalApi } from "./api.js";
 import { Button } from "./components/ui/button.js";
+import { Radio, Textarea as SchematicTextarea } from "./schematic/components";
 import { Frame, message, SignerStep } from "./shared.js";
 import type { RememberedSigner } from "./signers.js";
 

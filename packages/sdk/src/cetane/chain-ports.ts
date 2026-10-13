@@ -54,9 +54,15 @@ export interface CetaneChainPortConfiguration {
   readonly headers?: Readonly<Record<string, string>>;
   /** Omit for public-chain reads and direct-receipt observation without a submission route. */
   readonly bundlerUrl?: string;
+  /**
+   * Bundler endpoint headers only (for example `x-api-key`); never sent to read
+   * or paymaster URLs. Captured at construction; values never appear in errors.
+   */
+  readonly bundlerHeaders?: Readonly<Record<string, string>>;
   readonly paymasterUrl?: string;
   /**
-   * The bundler pays chain gas itself (a relay such as bundle_rs in fast mode):
+   * The bundler pays chain gas itself (a relay such as bundle_rs in fast mode).
+   * Fees come from Cetane's relay-paid policy (`chain.fees.relayPaysGas`):
    * every quoted operation carries `maxFeePerGas = 0` and
    * `maxPriorityFeePerGas = 0`, so the account needs no funds and no paymaster.
    * Gas limits still come from the bundler's `eth_estimateUserOperationGas`.
@@ -459,6 +465,7 @@ export function createCetaneChainPorts(
         "publicRpcUrls",
         "headers",
         "bundlerUrl",
+        "bundlerHeaders",
         "paymasterUrl",
         "relayPaysGas",
         "gas",
@@ -469,6 +476,7 @@ export function createCetaneChainPorts(
       // A relay-paid chain has exactly one payer: the bundler.
       if (relayPaysGas && (config.paymasterUrl !== undefined || config.bundlerUrl === undefined))
         return invalid();
+      if (config.bundlerHeaders !== undefined && config.bundlerUrl === undefined) return invalid();
       const publicRpc = owner.pool(
         urls(config.publicRpcUrls),
         chainId,
@@ -479,7 +487,13 @@ export function createCetaneChainPorts(
       const bundlerRpc =
         config.bundlerUrl === undefined
           ? null
-          : owner.pool([url(config.bundlerUrl)], chainId, BUNDLER_METHODS);
+          : owner.pool(
+              [url(config.bundlerUrl)],
+              chainId,
+              BUNDLER_METHODS,
+              true,
+              config.bundlerHeaders as Readonly<Record<string, string>> | undefined,
+            );
       function requireBundler(): RpcRequest {
         if (!bundlerRpc) throw new OaathRpcError("oaath_rpc_bundler_unavailable");
         return bundlerRpc;
@@ -497,13 +511,13 @@ export function createCetaneChainPorts(
             );
       const gasPolicy = captureKernelGasPolicy(chainId, config.gas);
       const client = createPublicClient({
+        // Cetane owns fee selection: its relay-paid policy returns zero fees
+        // without fee reads; otherwise its default (2x base fee plus the tip).
         chain: {
           id: chainId,
           name: `Chain ${chainId}`,
           nativeAA: false,
-          // 2x base-fee headroom (Cetane's default): bundlers (e.g. Pimlico) refuse an op whose maxFeePerGas is
-          // below their own quote, and the cap costs nothing extra (the chain charges base + tip).
-          fees: { baseFeeMultiplier: 20000 },
+          ...(relayPaysGas ? { fees: { relayPaysGas: true } } : {}),
         },
         transport: custom({
           request: ({ method, params }) =>
@@ -594,9 +608,7 @@ export function createCetaneChainPorts(
         );
         if (nonce >> 64n !== BigInt(key)) return evidence();
         let quoted = gas(prepared.userOperation);
-        if (request.purpose !== "revalidate" && relayPaysGas) {
-          quoted = { ...quoted, maxFeePerGas: "0", maxPriorityFeePerGas: "0" };
-        } else if (request.purpose !== "revalidate") {
+        if (request.purpose !== "revalidate") {
           const fees = await client.estimateFeesPerGas().catch((error: unknown) => {
             if (error instanceof OaathRpcError) throw error;
             return evidence();

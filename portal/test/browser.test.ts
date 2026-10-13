@@ -650,11 +650,11 @@ describe("portal in Chrome", () => {
     expect(await page.evaluate(() => document.activeElement?.id)).toBe("wallet-method");
     await page.keyboard.press("Enter");
     await page.waitForSelector("[data-signer-kind='wallet']");
-    await page.click("button[aria-label='Forget Test Wallet from this browser']");
+    await page.locator("button[aria-label='Forget Test Wallet from this browser']").click();
     await capture(page, "forget-signer");
     await clickText(page, "Keep signer");
     expect(await page.$("[data-signer-kind='wallet']")).not.toBeNull();
-    await page.click("button[aria-label='Forget Test Wallet from this browser']");
+    await page.locator("button[aria-label='Forget Test Wallet from this browser']").click();
     await clickText(page, "Forget signer");
     expect(await page.$("[data-signer-kind='wallet']")).toBeNull();
     expect(await page.evaluate(() => localStorage.getItem("oaath.portal.signers/v1"))).toBe("[]");

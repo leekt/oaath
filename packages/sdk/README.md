@@ -575,6 +575,11 @@ Gas limits still come from the bundler's `eth_estimateUserOperationGas`. It
 requires `bundlerUrl`, and setting it together with `paymasterUrl` throws
 `oaath_rpc_config_invalid`.
 
+`bundlerHeaders` (for example `{ "x-api-key": key }`) are sent only to the
+chain's `bundlerUrl`, never to read or paymaster URLs, and `headers` are sent
+only to read URLs. Both are captured at construction; values that are not
+strings or that contain CR/LF throw `oaath_rpc_config_invalid`.
+
 `grant.sendCalls({ chain, calls })` starts a new operation and returns its handle
 without waiting for inclusion. Retain `{ chain: operation.chainId, id: operation.id }`
 with the application's job. An unresolved operation occupies that grant/chain

@@ -1,4 +1,3 @@
-import { Input as SchematicInput, Button as SchematicAction } from "./schematic/components";
 /**
  * Removing an invalidated grant's permission on chain: the account root signs
  * one owner operation that uninstalls it, and OAAth submits it (or the dapp
@@ -16,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { type PortalAccount, PortalApiError, portalApi, type RevocationView } from "./api.js";
 import { reviewedOperation, signOperation } from "./operation-signing.js";
 import { RootSigningError } from "./root-signing.js";
+import { Button as SchematicAction, Input as SchematicInput } from "./schematic/components";
 import { message } from "./shared.js";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 

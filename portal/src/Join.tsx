@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { portalApi, type PortalLink } from "./api.js";
-import { Frame, SignerStep, Notice, message } from "./shared.js";
-import { Button } from "./schematic/components";
-import type { RememberedSigner } from "./signers.js";
+import { type PortalLink, portalApi } from "./api.js";
 import { membershipContext, returnMembership } from "./membership-handoff.js";
+import { Button } from "./schematic/components";
+import { Frame, message, Notice, SignerStep } from "./shared.js";
+import type { RememberedSigner } from "./signers.js";
 
 /** Keyline supplies the account; the recipient proves their signer here. */
 export function Join() {

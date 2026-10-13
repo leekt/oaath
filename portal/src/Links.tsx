@@ -1,5 +1,3 @@
-import { NativeSelect, Radio } from "./schematic/components";
-import { Input as SchematicInput, Button as SchematicAction } from "./schematic/components";
 /**
  * Adding a signer to an existing account, and the owner's members view.
  *
@@ -24,12 +22,18 @@ import {
   portalApi,
 } from "./api.js";
 import { signMemberGrant, signMembershipApproval } from "./membership.js";
+import { matchingMembership, membershipContext, returnMembership } from "./membership-handoff.js";
 import { Policies, templateSummary } from "./Policies.js";
 import { PendingRequests } from "./Requests.js";
 import { RevokeOnChain } from "./Revocation.js";
+import {
+  NativeSelect,
+  Radio,
+  Button as SchematicAction,
+  Input as SchematicInput,
+} from "./schematic/components";
 import { Frame, message, Notice, QrCode, SignerStep } from "./shared.js";
 import { type RememberedSigner, rememberSigner, shortAddress, signerDetail } from "./signers.js";
-import { membershipContext, matchingMembership, returnMembership } from "./membership-handoff.js";
 
 const POLL_MS = 2_000;
 

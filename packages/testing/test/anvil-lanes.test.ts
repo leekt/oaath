@@ -1,11 +1,25 @@
 import type { OaathSubmissionCapability } from "@oaath/sdk/advanced";
 import { describe, expect, it } from "vitest";
 import { createLocalAnvilFixture } from "../src/anvil.js";
+import { startAnvil } from "../src/anvil-process.mjs";
 
 type Open = OaathSubmissionCapability["open"];
 type SubmissionRequest = Parameters<Open>[0];
 
 describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("caller-reserved Kernel lanes", () => {
+  it("mines past the wall-clock second a grant takes validAfter from", async () => {
+    // A block stamped before the grant's wall-clock validAfter reverts the
+    // install with AA22, which leaves it pending with no receipt (#413).
+    const chain = await startAnvil(31_337);
+    try {
+      await chain.rpc("evm_mine", []);
+      const block = await chain.rpc("eth_getBlockByNumber", ["latest", false]);
+      expect(Number(BigInt(block.timestamp))).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    } finally {
+      chain.stop();
+    }
+  });
+
   it("lands lane 2 while lane 1 is held, then recovers lane 1 without resubmission", async () => {
     let inner: Open | undefined;
     let holdNext = false;
@@ -58,7 +72,9 @@ describe.skipIf(process.env.OAATH_REQUIRE_ANVIL !== "1")("caller-reserved Kernel
         state: installed.state,
         reason: installed.reason,
         failure: installed.failure?.code,
-      }).toMatchObject({ status: "finalized" });
+        // Exact match keeps state and reason in the diff: a lagging chain clock
+        // shows as submission_attempted/receipt_missing, not a finality delay.
+      }).toEqual({ status: "finalized", state: "finalized", reason: null, failure: undefined });
 
       holdNext = true;
       const a = await grant.sendCalls({ chain, calls, lane: laneA });
