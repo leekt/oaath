@@ -5,8 +5,15 @@
  * @author taek <leekt216@gmail.com>
  */
 import { createHash, randomBytes } from "node:crypto";
-import { AutomationError, canonicalJson, createPlanTerms, hashPlanTerms } from "@oaath/automation";
+import {
+  AutomationError,
+  canonicalJson,
+  createPlanTerms,
+  hashPlanTerms,
+  planEnd,
+} from "@oaath/automation";
 import { type PlanRow, readPlan, type ServiceContext, ServiceError } from "./context.js";
+import type { RunRow } from "./executor.js";
 import type { Principal } from "./sessions.js";
 import { keyScope } from "./sessions.js";
 
@@ -73,23 +80,24 @@ export async function projectPlan(context: ServiceContext, plan: PlanRow) {
   };
 }
 
+/** A caller's idempotency key: 1 to 128 characters, no surrounding whitespace. */
+export function idempotencyKey(value: unknown): string {
+  if (typeof value !== "string" || value.length < 1 || value.length > 128 || value.trim() !== value)
+    throw new ServiceError("idempotency_key_invalid", 422);
+  return value;
+}
+
 export async function createPlan(
   context: ServiceContext,
   principal: Principal,
   body: Record<string, unknown>,
 ): Promise<{ created: boolean; plan: PlanRow }> {
   const user = userOf(principal);
-  const allowed = ["automation", "params", "occurrences", "startAt", "idempotencyKey"];
+  const allowed = ["automation", "params", "occurrences", "startAt", "validFor", "idempotencyKey"];
   if (Object.keys(body).some((key) => !allowed.includes(key)))
     throw new ServiceError("plan_invalid", 422);
-  const { automation, idempotencyKey } = body;
-  if (
-    typeof idempotencyKey !== "string" ||
-    idempotencyKey.length < 1 ||
-    idempotencyKey.length > 128 ||
-    idempotencyKey.trim() !== idempotencyKey
-  )
-    throw new ServiceError("idempotency_key_invalid", 422);
+  const { automation } = body;
+  const creationKey = idempotencyKey(body.idempotencyKey);
   const definition =
     typeof automation === "string" ? context.definitions.get(automation) : undefined;
   if (definition === undefined) throw new ServiceError("automation_not_found", 404);
@@ -98,6 +106,7 @@ export async function createPlan(
     params: body.params as Record<string, string | boolean> | undefined,
     occurrences: body.occurrences as number | undefined,
     startAt: body.startAt as number | undefined,
+    validFor: body.validFor as number | undefined,
   };
   const id = `0x${randomBytes(32).toString("hex")}` as `0x${string}`;
   let terms: ReturnType<typeof createPlanTerms>;
@@ -109,6 +118,7 @@ export async function createPlan(
       ...(input.params === undefined ? {} : { params: input.params }),
       ...(input.occurrences === undefined ? {} : { occurrences: input.occurrences }),
       ...(input.startAt === undefined ? {} : { startAt: input.startAt }),
+      ...(input.validFor === undefined ? {} : { validFor: input.validFor }),
     });
   } catch (error) {
     if (error instanceof AutomationError) throw new ServiceError(error.code, 422);
@@ -122,7 +132,7 @@ export async function createPlan(
         userId: user.userId,
         account: user.account,
         keyScope: scope,
-        input: { ...input, startAt: input.startAt ?? null },
+        input: { ...input, startAt: input.startAt ?? null, validFor: input.validFor ?? null },
       }),
     )
     .digest("hex");
@@ -141,9 +151,9 @@ export async function createPlan(
       definition,
       terms,
       hashPlanTerms(terms),
-      idempotencyKey,
+      creationKey,
       digest,
-      terms.schedule.startAt,
+      terms.kind === "on-demand" ? terms.startAt : terms.schedule.startAt,
       context.now(),
     ],
   );
@@ -151,7 +161,7 @@ export async function createPlan(
   const existing = (
     await context.pool.query(
       "SELECT id, input_digest FROM automation_plans WHERE app_id=$1 AND account=$2 AND creation_key=$3",
-      [principal.appId, user.account, idempotencyKey],
+      [principal.appId, user.account, creationKey],
     )
   ).rows[0];
   if (existing === undefined || existing.input_digest !== digest)
@@ -182,18 +192,36 @@ export async function listRuns(context: ServiceContext, plan: PlanRow, query: UR
       [plan.id, after, Math.min(Math.max(limit, 1), 100)],
     )
   ).rows;
+  return { runs: rows.map(projectRun) };
+}
+
+/** One run as the API shows it. `id` is its key: stable for the life of the plan. */
+export function projectRun(run: RunRow) {
   return {
-    runs: rows.map((run) => ({
-      kind: run.kind,
-      slot: run.slot,
-      status: run.status,
-      scheduledAt: run.scheduled_at,
-      closesAt: run.closes_at,
-      operation: run.op_hash,
-      transactionHash: run.transaction_hash,
-      reason: run.reason,
-    })),
+    id: run.run_key,
+    kind: run.kind,
+    slot: run.slot,
+    chainId: run.chain_id,
+    lane: run.lane,
+    status: run.status,
+    scheduledAt: run.scheduled_at,
+    closesAt: run.closes_at,
+    operation: run.op_hash,
+    nonce: run.op_nonce,
+    transactionHash: run.transaction_hash,
+    reason: run.reason,
   };
+}
+
+export async function getRun(context: ServiceContext, plan: PlanRow, runId: string) {
+  const run = (
+    await context.pool.query("SELECT * FROM automation_runs WHERE plan_id=$1 AND run_key=$2", [
+      plan.id,
+      runId,
+    ])
+  ).rows[0];
+  if (run === undefined) throw new ServiceError("run_not_found", 404);
+  return { run: projectRun(run) };
 }
 
 /** Pause stops new occurrences; work already journaled is still observed. */
@@ -210,8 +238,8 @@ export async function resumePlan(context: ServiceContext, plan: PlanRow): Promis
   if (plan.status === "active") return;
   const result = await context.pool.query(
     `UPDATE automation_plans SET status='active', revision=revision+1, next_at=LEAST(next_at,$2)
-     WHERE id=$1 AND status='paused' AND (terms->'schedule'->>'endAt')::bigint>$2`,
-    [plan.id, context.now()],
+     WHERE id=$1 AND status='paused' AND $3::bigint>$2`,
+    [plan.id, context.now(), planEnd(plan.terms)],
   );
   if (result.rowCount !== 1) throw new ServiceError("plan_not_paused");
 }

@@ -337,16 +337,13 @@ async function balances(plan: Plan) {
 }
 
 function render(plan: Plan, runs: Parameters<typeof runRows>[0]) {
+  const { terms } = plan;
+  if (terms.kind !== "scheduled") return;
   $("plan-status").textContent = PLAN_STATUS[plan.status];
   $("plan-details").textContent =
     `Plan ${plan.id}\nAccount ${plan.terms.account}\nDefinition ${plan.automation.id}` +
     (plan.signer ? `\nService session key ${plan.signer}` : "");
-  const rows = runRows(
-    runs,
-    plan.terms.schedule,
-    config.explorerTxUrl,
-    TERMINAL.includes(plan.status),
-  );
+  const rows = runRows(runs, terms.schedule, config.explorerTxUrl, TERMINAL.includes(plan.status));
   $("runs").replaceChildren(
     ...rows.map((row) => {
       const item = document.createElement("li");
@@ -379,7 +376,7 @@ function render(plan: Plan, runs: Parameters<typeof runRows>[0]) {
   const bought = rows.filter((row) => row.key.startsWith("buy-") && row.tone === "done").length;
   badge(
     "watch",
-    `${bought} of ${plan.terms.schedule.occurrences} bought`,
+    `${bought} of ${terms.schedule.occurrences} bought`,
     TERMINAL.includes(plan.status) ? "done" : "current",
   );
 }

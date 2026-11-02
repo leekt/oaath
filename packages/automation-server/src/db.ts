@@ -8,7 +8,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import pg from "pg";
 
-export const AUTOMATION_SCHEMA_VERSION = "oaath.automation-postgres-schema/v2" as const;
+export const AUTOMATION_SCHEMA_VERSION = "oaath.automation-postgres-schema/v3" as const;
 
 export type Pool = pg.Pool;
 export type Client = pg.PoolClient;
@@ -51,11 +51,12 @@ CREATE INDEX automation_plans_user ON automation_plans (app_id, user_id, created
 CREATE INDEX automation_plans_consent ON automation_plans (next_consent_at) WHERE next_consent_at IS NOT NULL;
 CREATE TABLE automation_runs (
   plan_id text NOT NULL REFERENCES automation_plans(id), run_key text NOT NULL,
-  kind text NOT NULL CHECK (kind IN ('setup','occurrence','cancel')), slot integer,
+  kind text NOT NULL CHECK (kind IN ('setup','occurrence','cancel','request')), slot integer,
+  chain_id bigint NOT NULL,
   lane integer NOT NULL CHECK (lane BETWEEN 0 AND 65535),
   scheduled_at bigint NOT NULL, closes_at bigint,
   status text NOT NULL CHECK (status IN (${RUN_STATUSES})),
-  calls jsonb, op_hash text, op_nonce text, transaction_hash text, evidence jsonb, reason text,
+  calls jsonb, request_digest text, op_hash text, op_nonce text, transaction_hash text, evidence jsonb, reason text,
   attempts integer NOT NULL DEFAULT 0, observations integer NOT NULL DEFAULT 0,
   generation bigint NOT NULL DEFAULT 0, lease_until bigint NOT NULL DEFAULT 0, lease_owner text,
   next_attempt_at bigint NOT NULL DEFAULT 0,
@@ -63,7 +64,7 @@ CREATE TABLE automation_runs (
 );
 CREATE INDEX automation_runs_open ON automation_runs (next_attempt_at, plan_id)
   WHERE status IN ('due','claimed','prepared','submitted','observed');
-CREATE UNIQUE INDEX automation_runs_lane_open ON automation_runs (plan_id, lane)
+CREATE UNIQUE INDEX automation_runs_lane_open ON automation_runs (plan_id, chain_id, lane)
   WHERE status IN ('due','claimed','prepared','submitted','observed');
 CREATE TABLE automation_grants (
   grant_id text PRIMARY KEY, store_revision bigint NOT NULL, record text NOT NULL

@@ -8,7 +8,8 @@
  * | `GET /v1/automations` | application or session |
  * | `POST /v1/sessions`, `POST /v1/application` | application credential |
  * | `POST /v1/plans`, `GET /v1/plans`, `GET /v1/plans/{id}`, `GET /v1/plans/{id}/runs` | session (list/get: application too) |
- * | `POST /v1/plans/{id}/{authorize,pause,resume,cancel}` | session |
+ * | `GET /v1/plans/{id}/runs/{runId}` | session or application |
+ * | `POST /v1/plans/{id}/{authorize,pause,resume,cancel,operations}` | session |
  * | `GET /v1/oauth/callback` | the issuer's redirect |
  *
  * @author taek <leekt216@gmail.com>
@@ -20,13 +21,16 @@ import { completeAuthorization, startAuthorization } from "./oauth.js";
 import {
   cancelPlan,
   createPlan,
+  getRun,
   listPlans,
   listRuns,
   ownPlan,
   pausePlan,
   projectPlan,
+  projectRun,
   resumePlan,
 } from "./plans.js";
+import { admitRequest } from "./scheduler.js";
 import {
   authenticate,
   configureApplication,
@@ -35,13 +39,18 @@ import {
 } from "./sessions.js";
 
 const MAX_BODY = 32 * 1024;
+/** Operation requests carry calldata, such as contract initcode (up to 48 KiB, twice that in hex). */
+const MAX_OPERATION_BODY = 256 * 1024;
 
-async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readBody(
+  request: IncomingMessage,
+  maxBody = MAX_BODY,
+): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY) throw new ServiceError("request_too_large", 413);
+    if (size > maxBody) throw new ServiceError("request_too_large", 413);
     chunks.push(chunk as Buffer);
   }
   if (size === 0) return {};
@@ -132,18 +141,34 @@ async function route(
       return send(response, created ? 201 : 200, await projectPlan(context, plan));
     }
   }
-  const match = /^\/v1\/plans\/(0x[0-9a-f]{64})(?:\/(runs|authorize|pause|resume|cancel))?$/u.exec(
-    path,
-  );
+  const match =
+    /^\/v1\/plans\/(0x[0-9a-f]{64})(?:\/(runs|authorize|pause|resume|cancel|operations)|\/runs\/([^/]{1,200}))?$/u.exec(
+      path,
+    );
   if (match) {
     const plan = await ownPlan(context, principal, match[1] as string);
     const action = match[2];
+    if (match[3] !== undefined) {
+      if (method !== "GET") throw new ServiceError("route_not_found", 404);
+      let runId: string;
+      try {
+        runId = decodeURIComponent(match[3]);
+      } catch {
+        throw new ServiceError("run_not_found", 404);
+      }
+      return send(response, 200, await getRun(context, plan, runId));
+    }
     if (method === "GET" && action === undefined)
       return send(response, 200, await projectPlan(context, plan));
     if (method === "GET" && action === "runs")
       return send(response, 200, await listRuns(context, plan, url.searchParams));
     if (method === "POST" && action !== undefined && action !== "runs") {
       if (principal.user === null) throw new ServiceError("user_session_required", 403);
+      if (action === "operations") {
+        const body = await readBody(request, MAX_OPERATION_BODY);
+        const { created, run } = await admitRequest(context, plan.id, body);
+        return send(response, created ? 201 : 200, { run: projectRun(run) });
+      }
       const body = await readBody(request);
       if (action === "authorize") {
         const consenting = plan.status === "draft" || plan.status === "awaiting_consent";

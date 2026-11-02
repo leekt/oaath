@@ -2,15 +2,17 @@ import { OAATH_GRANT_POLICY_VERSION } from "@oaath/protocol";
 import { decodeFunctionData } from "cetane/utils";
 import { describe, expect, it } from "vitest";
 import {
-  type AutomationDefinitionInput,
   createPlanTerms,
   defineAutomation,
   derivePlanPolicy,
   functionSelector,
   hashAutomation,
   hashPlanTerms,
+  type OnDemandAutomationDefinitionInput,
   parseAutomation,
+  planEnd,
   resolveCalls,
+  type ScheduledAutomationDefinitionInput,
   slotTime,
 } from "../src/index.js";
 
@@ -25,7 +27,7 @@ const fn = (name: string, inputs: string[]) => ({
 });
 
 /** A DCA-shaped definition: setup, a recurring call and a cancellation. */
-const input = (): AutomationDefinitionInput => ({
+const input = (): ScheduledAutomationDefinitionInput => ({
   id: "recurring.v1",
   name: "Recurring purchase",
   chainId: 31337,
@@ -227,5 +229,106 @@ describe("derivePlanPolicy", () => {
     const plan = createPlanTerms(definition, { planId, account, now });
     expect(derivePlanPolicy(definition, plan, now).perChainOperationLimit?.count).toBe(5);
     expect(derivePlanPolicy(definition, plan, now).calls).toHaveLength(1);
+  });
+});
+
+describe("on-demand automations", () => {
+  const deployer = "0x4444444444444444444444444444444444444444";
+  const deploy = "0x9c4ae2d0";
+  const onDemand = (): OnDemandAutomationDefinitionInput => ({
+    id: "deploy.v1",
+    name: "Deploy contracts",
+    kind: "on-demand",
+    chains: [8453, 1],
+    calls: [
+      { target: deployer, selector: deploy },
+      { target: vault, selector: "0x00000000", valueLimit: "5" },
+    ],
+    limits: { operationsPerChain: { count: 20, intervalSeconds: 86400 }, maxValidFor: "30d" },
+  });
+
+  it("normalizes chains and calls, and round-trips through parseAutomation", () => {
+    const definition = defineAutomation(onDemand());
+    expect(definition).toMatchObject({
+      kind: "on-demand",
+      chains: [1, 8453],
+      calls: [
+        { target: vault, selector: "0x00000000", valueLimit: "5" },
+        { target: deployer, selector: deploy, valueLimit: "0" },
+      ],
+      limits: { operationsPerChain: { count: 20, intervalSeconds: 86400 }, maxValidFor: 2592000 },
+    });
+    expect(parseAutomation(JSON.parse(JSON.stringify(definition)))).toEqual(definition);
+  });
+
+  it.each([
+    ["no chains", (d: any) => (d.chains = [])],
+    ["a duplicate chain", (d: any) => (d.chains = [1, 1])],
+    ["a zero chain", (d: any) => (d.chains = [0])],
+    ["no calls", (d: any) => (d.calls = [])],
+    ["a duplicate call", (d: any) => d.calls.push({ ...d.calls[0], valueLimit: "9" })],
+    ["a short selector", (d: any) => (d.calls[0].selector = "0x1234")],
+    ["an invalid target", (d: any) => (d.calls[0].target = "0x1234")],
+    ["a non-canonical value limit", (d: any) => (d.calls[0].valueLimit = "05")],
+    ["a missing interval", (d: any) => delete d.limits.operationsPerChain.intervalSeconds],
+    ["a zero count", (d: any) => (d.limits.operationsPerChain.count = 0)],
+    ["a too long validity", (d: any) => (d.limits.maxValidFor = "4000d")],
+    ["a schedule", (d: any) => (d.schedule = { every: "1d", count: 1 })],
+    ["an unknown kind", (d: any) => (d.kind = "later")],
+  ])("rejects %s", (_, change) => {
+    const definition = structuredClone(onDemand()) as any;
+    change(definition);
+    expect(() => defineAutomation(definition)).toThrow(
+      expect.objectContaining({ code: "automation_definition_invalid" }),
+    );
+  });
+
+  it("derives exactly the declared calls, the per-chain limit and validFor", () => {
+    const definition = defineAutomation(onDemand());
+    const plan = createPlanTerms(definition, { planId, account, now, validFor: 7 * 86400 });
+    expect(plan).toMatchObject({
+      kind: "on-demand",
+      chains: [1, 8453],
+      startAt: now,
+      endAt: now + 7 * 86400,
+    });
+    expect(planEnd(plan)).toBe(now + 7 * 86400);
+    const policy = derivePlanPolicy(definition, plan, now + 10);
+    expect(policy).toEqual({
+      version: OAATH_GRANT_POLICY_VERSION,
+      calls: definition.calls.map((call) => ({ ...call, argumentEquals: [] })),
+      validAfter: now + 10,
+      validUntil: now + 7 * 86400 - 1,
+      perChainOperationLimit: { count: 20, intervalSeconds: 86400 },
+    });
+    // Terms of the other kind never derive a policy.
+    expect(() => derivePlanPolicy(definition, terms(), now)).toThrow(
+      expect.objectContaining({ code: "plan_invalid" }),
+    );
+  });
+
+  it.each([
+    [{}, "plan_valid_for_invalid"],
+    [{ validFor: 0 }, "plan_valid_for_invalid"],
+    [{ validFor: 30 * 86400 + 1 }, "plan_valid_for_invalid"],
+    [{ validFor: 60, occurrences: 1 }, "plan_invalid"],
+    [{ validFor: 60, params: {} }, "plan_invalid"],
+  ])("rejects on-demand plan input %j", (change, code) => {
+    expect(() =>
+      createPlanTerms(defineAutomation(onDemand()), { planId, account, now, ...change }),
+    ).toThrow(expect.objectContaining({ code }));
+  });
+
+  it("refuses validFor on a scheduled plan", () => {
+    expect(() =>
+      createPlanTerms(defineAutomation(input()), {
+        planId,
+        account,
+        now,
+        params: { budget: "30", maxSlippageBps: "50" },
+        occurrences: 30,
+        validFor: 60,
+      }),
+    ).toThrow(expect.objectContaining({ code: "plan_invalid" }));
   });
 });

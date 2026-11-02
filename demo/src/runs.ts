@@ -36,6 +36,7 @@ function stateOf(run: Run): PingState {
 
 /** Every occurrence slot of `plan`, in order; a slot the ended plan never ran is skipped. */
 export function pingSlots(plan: Plan, runs: readonly Run[]): PingSlot[] {
+  if (plan.terms.kind !== "scheduled") return [];
   const { startAt, every, occurrences } = plan.terms.schedule;
   return Array.from({ length: occurrences }, (_, slot) => {
     const run = runs.find(

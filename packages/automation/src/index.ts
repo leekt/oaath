@@ -33,6 +33,12 @@ export type {
   AutomationValueType,
   Hex,
   NormalizedAutomationCall,
+  OnDemandAutomationDefinition,
+  OnDemandAutomationDefinitionInput,
+  OnDemandCall,
+  OnDemandLimits,
+  ScheduledAutomationDefinition,
+  ScheduledAutomationDefinitionInput,
 } from "./definition.js";
 export {
   AUTOMATION_DEFINITION_VERSION,
@@ -50,13 +56,17 @@ export type {
   AutomationPlanInput,
   AutomationPlanSchedule,
   AutomationPlanTerms,
+  OnDemandPlanTerms,
   ResolvedCall,
+  ScheduledPlanTerms,
 } from "./plan.js";
 export {
   AUTOMATION_PLAN_VERSION,
   createPlanTerms,
   derivePlanPolicy,
   hashPlanTerms,
+  planChains,
+  planEnd,
   planOperationCount,
   resolveCalls,
   slotTime,
@@ -100,6 +110,8 @@ export interface CreatePlan {
   readonly params?: Readonly<Record<string, AutomationParamValue>>;
   readonly occurrences?: number;
   readonly startAt?: number;
+  /** On-demand automations only: seconds of validity, at most the definition's `maxValidFor`. */
+  readonly validFor?: number;
   /** Reuse only for identical input; changed input under the same key conflicts. */
   readonly idempotencyKey: string;
 }
@@ -124,15 +136,30 @@ export interface Plan {
 }
 
 export interface Run {
-  readonly kind: "setup" | "occurrence" | "cancel";
+  /** Stable within the plan: `setup`, `cancel`, `occurrence:<slot>`, or `request:<sha256(idempotencyKey)>`. */
+  readonly id: string;
+  readonly kind: "setup" | "occurrence" | "cancel" | "request";
   readonly slot: number | null;
+  readonly chainId: number;
+  /** The Kernel nonce lane; 0 is the default lane. */
+  readonly lane: number;
   readonly status: RunStatus;
   readonly scheduledAt: number;
   readonly closesAt: number | null;
   /** The UserOperation hash once journaled; never a reason to resend. */
   readonly operation: Hex | null;
+  /** The operation's nonce once journaled, as a decimal string. */
+  readonly nonce: string | null;
   readonly transactionHash: Hex | null;
   readonly reason: string | null;
+}
+
+/** Exact calls submitted under an on-demand plan's Grant, as one operation on one chain. */
+export interface SubmitOperation {
+  readonly chainId: number;
+  readonly calls: readonly Readonly<{ to: Address; data: Hex; value: string }>[];
+  /** The same key and body return the same run; a different body conflicts. */
+  readonly idempotencyKey: string;
 }
 
 export interface Authorization {
@@ -168,6 +195,11 @@ export function createAutomation(options: AutomationClientOptions) {
     pause: (id: string) => request<Plan>("POST", `${path(id)}/pause`, {}),
     resume: (id: string) => request<Plan>("POST", `${path(id)}/resume`, {}),
     cancel: (id: string) => request<Plan>("POST", `${path(id)}/cancel`, {}),
+    /** Admits one operation under an active on-demand plan; journal the returned run. */
+    submit: (id: string, input: SubmitOperation) =>
+      request<{ run: Run }>("POST", `${path(id)}/operations`, input),
+    run: (id: string, runId: string) =>
+      request<{ run: Run }>("GET", `${path(id)}/runs/${encodeURIComponent(runId)}`),
   });
 }
 

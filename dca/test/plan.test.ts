@@ -1,11 +1,11 @@
 import {
-  type AutomationDefinition,
   createPlanTerms,
   derivePlanPolicy,
   functionSelector,
   parseAutomation,
   type Run,
   resolveCalls,
+  type ScheduledAutomationDefinition,
 } from "@oaath/automation";
 import { decodeFunctionData, getAddress, parseAbi } from "viem";
 import { describe, expect, it } from "vitest";
@@ -36,11 +36,13 @@ const ACCOUNT = `0x${"ab".repeat(20)}` as const;
 const NOW = 1_800_000_000;
 
 /** The service definitions as deployed: placeholders filled the way deploy-arbsep.sh does. */
-function deployed(): AutomationDefinition[] {
+function deployed(): ScheduledAutomationDefinition[] {
   const filled = JSON.stringify(template)
     .replaceAll("REPLACE_SELL_TOKEN", SELL)
     .replaceAll("REPLACE_DCA_EXECUTOR", DCA);
-  return (JSON.parse(filled) as unknown[]).map(parseAutomation);
+  return (JSON.parse(filled) as unknown[]).map(
+    (entry) => parseAutomation(entry) as ScheduledAutomationDefinition,
+  );
 }
 
 describe("Arbitrum Sepolia DCA definitions", () => {
@@ -79,7 +81,7 @@ describe("Arbitrum Sepolia DCA definitions", () => {
   });
 
   it("mints the budget to the plan's account, approves it, opens the plan, then buys per slot", () => {
-    const definition = deployed()[0] as AutomationDefinition;
+    const definition = deployed()[0] as ScheduledAutomationDefinition;
     const option = dcaOptions([definition], DCA_AUTOMATION_PREFIX, 421_614)[0]!;
     const request = planRequest(option, "2.5", 4, NOW, "key");
     const { automation: _, idempotencyKey: __, ...input } = request;
@@ -197,8 +199,12 @@ describe("plan form", () => {
 
 describe("watching a plan", () => {
   const run = (overrides: Partial<Run>): Run => ({
+    id: "occurrence:0",
     kind: "occurrence",
     slot: 0,
+    chainId: 421_614,
+    lane: 0,
+    nonce: null,
     status: "due",
     scheduledAt: NOW,
     closesAt: NOW + 50,

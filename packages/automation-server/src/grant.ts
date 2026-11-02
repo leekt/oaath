@@ -9,6 +9,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+import { planChains } from "@oaath/automation";
 import type { KernelAccountProfile } from "@oaath/protocol";
 import { createOAAth, type OaathGrantHandle } from "@oaath/sdk";
 import { ECDSA_VALIDATOR, kernelKey } from "@oaath/sdk/kernel";
@@ -93,7 +94,7 @@ export async function openGrant(context: ServiceContext, plan: PlanRow): Promise
       context: createContextStore(context.pool),
       ...createUnusedStores(),
     },
-    chains: [context.chain(plan.terms.chainId)],
+    chains: planChains(plan.terms).map((chainId) => context.chain(chainId)),
     signing: {
       owner: kernelKey({
         credential: owner,

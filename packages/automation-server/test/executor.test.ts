@@ -64,8 +64,8 @@ async function insertRun(
 ) {
   const at = START + (slot ?? 0) * 3600;
   await context.pool.query(
-    `INSERT INTO automation_runs(plan_id,run_key,kind,slot,lane,scheduled_at,closes_at,status,next_attempt_at)
-     VALUES($1,$2,$3,$4,$5,$6,$7,'due',$6)`,
+    `INSERT INTO automation_runs(chain_id,plan_id,run_key,kind,slot,lane,scheduled_at,closes_at,status,next_attempt_at)
+     VALUES(31337,$1,$2,$3,$4,$5,$6,$7,'due',$6)`,
     [planId, key, kind, slot, slot ?? 0, at, slot === null ? null : at + 600],
   );
 }

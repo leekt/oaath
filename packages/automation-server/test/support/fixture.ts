@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import { type AutomationDefinition, defineAutomation } from "@oaath/automation";
+import {
+  defineAutomation,
+  type OnDemandAutomationDefinition,
+  type ScheduledAutomationDefinition,
+} from "@oaath/automation";
 import type { AutomationServiceConfig } from "../../src/config.js";
 import type { ServiceContext } from "../../src/context.js";
 import { createPool, initializeSchema } from "../../src/db.js";
@@ -17,7 +21,7 @@ const fn = (name: string, inputs: string[]) => ({
   outputs: [],
 });
 
-export const definition: AutomationDefinition = defineAutomation({
+export const definition: ScheduledAutomationDefinition = defineAutomation({
   id: "recurring.v1",
   name: "Recurring call",
   chainId: 31337,
@@ -42,6 +46,32 @@ export const definition: AutomationDefinition = defineAutomation({
   cancel: [{ contract: "vault", function: "cancel", args: ["$plan.id"] }],
 });
 
+export const DEPLOYER = "0x4444444444444444444444444444444444444444" as const;
+/** `deploy(bytes32,bytes)`. */
+export const DEPLOY = "0xcdcb760a" as const;
+
+/** Contract deployments on demand on two chains, plus plain transfers to the vault. */
+export const onDemandDefinition: OnDemandAutomationDefinition = defineAutomation({
+  id: "deploy.v1",
+  name: "Deploy contracts",
+  kind: "on-demand",
+  chains: [31337, 31338],
+  calls: [
+    { target: DEPLOYER, selector: DEPLOY },
+    { target: VAULT, selector: "0x00000000", valueLimit: "5" },
+  ],
+  limits: { operationsPerChain: { count: 10, intervalSeconds: 86400 }, maxValidFor: "30d" },
+});
+
+const endpoints = {
+  rpcUrl: "http://127.0.0.1:1",
+  bundlerUrl: "http://127.0.0.1:2",
+  bundlerApiKey: null,
+  paymasterUrl: null,
+  paymasterApiKey: null,
+  relayPaysGas: false,
+};
+
 export function testConfig(
   databaseUrl: string,
   overrides: Partial<AutomationServiceConfig> = {},
@@ -57,19 +87,10 @@ export function testConfig(
       { id: "app", tokenSha256: createHash("sha256").update(APP_TOKEN).digest("hex") },
     ],
     allowedOrigins: ["http://localhost:5173"],
-    definitions: [definition],
+    definitions: [definition, onDemandDefinition],
     chains: new Map([
-      [
-        31337,
-        {
-          rpcUrl: "http://127.0.0.1:1",
-          bundlerUrl: "http://127.0.0.1:2",
-          bundlerApiKey: null,
-          paymasterUrl: null,
-          paymasterApiKey: null,
-          relayPaysGas: false,
-        },
-      ],
+      [31337, endpoints],
+      [31338, endpoints],
     ]),
     maxOpenSlots: 4,
     budgets: { rpc: 10, bundler: 10, paymaster: 10, windowSeconds: 60 },

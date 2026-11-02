@@ -11,9 +11,11 @@
  *                      authorized|active|paused -> failed
  * persisted evidence   calls before send; op hash + nonce journaled before any
  *                      signature or send (see ./store.ts); transaction hash on inclusion
- * resource occupied?   one open run per (plan, lane) (unique index), so one
+ * resource occupied?   one open run per (plan, chain, lane) (unique index), so one
  *                      unresolved operation per (grantId, chainId, lane); each run
- *                      sends and observes only on the lane stored on it
+ *                      sends and observes only on the chain and lane stored on it
+ * calls                setup/occurrence/cancel: resolved from the plan when claimed;
+ *                      request: the exact calls persisted at admission, never re-derived
  * retry positively     send: only while op_hash is null (never journaled) or the SDK
  *   safe?              proved the identity abandoned before submission;
  *                      observation: always, and it submits nothing
@@ -40,9 +42,11 @@ const MAX_SEND_ATTEMPTS = 3;
 export interface RunRow {
   readonly plan_id: string;
   readonly run_key: string;
-  readonly kind: "setup" | "occurrence" | "cancel";
+  readonly kind: "setup" | "occurrence" | "cancel" | "request";
   readonly slot: number | null;
-  /** The Kernel nonce lane the scheduler assigned; 0 is the default lane. */
+  /** The chain the run's one operation is sent and observed on. */
+  readonly chain_id: number;
+  /** The Kernel nonce lane admission assigned; 0 is the default lane. */
   readonly lane: number;
   readonly scheduled_at: number;
   readonly closes_at: number | null;
@@ -50,6 +54,8 @@ export interface RunRow {
   readonly calls: readonly ResolvedCall[] | null;
   readonly op_hash: `0x${string}` | null;
   readonly op_nonce: string | null;
+  readonly transaction_hash: `0x${string}` | null;
+  readonly reason: string | null;
   readonly attempts: number;
   readonly observations: number;
   readonly generation: number;
@@ -87,7 +93,8 @@ export interface OperationGateway {
   close(): Promise<void>;
 }
 
-export type OpenGateway = (plan: PlanRow) => Promise<OperationGateway>;
+/** Opens the plan's Grant for one run's chain. */
+export type OpenGateway = (plan: PlanRow, chainId: number) => Promise<OperationGateway>;
 
 /**
  * The ERC-7677 payer for a chain, or null when operations are self-funded. A
@@ -105,9 +112,8 @@ export function paymasterPayer(endpoints: ChainEndpoints | undefined) {
 
 /** The default gateway: the plan's Grant handle over the budgeted chain ports. */
 export function grantGateway(context: ServiceContext): OpenGateway {
-  return async (plan) => {
+  return async (plan, chain) => {
     const opened = await openGrant(context, plan);
-    const chain = plan.terms.chainId;
     const payer = paymasterPayer(context.config.chains.get(chain));
     return {
       async send(calls, lane) {
@@ -241,6 +247,22 @@ function sameCalls(
   );
 }
 
+/**
+ * The run's exact calls: a request's, persisted at admission; otherwise
+ * resolved from the scheduled plan's definition and terms.
+ */
+function runCalls(plan: PlanRow, run: RunRow): readonly ResolvedCall[] {
+  if (run.kind === "request") return run.calls as readonly ResolvedCall[];
+  const { definition, terms } = plan;
+  if (definition.kind !== "scheduled" || terms.kind !== "scheduled")
+    throw new Error("run_kind_unsupported");
+  return resolveCalls(
+    definition,
+    terms,
+    run.kind === "occurrence" ? { slot: run.slot as number } : run.kind,
+  );
+}
+
 /** Observation only: it never sends, whatever it reads. */
 async function observe(
   context: ServiceContext,
@@ -328,11 +350,7 @@ export async function processRun(
       );
       return;
     }
-    const calls = resolveCalls(
-      plan.definition,
-      plan.terms,
-      current.kind === "occurrence" ? { slot: current.slot as number } : current.kind,
-    );
+    const calls = runCalls(plan, current);
     if (
       !(await update(context.pool, current, "status='prepared', calls=$4", [JSON.stringify(calls)]))
     )
@@ -342,14 +360,17 @@ export async function processRun(
 
   let gateway: OperationGateway;
   try {
-    gateway = await open(plan);
+    gateway = await open(plan, current.chain_id);
   } catch (error) {
     await defer(context, current, error);
     return;
   }
   try {
     if (current.status === "prepared" && current.op_hash === null) {
-      if (current.kind === "occurrence" && admitted(plan, current, context.now()) !== "run") {
+      if (
+        (current.kind === "occurrence" || current.kind === "request") &&
+        admitted(plan, current, context.now()) !== "run"
+      ) {
         await update(
           context.pool,
           current,

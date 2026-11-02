@@ -8,7 +8,12 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { AutomationDefinition, CreatePlan, Run } from "@oaath/automation";
+import type {
+  AutomationDefinition,
+  CreatePlan,
+  Run,
+  ScheduledAutomationDefinition,
+} from "@oaath/automation";
 
 export const SELL_DECIMALS = 6;
 export const BUY_DECIMALS = 18;
@@ -45,7 +50,8 @@ export function dcaOptions(
 ): DcaOption[] {
   return definitions
     .filter(
-      (definition) =>
+      (definition): definition is ScheduledAutomationDefinition =>
+        definition.kind === "scheduled" &&
         definition.id.startsWith(prefix) &&
         definition.chainId === chainId &&
         definition.contracts.token !== undefined &&
