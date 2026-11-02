@@ -1,5 +1,11 @@
 # @oaath/cli
 
+## 0.3.8
+
+### Patch Changes
+
+- @oaath/sdk@0.3.8
+
 ## 0.3.7
 
 ### Patch Changes

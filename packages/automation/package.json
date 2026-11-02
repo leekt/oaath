@@ -1,6 +1,6 @@
 {
   "name": "@oaath/automation",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Declarative OAAth automations: the definition schema and the automation service client.",
   "type": "module",
   "sideEffects": false,
