@@ -100,6 +100,8 @@ export type {
   OaathPermissionApprovalOptions,
 } from "./client/permission-approval.js";
 export { requestPermissionApproval } from "./client/permission-approval.js";
+export type { OaathPortalOwnerKeyOptions } from "./client/portal-owner-key.js";
+export { portalOwnerKey } from "./client/portal-owner-key.js";
 export type { OaathSession, OaathSessionCustody } from "./client/session-credential.js";
 export type { OaathPayer, OaathPaymasterServicePayer } from "./client/sponsorship.js";
 export type { OaathStoreBackend, OaathStores } from "./client/stores.js";

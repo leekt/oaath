@@ -46,6 +46,7 @@ import {
   type OaathOperationHandle,
   operationOutcome,
 } from "./operation-handle.js";
+import { portalOwnerOf, portalOwnerSignature } from "./portal-owner-key.js";
 import { capturePaymasterService, capturePlainCalls } from "./sponsorship.js";
 import { captureStores, type OaathStoreBackend, type OwnedStores, openStores } from "./stores.js";
 
@@ -293,6 +294,8 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
       address,
       owner(owner: OaathOwnerKey): Readonly<OaathOwnerHandle> {
         assertOpen();
+        // A portal owner key never signs here: the root signs in the portal.
+        const portal = portalOwnerOf(owner);
         const key = captureOwnerKey(owner);
         async function shape(value: unknown) {
           assertOpen();
@@ -439,7 +442,13 @@ export function createOwnerRealm(value: unknown): Readonly<OaathOwnerClient> {
                 },
                 async (prepared) => {
                   assertOpen();
-                  const signature = await runtime.signOperation(prepared);
+                  const signature =
+                    portal === undefined
+                      ? await runtime.signOperation(prepared)
+                      : await runtime.encodeVerifiedSignature(
+                          prepared,
+                          await portalOwnerSignature(portal, address, prepared, resolved.calls),
+                        );
                   assertOpen();
                   const submission = {
                     prepared,

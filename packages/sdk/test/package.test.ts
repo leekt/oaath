@@ -24,6 +24,7 @@ describe("package boundary", () => {
       "loginWithOAAth",
       "openAuthorizationPopup",
       "parseOaathCallsReview",
+      "portalOwnerKey",
       "portalWallet",
       "requestOwnerOperationApproval",
       "requestOwnerTransaction",
