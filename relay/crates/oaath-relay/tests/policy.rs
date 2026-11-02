@@ -155,7 +155,7 @@ async fn the_root_creates_edits_lists_and_deletes_templates_and_nothing_else_doe
     let mut windowed = template_body("x", "1");
     windowed["policy"]["validUntil"] = json!(1);
     refused.push(windowed);
-    for lifetime in [json!(0), json!(59), json!(366 * 86_400 + 1), json!("86400")] {
+    for lifetime in [json!(0), json!(59), json!((1u64 << 42) + 1), json!("86400")] {
         let mut body = template_body("x", "1");
         body["lifetime_seconds"] = lifetime;
         refused.push(body);
@@ -206,6 +206,54 @@ async fn owner_of_another(h: &Harness) -> Owner {
         &Root::P256(p256::ecdsa::SigningKey::from_slice(&[0x55; 32]).unwrap()),
     )
     .await
+}
+
+#[tokio::test]
+async fn records_a_member_grant_from_a_template_at_the_maximum_lifetime() {
+    let root = Root::Ecdsa(root_key());
+    let h = harness();
+    let owner = owner(&h, &root).await;
+    let mut body = template_body("Forever", "1000");
+    body["lifetime_seconds"] = json!(1u64 << 42);
+    let template_id = text(
+        create_template(&h, &owner, body).await.ok(201),
+        "template_id",
+    )
+    .to_owned();
+    let (member_id, member_cookie) = sign_in(&h, &passkey()).await;
+    let link_id = link(&h, &owner, &member_id, &member_cookie).await;
+    let prepared = post(
+        &h,
+        &format!("/portal/links/{link_id}/prepare"),
+        &owner.cookie,
+        json!({ "template_id": template_id }),
+    )
+    .await
+    .ok(200)
+    .clone();
+    assert_eq!(
+        prepared["permission_request"]["expiresAt"],
+        json!(CLOCK_SECONDS + (1u64 << 42) + 1)
+    );
+    let approved = post(
+        &h,
+        &format!("/portal/links/{link_id}/approve"),
+        &owner.cookie,
+        json!({ "template_id": template_id, "artifact": approval(&prepared, &root).to_string() }),
+    )
+    .await
+    .ok(200)
+    .clone();
+    assert_eq!(approved["status"], "approved");
+    // The stored grant reads back: its expiry in milliseconds is a safe integer.
+    h.send(portal_call(
+        "GET",
+        &format!("/portal/grants/{link_id}"),
+        Some(&member_cookie),
+        None,
+    ))
+    .await
+    .ok(200);
 }
 
 #[tokio::test]

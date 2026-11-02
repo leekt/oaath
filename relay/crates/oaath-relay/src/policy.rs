@@ -40,7 +40,10 @@ use crate::store::{RelayStore, RelayTransaction, settle};
 
 pub const POLICY_TEMPLATE_RECORD_VERSION: &str = "oaath.policy-template-record/v1";
 pub const MIN_LIFETIME_SECONDS: u64 = 60;
-pub const MAX_LIFETIME_SECONDS: u64 = 366 * 86_400;
+/// Any lifetime, eternal included: 2^42 s (~139,000 years) keeps the
+/// policy's `validUntil` a protocol uint48 timestamp and a member grant's
+/// expiry in milliseconds a safe integer.
+pub const MAX_LIFETIME_SECONDS: u64 = 1 << 42;
 const MAX_NAME: usize = 64;
 
 const INVALID: RelayErrorCode = RelayErrorCode::RequestInvalid;
