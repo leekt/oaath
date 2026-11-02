@@ -71,6 +71,8 @@ describe("OAuth-approved Grants", () => {
         approvals: { ...input.approvals, rpcUrls: { 1: "https://eth.example" } },
       }),
     ).toThrow(expect.objectContaining({ code: "oaath_client_input_invalid" }));
+  });
+
   it("orders requested calls canonically and refuses a repeated call", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const { input, pars } = await browser();
