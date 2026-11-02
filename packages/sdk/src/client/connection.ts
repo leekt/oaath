@@ -225,6 +225,10 @@ function policyFromInput(
       }
     }
   }
+  // The protocol's canonical order (unique, sorted target-selector keys); a
+  // repeated target and selector stays adjacent and fails as a duplicate below.
+  const key = (call: (typeof calls)[number]) => `${call.target}:${call.selector}`;
+  calls.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
   // parseGrantPolicy owns every exact rule; an invalid policy fails closed there.
   try {
     return parseGrantPolicy({
