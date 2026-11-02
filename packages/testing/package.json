@@ -1,6 +1,6 @@
 {
   "name": "@oaath/testing",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "OAAth deterministic fixtures and clean-consumer harnesses. Never a production dependency.",
   "type": "module",
   "sideEffects": false,
