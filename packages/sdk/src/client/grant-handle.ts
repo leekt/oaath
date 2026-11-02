@@ -1362,16 +1362,17 @@ export function createGrantHandle(
   ): Promise<OaathSessionCoverage> {
     const chain = chainCapability(chainId);
     let usage: unknown = null;
-    if (chain.usage) {
+    // An unlimited grant has no count to read.
+    const limit = input.approvedPolicy.perChainOperationLimit;
+    if (chain.usage && limit !== null) {
       try {
         usage = await chain.usage(
           Object.freeze({
             grantId: grant.identity.grantId,
             chainId,
             ...identity,
-            maximumOperations: input.approvedPolicy.perChainOperationLimit.count.toString(10),
-            intervalSeconds:
-              input.approvedPolicy.perChainOperationLimit.intervalSeconds?.toString(10) ?? null,
+            maximumOperations: limit.count.toString(10),
+            intervalSeconds: limit.intervalSeconds?.toString(10) ?? null,
           }),
         );
       } catch {

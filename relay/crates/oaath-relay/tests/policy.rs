@@ -155,6 +155,10 @@ async fn the_root_creates_edits_lists_and_deletes_templates_and_nothing_else_doe
     let mut windowed = template_body("x", "1");
     windowed["policy"]["validUntil"] = json!(1);
     refused.push(windowed);
+    // A template always limits operations.
+    let mut unlimited = template_body("x", "1");
+    unlimited["policy"]["perChainOperationLimit"] = json!(null);
+    refused.push(unlimited);
     for lifetime in [json!(0), json!(59), json!((1u64 << 42) + 1), json!("86400")] {
         let mut body = template_body("x", "1");
         body["lifetime_seconds"] = lifetime;

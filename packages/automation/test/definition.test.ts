@@ -225,7 +225,7 @@ describe("derivePlanPolicy", () => {
     bare.schedule.count = 5;
     const definition = defineAutomation(bare);
     const plan = createPlanTerms(definition, { planId, account, now });
-    expect(derivePlanPolicy(definition, plan, now).perChainOperationLimit.count).toBe(5);
+    expect(derivePlanPolicy(definition, plan, now).perChainOperationLimit?.count).toBe(5);
     expect(derivePlanPolicy(definition, plan, now).calls).toHaveLength(1);
   });
 });

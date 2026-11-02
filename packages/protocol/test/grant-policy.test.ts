@@ -165,6 +165,16 @@ describe("canonical Grant policy", () => {
     }
   });
 
+  it("accepts an unlimited policy, hashed apart from every limited one, narrowed only to a limit", () => {
+    const unlimited = { ...clone(policy), perChainOperationLimit: null };
+    expect(parseGrantPolicy(unlimited).perChainOperationLimit).toBeNull();
+    expect(hashGrantPolicy(unlimited)).not.toBe(hashGrantPolicy(policy));
+    // An unlimited request may be approved with a limit; a limited one never unlimited.
+    expect(isGrantPolicyAttenuation(unlimited, policy)).toBe(true);
+    expect(isGrantPolicyAttenuation(unlimited, unlimited)).toBe(true);
+    expect(isGrantPolicyAttenuation(policy, unlimited)).toBe(false);
+  });
+
   it("accepts a zero selector, the first calldata bytes of a target without dispatch", () => {
     const zero = {
       ...clone(policy),

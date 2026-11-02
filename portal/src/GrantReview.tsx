@@ -64,7 +64,8 @@ function duration(seconds: number): string {
   return `${seconds} seconds`;
 }
 
-function limit(policy: GrantPolicy): string {
+function limit(policy: GrantPolicy): string | null {
+  if (policy.perChainOperationLimit === null) return null;
   const { count, intervalSeconds } = policy.perChainOperationLimit;
   const times = `${count} operation${count === 1 ? "" : "s"}`;
   return intervalSeconds === null
@@ -138,9 +139,16 @@ export function GrantTerms({
       <dd>
         From {when(policy.validAfter)}
         {policy.validUntil !== null && ` until ${when(policy.validUntil)}`}
+        {policy.validUntil === null && (
+          <span className="warning"> No expiry: valid until you revoke it.</span>
+        )}
       </dd>
       <dt>Limit</dt>
-      <dd>{limit(policy)}</dd>
+      <dd>
+        {limit(policy) ?? (
+          <span className="warning">No operation limit: as many operations as it wants.</span>
+        )}
+      </dd>
       <dt>Chains</dt>
       <dd>{chains.map((chain) => CHAINS[chain] ?? `Chain ${chain}`).join(", ")}</dd>
       <dt>Request expires</dt>

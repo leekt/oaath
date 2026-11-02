@@ -49,7 +49,8 @@ pub struct GrantPolicy {
     pub valid_after: u64,
     /// Inclusive Unix seconds, or `None` as the only indefinite representation.
     pub valid_until: Option<u64>,
-    pub per_chain_operation_limit: GrantPolicyOperationLimit,
+    /// `None` installs no operation limit: the grant is unlimited per chain.
+    pub per_chain_operation_limit: Option<GrantPolicyOperationLimit>,
 }
 
 fn uint48(value: &Value, minimum: u64, code: ErrorCode) -> ProtocolResult<u64> {
@@ -150,19 +151,21 @@ pub(crate) fn capture_policy(value: &Value, code: ErrorCode) -> ProtocolResult<G
     let valid_after = uint48(field(record, "validAfter"), 0, code)?;
     let valid_until = nullable_uint48(field(record, "validUntil"), 1, code)?;
     ensure(valid_until.is_none_or(|until| valid_after <= until), code)?;
-    let limit = exact_record(
-        field(record, "perChainOperationLimit"),
-        &["count", "intervalSeconds"],
-    )
-    .or_fail(code)?;
+    let per_chain_operation_limit = match field(record, "perChainOperationLimit") {
+        Value::Null => None,
+        limit => {
+            let limit = exact_record(limit, &["count", "intervalSeconds"]).or_fail(code)?;
+            Some(GrantPolicyOperationLimit {
+                count: uint48(field(limit, "count"), 1, code)?,
+                interval_seconds: nullable_uint48(field(limit, "intervalSeconds"), 1, code)?,
+            })
+        }
+    };
     Ok(GrantPolicy {
         calls,
         valid_after,
         valid_until,
-        per_chain_operation_limit: GrantPolicyOperationLimit {
-            count: uint48(field(limit, "count"), 1, code)?,
-            interval_seconds: nullable_uint48(field(limit, "intervalSeconds"), 1, code)?,
-        },
+        per_chain_operation_limit,
     })
 }
 
@@ -201,9 +204,17 @@ impl GrantPolicy {
                 U256::from(self.valid_after),
                 self.valid_until.is_some(),
                 U256::from(self.valid_until.unwrap_or(0)),
-                U256::from(self.per_chain_operation_limit.count),
+                // Zero is unambiguous as "no limit": a present count is at least one.
+                U256::from(
+                    self.per_chain_operation_limit
+                        .map_or(0, |limit| limit.count),
+                ),
                 // Zero is unambiguous as "no window": a present interval is at least one second.
-                U256::from(self.per_chain_operation_limit.interval_seconds.unwrap_or(0)),
+                U256::from(
+                    self.per_chain_operation_limit
+                        .and_then(|limit| limit.interval_seconds)
+                        .unwrap_or(0),
+                ),
             )
                 .abi_encode_params(),
         )
@@ -215,10 +226,10 @@ impl GrantPolicy {
             "calls": self.calls.iter().map(GrantPolicyCall::to_json).collect::<Vec<_>>(),
             "validAfter": self.valid_after,
             "validUntil": self.valid_until,
-            "perChainOperationLimit": {
-                "count": self.per_chain_operation_limit.count,
-                "intervalSeconds": self.per_chain_operation_limit.interval_seconds,
-            },
+            "perChainOperationLimit": self.per_chain_operation_limit.map(|limit| json!({
+                "count": limit.count,
+                "intervalSeconds": limit.interval_seconds,
+            })),
         })
     }
 }
@@ -284,15 +295,26 @@ fn call_attenuates(requested: &GrantPolicyCall, approved: &GrantPolicyCall) -> b
 
 /// Whether `approved` is no broader than `requested` on every axis.
 pub fn is_captured_policy_attenuation(requested: &GrantPolicy, approved: &GrantPolicy) -> bool {
-    let requested_limit = requested.per_chain_operation_limit;
-    let approved_limit = approved.per_chain_operation_limit;
+    // An unlimited request may be approved with any limit; a limited one only
+    // with its exact window and at most its count.
+    let limit_attenuates = match (
+        requested.per_chain_operation_limit,
+        approved.per_chain_operation_limit,
+    ) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(requested_limit), Some(approved_limit)) => {
+            approved_limit.count <= requested_limit.count
+                && approved_limit.interval_seconds == requested_limit.interval_seconds
+        }
+    };
     if approved.valid_after < requested.valid_after
         || requested.valid_until.is_some_and(|requested_until| {
-            approved.valid_until.is_none_or(|approved_until| approved_until > requested_until)
+            approved
+                .valid_until
+                .is_none_or(|approved_until| approved_until > requested_until)
         })
-        || approved_limit.count > requested_limit.count
-        // The window is kept exactly: approval may only lower the count.
-        || approved_limit.interval_seconds != requested_limit.interval_seconds
+        || !limit_attenuates
     {
         return false;
     }

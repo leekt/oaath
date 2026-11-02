@@ -139,7 +139,7 @@ describe("Arbitrum Sepolia DCA definitions", () => {
       ].sort(([a, b], [c, d]) => (`${a}:${b}` < `${c}:${d}` ? -1 : 1)),
     );
     // Four buys, the setup and the cancellation.
-    expect(policy.perChainOperationLimit.count).toBe(6);
+    expect(policy.perChainOperationLimit?.count).toBe(6);
   });
 });
 

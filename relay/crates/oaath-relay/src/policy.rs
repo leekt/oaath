@@ -85,6 +85,10 @@ impl TemplatePolicy {
         }))
         .map_err(|_| code)?;
         check_policy(&policy).map_err(|_| code)?;
+        // A template always limits operations: only a dapp grant may be unbounded.
+        if policy.per_chain_operation_limit.is_none() {
+            return Err(code);
+        }
         Ok(Self(Self::body(&policy)))
     }
 

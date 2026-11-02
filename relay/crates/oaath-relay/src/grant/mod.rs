@@ -96,7 +96,6 @@ fn policy_packages(policy: &GrantPolicy) -> RelayResult<Vec<(&'static str, Vec<u
     {
         return Err(UNSUPPORTED);
     }
-    let valid_until = policy.valid_until.ok_or(UNSUPPORTED)?;
     let permissions: Vec<CallPermission> = policy
         .calls
         .iter()
@@ -109,23 +108,28 @@ fn policy_packages(policy: &GrantPolicy) -> RelayResult<Vec<(&'static str, Vec<u
         })
         .collect();
     let mut packages = vec![(CALL_POLICY, (permissions,).abi_encode_params())];
-    if valid_until == 0 || valid_until <= policy.valid_after {
-        return Err(UNSUPPORTED);
+    // No expiry installs no validity policy; no limit installs no limit policy.
+    if let Some(valid_until) = policy.valid_until {
+        if valid_until <= policy.valid_after {
+            return Err(UNSUPPORTED);
+        }
+        packages.push((
+            VALIDITY_POLICY,
+            (U256::from(policy.valid_after), U256::from(valid_until)).abi_encode_params(),
+        ));
     }
-    packages.push((
-        VALIDITY_POLICY,
-        (U256::from(policy.valid_after), U256::from(valid_until)).abi_encode_params(),
-    ));
-    let limit = &policy.per_chain_operation_limit;
-    match limit.interval_seconds {
-        None => packages.push((
-            OPERATION_LIMIT_POLICY,
-            [be(0, 6), be(limit.count, 6), be(0, 6)].concat(),
-        )),
-        Some(interval) => packages.push((
-            RATE_LIMIT_POLICY,
-            [be(interval, 6), be(limit.count, 6)].concat(),
-        )),
+    match policy.per_chain_operation_limit {
+        None => {}
+        Some(limit) => match limit.interval_seconds {
+            None => packages.push((
+                OPERATION_LIMIT_POLICY,
+                [be(0, 6), be(limit.count, 6), be(0, 6)].concat(),
+            )),
+            Some(interval) => packages.push((
+                RATE_LIMIT_POLICY,
+                [be(interval, 6), be(limit.count, 6)].concat(),
+            )),
+        },
     }
     Ok(packages)
 }

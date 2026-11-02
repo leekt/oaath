@@ -470,7 +470,7 @@ describe("demo automation session", () => {
     const policy = derivePlanPolicy(definition, terms, 1_800_000_000);
     expect(policy.calls).toHaveLength(1);
     expect(policy.calls[0]).toMatchObject({ target: DEMO_TARGET, valueLimit: "0" });
-    expect(policy.perChainOperationLimit.count).toBe(3);
+    expect(policy.perChainOperationLimit?.count).toBe(3);
   });
 
   it("stays off without a service credential", async () => {

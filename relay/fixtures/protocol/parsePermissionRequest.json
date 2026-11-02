@@ -5496,7 +5496,78 @@
       "sessionSigner": null
     },
     "expect": {
-      "error": "permission_request_invalid"
+      "ok": {
+        "version": "oaath.permission-request/v1",
+        "requestId": "permission-request-1",
+        "context": {
+          "version": "oaath.workspace-account-context/v1",
+          "workspaceId": "personal-1",
+          "workspaceKind": "personal",
+          "accountId": "account-1"
+        },
+        "application": {
+          "applicationId": "oaath-tests",
+          "clientId": "permission-protocol",
+          "origin": "https://request.example",
+          "deviceId": "request-device"
+        },
+        "chainScope": "all",
+        "logicalAccount": {
+          "version": "oaath.kernel-account-profile/v1",
+          "kind": "kernel",
+          "accountIndex": "7",
+          "kernelVersion": "0.4.0",
+          "factoryRoute": "meta_factory",
+          "entryPoint": {
+            "version": "0.9"
+          },
+          "ownerCredential": {
+            "version": "oaath.owner-credential-profile/v1",
+            "kind": "ecdsa",
+            "address": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "operatorCredential": {
+          "version": "oaath.operator-credential-profile/v1",
+          "kind": "ecdsa",
+          "address": "0x4444444444444444444444444444444444444444"
+        },
+        "policy": {
+          "version": "oaath.grant-policy/v1",
+          "calls": [
+            {
+              "target": "0x1111111111111111111111111111111111111111",
+              "selector": "0x12345678",
+              "valueLimit": "100",
+              "argumentEquals": [
+                {
+                  "index": 0,
+                  "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                {
+                  "index": 2,
+                  "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+                }
+              ]
+            },
+            {
+              "target": "0x2222222222222222222222222222222222222222",
+              "selector": "0xabcdef01",
+              "valueLimit": "0",
+              "argumentEquals": []
+            }
+          ],
+          "validAfter": 100,
+          "validUntil": null,
+          "perChainOperationLimit": {
+            "count": 10,
+            "intervalSeconds": null
+          }
+        },
+        "requestedAt": 100,
+        "expiresAt": 200,
+        "sessionSigner": null
+      }
     }
   },
   {
