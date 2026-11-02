@@ -1,5 +1,16 @@
 # @oaath/sdk
 
+## 0.3.9
+
+### Patch Changes
+
+- ba0c172: Owner transactions: `requestOwnerTransaction` asks the signer whose wallet is `from` to review and send one exact plain transaction (value-bearing calls and contract creations) in the OAAth portal, returning the wallet's hash; `hashOwnerTransactionRequest` is its identity before sending. `portalWallet` serves the connected-EOA wallet shape for `payer`, so the EntryPoint-direct fallback and plain sends go through the portal.
+- 1f7f317: `portalOwnerKey({ issuer, clientId, redirectUri, account })`: an owner key for `createOAAth(...).account(address).owner(key)` whose every `sendCalls` signature comes from the account's root in the OAAth portal, over the realm's own prepared operation; routing, the connected-EOA fallback and journaling are unchanged. Pass `launch` because sends run outside the user's gesture.
+- 87f62f5: Owner operations support an existing, deployed Kernel 0.3.3 account: `prepareOwnerOperation`, `verifyOwnerOperation` and the `oaath_operation` portal approval sign and verify its EntryPoint 0.7 UserOperation hash (a raw or EIP-191 ECDSA root signature). `ownerOperationEntryPointVersion` names an account's EntryPoint version. A Kernel 0.3.3 owner operation carries no factory.
+- Updated dependencies [ba0c172]
+- Updated dependencies [87f62f5]
+  - @oaath/protocol@0.3.9
+
 ## 0.3.8
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@oaath/automation-server",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "Self-hostable OAAth automation service: HTTP API, scheduler and executor over PostgreSQL.",
   "type": "module",
   "license": "Apache-2.0",
