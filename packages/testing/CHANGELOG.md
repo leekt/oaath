@@ -1,5 +1,23 @@
 # @oaath/testing
 
+## 0.3.6
+
+### Patch Changes
+
+- Updated dependencies [4ca33aa]
+- Updated dependencies [4187af9]
+- Updated dependencies [05148ef]
+- Updated dependencies [4a3ad72]
+- Updated dependencies [0dce3ad]
+- Updated dependencies [8aacee9]
+- Updated dependencies [e0a4255]
+- Updated dependencies [ee46925]
+- Updated dependencies
+- Updated dependencies [ddae33b]
+- Updated dependencies [f946694]
+  - @oaath/sdk@0.3.6
+  - @oaath/protocol@0.3.6
+
 ## 0.3.5
 
 ### Patch Changes
