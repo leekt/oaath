@@ -19,7 +19,6 @@ const WORD = /^0x[0-9a-f]{64}$/u;
 const HASH = /^0x[0-9a-f]{64}$/u;
 const BYTES = /^0x(?:[0-9a-f]{2})*$/u;
 const DECIMAL_UINT = /^(?:0|[1-9][0-9]{0,77})$/u;
-const ZERO_SELECTOR = "0x00000000";
 const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_UINT48 = 2 ** 48 - 1;
 const MAX_ARGUMENT_INDEX = Math.floor(Number.MAX_SAFE_INTEGER / 32);
@@ -208,9 +207,14 @@ function address(value: unknown, label: string, code: GrantPolicyErrorCode): `0x
   return captureAddress(value, label, (message) => invalid(code, message));
 }
 
+/**
+ * Any lowercase 4-byte call prefix, zero included: a target without function
+ * dispatch (the CREATE2 deployer) takes its first calldata bytes from data
+ * such as a salt, and Kernel's call policy matches them all the same.
+ */
 function selector(value: unknown, label: string, code: GrantPolicyErrorCode): `0x${string}` {
-  if (typeof value !== "string" || !SELECTOR.test(value) || value === ZERO_SELECTOR) {
-    return invalid(code, `${label} must be a nonzero lowercase 4-byte selector`);
+  if (typeof value !== "string" || !SELECTOR.test(value)) {
+    return invalid(code, `${label} must be a lowercase 4-byte selector`);
   }
   return value as `0x${string}`;
 }

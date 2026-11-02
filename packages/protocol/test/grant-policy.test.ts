@@ -165,6 +165,14 @@ describe("canonical Grant policy", () => {
     }
   });
 
+  it("accepts a zero selector, the first calldata bytes of a target without dispatch", () => {
+    const zero = {
+      ...clone(policy),
+      calls: [{ ...clone(firstPolicyCall), selector: "0x00000000" }],
+    };
+    expect(parseGrantPolicy(zero).calls[0]?.selector).toBe("0x00000000");
+  });
+
   it("rejects aliases, malformed encodings, overflow, duplicates, and noncanonical order", () => {
     const maxUint256 = (1n << 256n) - 1n;
     const invalidPolicies: unknown[] = [
@@ -192,10 +200,6 @@ describe("canonical Grant policy", () => {
       {
         ...clone(policy),
         calls: [{ ...clone(firstPolicyCall), target: `0x${"00".repeat(20)}` }],
-      },
-      {
-        ...clone(policy),
-        calls: [{ ...clone(firstPolicyCall), selector: "0x00000000" }],
       },
       {
         ...clone(policy),

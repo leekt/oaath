@@ -17,7 +17,6 @@ pub const GRANT_POLICY_VERSION: &str = "oaath.grant-policy/v1";
 pub const GRANT_POLICY_HASH_DOMAIN: &str = "@oaath/protocol:grant-policy";
 pub const GRANT_POLICY_CALLS_HASH_DOMAIN: &str = "@oaath/protocol:grant-policy-calls";
 
-const ZERO_SELECTOR: &str = "0x00000000";
 const MAX_ARGUMENT_INDEX: u64 = MAX_SAFE_INTEGER_U64 / 32;
 
 /// Equality on one zero-based 32-byte ABI word after the selector.
@@ -100,7 +99,8 @@ fn capture_call(value: &Value, code: ErrorCode) -> ProtocolResult<GrantPolicyCal
         .filter(|text| text != ZERO_ADDRESS);
     let selector = field(record, "selector")
         .as_str()
-        .filter(|text| is_lower_hex(text, 4) && *text != ZERO_SELECTOR);
+        // Any 4-byte call prefix, zero included (a target without dispatch).
+        .filter(|text| is_lower_hex(text, 4));
     Ok(GrantPolicyCall {
         target: target.or_fail(code)?.to_owned(),
         selector: selector.or_fail(code)?.to_owned(),
