@@ -1,5 +1,14 @@
 # @oaath/testing
 
+## 0.3.11
+
+### Patch Changes
+
+- Updated dependencies [6de424a]
+- Updated dependencies [814e39c]
+  - @oaath/protocol@0.3.11
+  - @oaath/sdk@0.3.11
+
 ## 0.3.10
 
 ### Patch Changes

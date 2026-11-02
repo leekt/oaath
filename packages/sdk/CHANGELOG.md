@@ -1,5 +1,15 @@
 # @oaath/sdk
 
+## 0.3.11
+
+### Patch Changes
+
+- 6de424a: Owner transactions may carry optional EIP-3085 `chain` metadata (`name`, `nativeCurrency` with 18 decimals, one to four canonical `https` `rpcUrls`, optional `blockExplorerUrls`; no credentials, query or fragment), bound by `hashOwnerTransactionRequest`. When the root's wallet does not know the chain (4902), the OAAth portal adds it from that metadata, switches, then sends; without it, the portal still refuses.
+- 814e39c: Sudo grants: a GrantPolicy with `calls: []` lets the session key make any call the account can, and is accepted only with a non-null `validUntil` whose inclusive window spans at most `OAATH_SUDO_GRANT_MAX_SECONDS` (600) seconds (`validUntil - validAfter + 1 <= 600`) and `perChainOperationLimit: null`. It installs a Kernel permission whose only policy is the validity policy. `isSudoGrantPolicy` identifies one; coverage permits every call, and only a sudo request may be approved as sudo. An app requests one with `permissions: [{ calls: [] }]`, `expiresIn` of at most 600 and `perChainOperationLimit: null` (now also accepted for any unlimited request). Policy templates are never sudo, and the OAAth portal warns that the app gets full control of the account before the root signs.
+- Updated dependencies [6de424a]
+- Updated dependencies [814e39c]
+  - @oaath/protocol@0.3.11
+
 ## 0.3.10
 
 ### Patch Changes
