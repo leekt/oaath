@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CHAINS, ether } from "./GrantReview.js";
 import { Button as SchematicAction } from "./schematic/components";
 import { findWallet } from "./session.js";
-import { type RememberedSigner, shortAddress } from "./signers.js";
+import { type Eip1193Provider, type RememberedSigner, shortAddress } from "./signers.js";
 
 class TransactionError extends Error {
   constructor(readonly code: string) {
@@ -70,8 +70,41 @@ async function send(request: Readonly<OwnerTransactionRequest>, signer: Remember
     !accounts.some((entry) => entry?.toLowerCase?.() === request.from)
   )
     throw new TransactionError("wallet-account-mismatch");
+  return sendOnChain(provider, request);
+}
+
+/**
+ * Switches the wallet to the request's chain, adding it first from the
+ * request's own metadata when the wallet does not know it (4902), then sends.
+ */
+export async function sendOnChain(
+  provider: Eip1193Provider,
+  request: Readonly<OwnerTransactionRequest>,
+) {
   const chainId = toHex(request.chainId);
-  await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
+  const switchChain = () =>
+    provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
+  try {
+    await switchChain();
+  } catch (error) {
+    const chain = request.chain;
+    if ((error as { code?: unknown })?.code !== 4902 || chain === undefined) throw error;
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [
+        {
+          chainId,
+          chainName: chain.name,
+          nativeCurrency: chain.nativeCurrency,
+          rpcUrls: chain.rpcUrls,
+          ...(chain.blockExplorerUrls === undefined
+            ? {}
+            : { blockExplorerUrls: chain.blockExplorerUrls }),
+        },
+      ],
+    });
+    await switchChain();
+  }
   const hash = await provider.request({
     method: "eth_sendTransaction",
     params: [
@@ -138,7 +171,20 @@ export function TransactionReview({
       {request && (
         <dl className="review">
           <dt>Chain</dt>
-          <dd>{CHAINS[request.chainId] ?? `Chain ${request.chainId}`}</dd>
+          <dd>
+            {CHAINS[request.chainId] ??
+              (request.chain
+                ? `${request.chain.name} (chain ${request.chainId})`
+                : `Chain ${request.chainId}`)}
+          </dd>
+          {request.chain && (
+            <>
+              <dt>Network RPC</dt>
+              <dd className="mono">
+                {request.chain.rpcUrls.map((url) => new URL(url).host).join(", ")}
+              </dd>
+            </>
+          )}
           <dt>From</dt>
           <dd className="mono">{request.from}</dd>
           <dt>To</dt>
@@ -164,6 +210,8 @@ export function TransactionReview({
         <p className="notice">
           Approving asks your wallet to send this one transaction from {shortAddress(request.from)}{" "}
           and pay its gas. It can't be undone once sent.
+          {request.chain &&
+            ` If your wallet doesn't know ${request.chain.name}, it will be asked to add it with the RPC shown above.`}
         </p>
       )}
       <div className="actions">

@@ -34,6 +34,12 @@ fn request_for(from: &str, to: Option<&str>) -> Value {
         "to": to,
         "value": "1000000000000000000",
         "data": "0x6080",
+        // Chain metadata round-trips through the PAR record and the token.
+        "chain": {
+            "name": "Example Chain",
+            "nativeCurrency": { "name": "Ether", "symbol": "ETH", "decimals": 18 },
+            "rpcUrls": ["https://rpc.example.org/"],
+        },
     })
 }
 
