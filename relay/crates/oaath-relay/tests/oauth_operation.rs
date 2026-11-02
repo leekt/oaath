@@ -344,25 +344,20 @@ async fn refuses_a_tampered_operation_another_signature_and_a_non_root_signer() 
     code_of(&decide(&h, &id, &signer_id, &account, &valid["signature"], &cookie).await);
 }
 
-/// `root`'s fixture account imported as an existing account: the stand-in
-/// chain shows the factory-deployed account rooted in it.
+/// `root`'s fixture account imported as an existing Kernel v4 account.
 async fn imported_account(root: &Root, address: &str) -> (Harness, String, String, Value) {
     use alloy_primitives::Address;
     use oaath_protocol::identity::parse_owner_credential_profile;
     use oaath_relay::account_import::{AccountImport, import_digest};
-    use support::chain::{StubAccount, stub_chain};
     let owner = parse_owner_credential_profile(&root.profile()).unwrap();
-    let chain = stub_chain(421_614, &[(address, StubAccount::kernel(&owner))]).await;
-    // The stand-in serves from its own task for the rest of the test.
-    let reader = chain.reader();
     let h = harness_with(move |options| {
         options.oauth.as_mut().unwrap().issuer = FIXTURE_ISSUER.to_owned();
-        options.chain = Some(reader);
     });
     let (signer_id, cookie) = sign_in(&h, root).await;
     let fingerprint = format!("0x{}", "22".repeat(32));
     let digest = import_digest(&AccountImport {
         account: address.parse::<Address>().unwrap(),
+        kernelVersion: "0.4.0".to_owned(),
         ownerProfileHash: owner.hash(),
         inventoryFingerprint: fingerprint.parse::<B256>().unwrap(),
         issuedAt: CLOCK_SECONDS,
@@ -382,6 +377,7 @@ async fn imported_account(root: &Root, address: &str) -> (Harness, String, Strin
             Some(json!({
                 "root_signer_id": signer_id,
                 "address": address,
+                "kernel_version": "0.4.0",
                 "inventory_fingerprint": fingerprint,
                 "issued_at": CLOCK_SECONDS,
                 "nonce": "import-1",
