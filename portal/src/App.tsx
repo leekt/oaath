@@ -19,6 +19,7 @@ import {
   PortalApiError,
   type PortalTransaction,
   portalApi,
+  type TransactionDetail,
   transactionIdFromRequestUri,
 } from "./api.js";
 import { Developers } from "./Developers.js";
@@ -36,6 +37,7 @@ import {
   rememberSigner,
   shortAddress,
 } from "./signers.js";
+import { TransactionReview } from "./TransactionReview.js";
 
 /** Module discovery loads only when an account is imported. */
 const ImportAccount = lazy(() =>
@@ -260,6 +262,9 @@ function Authorize({ transactionId }: { transactionId: string }) {
   const operation = transaction.authorization_details.find(
     (detail): detail is OperationDetail => detail.type === "oaath_operation",
   );
+  const sendable = transaction.authorization_details.find(
+    (detail): detail is TransactionDetail => detail.type === "oaath_transaction",
+  );
   const bound = "bound" in step && step.bound === true;
   if (transaction.expires_at * 1000 <= Date.now())
     return (
@@ -281,7 +286,7 @@ function Authorize({ transactionId }: { transactionId: string }) {
           <ol className="flow-progress" aria-label="Sign-in progress">
             <li aria-current={step.name === "signer" ? "step" : undefined}>Sign-in method</li>
             <li aria-current={step.name === "account" ? "step" : undefined}>Account</li>
-            {(grant || operation) && (
+            {(grant || operation || sendable) && (
               <li aria-current={step.name === "review" || step.name === "ask" ? "step" : undefined}>
                 Review
               </li>
@@ -322,7 +327,7 @@ function Authorize({ transactionId }: { transactionId: string }) {
           onChosen={(account) =>
             grant && account.role !== "root"
               ? setStep({ name: "ask", signer: step.signer, account })
-              : grant || operation
+              : grant || operation || sendable
                 ? setStep({ name: "review", signer: step.signer, account })
                 : finish(step.signer, account)
           }
@@ -379,6 +384,15 @@ function Authorize({ transactionId }: { transactionId: string }) {
           signer={step.signer}
           account={step.account}
           onApproved={(artifact) => finish(step.signer, step.account, artifact)}
+          onCancel={cancel}
+        />
+      )}
+      {step.name === "review" && sendable && (
+        <TransactionReview
+          clientName={transaction.client_name}
+          request={sendable.request}
+          signer={step.signer}
+          onApproved={(hash) => finish(step.signer, step.account, hash)}
           onCancel={cancel}
         />
       )}
