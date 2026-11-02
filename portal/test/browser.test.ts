@@ -172,6 +172,7 @@ function grantTransaction(id: string): PortalTransaction {
     client_name: "Example Dapp",
     redirect_origin: origin,
     authorization_details: [GRANT_DETAIL],
+    scopes: [],
     expires_at: NOW + 600,
     // The dapp's login bound its signer and account (`id_token_hint`).
     bound: id.endsWith("-bound")
@@ -285,6 +286,7 @@ async function stubRelay(path: string, method: string, body: unknown) {
       client_name: "Example Dapp",
       redirect_origin: origin,
       authorization_details: [],
+      scopes: [],
       expires_at: Math.floor(Date.now() / 1000) + 600,
       bound: null,
     } satisfies PortalTransaction;

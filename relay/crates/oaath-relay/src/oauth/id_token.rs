@@ -73,6 +73,15 @@ impl IdTokenKey {
         encode(&header, claims, &self.encoding).map_err(|_| RelayErrorCode::Internal)
     }
 
+    /// An RFC 9068 JWT access token: the same key, typed `at+jwt` so a
+    /// resource server never mistakes an id_token for it.
+    pub fn sign_access_token(&self, claims: &impl Serialize) -> RelayResult<String> {
+        let mut header = Header::new(Algorithm::ES256);
+        header.kid = Some(self.kid.clone());
+        header.typ = Some("at+jwt".to_owned());
+        encode(&header, claims, &self.encoding).map_err(|_| RelayErrorCode::Internal)
+    }
+
     /// The claims of an ES256 id_token this key signed for `issuer` and
     /// `audience`, or `None`. Expiry is the caller's: a hint outlives `exp`.
     pub fn verify(&self, token: &str, issuer: &str, audience: &str) -> Option<Value> {

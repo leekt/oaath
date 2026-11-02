@@ -78,6 +78,7 @@ pub const LOGIN_SELECTION_SCOPE: &str = r#"{"version":"oaath.login-selection/v1"
 /// Subject and owner of a cancelled login, which selected nothing.
 const CANCELLED_SUBJECT: &str = "oaath-portal-cancelled";
 const ID_TOKEN_TTL_SECONDS: u64 = 600;
+const ACCESS_TOKEN_TTL_SECONDS: u64 = 600;
 /// How long after its issue an id_token still binds a PAR as `id_token_hint`.
 /// Longer than the token's own ten minutes, so a dapp's later request still
 /// skips the pickers; bounded, because the hint only preselects: the root's
@@ -185,6 +186,31 @@ fn optional_bounded(form: &Map<String, Value>, key: &str) -> RelayResult<Option<
         None | Some("") => Ok(None),
         Some(value) => Ok(Some(bounded_str(value, MAX_STATE, INVALID)?.to_owned())),
     }
+}
+
+/// A resource server's scope, passed through to its access token: `ns:name`,
+/// lowercase. OAAth enforces nothing about it; the resource server does.
+fn is_resource_scope(scope: &str) -> bool {
+    let Some((namespace, name)) = scope.split_once(':') else {
+        return false;
+    };
+    let word = |text: &str, max: usize, extra: &[u8]| {
+        (1..=max).contains(&text.len())
+            && text.as_bytes()[0].is_ascii_lowercase()
+            && text
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || extra.contains(&b))
+    };
+    word(namespace, 32, b"-") && word(name, 64, b"-_.")
+}
+
+/// The resource-server scopes of a space-separated scope.
+fn resource_scopes(scope: &str) -> Vec<String> {
+    scope
+        .split(' ')
+        .filter(|scope| is_resource_scope(scope))
+        .map(str::to_owned)
+        .collect()
 }
 
 pub fn discovery(issuer: &str) -> Value {
@@ -361,12 +387,19 @@ pub async fn push_authorization_request(
     }
     let scope = required(form, "scope")?;
     let scopes: Vec<&str> = scope.split(' ').collect();
-    if !scopes.contains(&"openid")
-        || scopes
-            .iter()
-            .any(|scope| !matches!(*scope, "openid" | "account"))
+    let resource_scopes = resource_scopes(scope);
+    if scopes
+        .iter()
+        .any(|scope| !matches!(*scope, "openid" | "account") && !is_resource_scope(scope))
+        || (!scopes.contains(&"openid") && resource_scopes.is_empty())
+        // A resource server's scopes ride a login, never a grant or an operation.
+        || (!resource_scopes.is_empty() && param(form, "authorization_details").is_some())
     {
         return Err(OAuthFailure::new(400, "invalid_scope", INVALID));
+    }
+    // RFC 8707: a client may name its resource here; it is bound at /token.
+    if param(form, "resource").is_some_and(|resource| !redirect_uri_allowed(resource)) {
+        return Err(OAuthFailure::new(400, "invalid_target", INVALID));
     }
     let created_at = relay_now(clock)?;
     let hint = match (
@@ -605,6 +638,8 @@ pub struct PortalTransaction {
     pub client_name: String,
     pub redirect_origin: String,
     pub authorization_details: Vec<Value>,
+    /// The resource-server scopes the client asks for, shown on consent.
+    pub scopes: Vec<String>,
     /// Unix seconds.
     pub expires_at: u64,
     /// The signer and account an `id_token_hint` or `login_hint` bound, with the signer's
@@ -704,6 +739,7 @@ pub async fn read_transaction(
                 _ => return Err(RelayErrorCode::RecordUnreadable),
             },
         },
+        scopes: resource_scopes(&par.scope),
         expires_at: par.expires_at / 1_000,
         bound,
     })
@@ -983,7 +1019,8 @@ pub async fn recover_redirect(
 
 #[derive(Debug, Serialize)]
 pub struct TokenResponse {
-    /// Opaque; stored as its hash. It reads and invalidates its own grant.
+    /// Opaque, stored as its hash, reading and invalidating its own grant; or,
+    /// for a `resource`, an RFC 9068 JWT for that resource server.
     pub access_token: String,
     pub token_type: &'static str,
     pub expires_in: u64,
@@ -991,6 +1028,23 @@ pub struct TokenResponse {
     pub scope: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub authorization_details: Option<Vec<Value>>,
+}
+
+/// RFC 9068 claims of a resource server's access token.
+#[derive(Serialize)]
+struct AccessTokenClaims<'a> {
+    iss: &'a str,
+    /// The account the user chose, as in the id_token.
+    sub: &'a str,
+    /// Exactly the `resource` the client named at /token.
+    aud: &'a str,
+    client_id: &'a str,
+    scope: &'a str,
+    /// The signer that signed in: `{id, kind}`.
+    signer: Value,
+    iat: u64,
+    exp: u64,
+    jti: String,
 }
 
 #[derive(Serialize)]
@@ -1033,6 +1087,12 @@ pub async fn exchange_code(
         limits::REDIRECT_URI,
         INVALID,
     )?;
+    let invalid_target = || OAuthFailure::new(400, "invalid_target", INVALID);
+    let resource = match param(form, "resource") {
+        None => None,
+        Some(resource) if redirect_uri_allowed(resource) => Some(resource),
+        Some(_) => return Err(invalid_target()),
+    };
     let invalid_client = || OAuthFailure::new(401, "invalid_client", RelayErrorCode::NotFound);
     let mut transaction = store.begin().await?;
     let result = transaction.lock_oauth_client(client_id).await;
@@ -1070,6 +1130,10 @@ pub async fn exchange_code(
     let mut transaction = store.begin().await?;
     let result = login_claims(&mut *transaction, &consumed.request_id).await;
     let (par, account, signer, grant, memberships) = settle(transaction, result).await?;
+    // A resource token is for a login only; refused before any artifact is claimed.
+    if resource.is_some() && !matches!(grant, Released::Login) {
+        return Err(invalid_target());
+    }
     // A grant's sealed approval is released once, with the token.
     let authorization_details = match grant {
         Released::Login => None,
@@ -1088,8 +1152,29 @@ pub async fn exchange_code(
             Some(vec![operation::operation_detail(&claimed.artifact)?])
         }
     };
-    let access_token = grant::issue_access_token(store, clock, client_id, &par.par_id).await?;
     let credential = signer.credential()?;
+    // RFC 8707 / RFC 9068: a login for a resource server answers a JWT access
+    // token it verifies offline; anything else keeps the relay's own token.
+    let (access_token, expires_in) = match resource {
+        Some(resource) => {
+            let token = configuration.key.sign_access_token(&AccessTokenClaims {
+                iss: &configuration.issuer,
+                sub: &account.address,
+                aud: resource,
+                client_id: &par.client_id,
+                scope: &par.scope,
+                signer: json!({ "id": signer.signer_id, "kind": credential.kind() }),
+                iat,
+                exp: iat + ACCESS_TOKEN_TTL_SECONDS,
+                jti: random_identifier(),
+            })?;
+            (token, ACCESS_TOKEN_TTL_SECONDS)
+        }
+        None => (
+            grant::issue_access_token(store, clock, client_id, &par.par_id).await?,
+            ID_TOKEN_TTL_SECONDS,
+        ),
+    };
     let id_token = configuration.key.sign(&IdTokenClaims {
         iss: &configuration.issuer,
         sub: &account.address,
@@ -1112,7 +1197,7 @@ pub async fn exchange_code(
     Ok(TokenResponse {
         access_token,
         token_type: "Bearer",
-        expires_in: ID_TOKEN_TTL_SECONDS,
+        expires_in,
         id_token,
         scope: par.scope,
         authorization_details,

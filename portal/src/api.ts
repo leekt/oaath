@@ -54,6 +54,8 @@ export interface PortalTransaction {
   readonly redirect_origin: string;
   /** Empty for a login; one `oaath_grant` or `oaath_operation` detail otherwise. */
   readonly authorization_details: readonly (GrantDetail | OperationDetail)[];
+  /** Resource-server scopes the app asks for (e.g. `orchestra:read`); empty for most logins. */
+  readonly scopes: readonly string[];
   /** Unix seconds after which the request is no longer usable. */
   readonly expires_at: number;
   /**
