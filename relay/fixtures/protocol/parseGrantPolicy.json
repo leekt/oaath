@@ -1602,7 +1602,38 @@
       }
     },
     "expect": {
-      "error": "grant_policy_invalid"
+      "ok": {
+        "version": "oaath.grant-policy/v1",
+        "calls": [
+          {
+            "target": "0x1111111111111111111111111111111111111111",
+            "selector": "0x00000000",
+            "valueLimit": "100",
+            "argumentEquals": [
+              {
+                "index": 0,
+                "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              {
+                "index": 2,
+                "value": "0x4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            ]
+          },
+          {
+            "target": "0x2222222222222222222222222222222222222222",
+            "selector": "0xabcdef01",
+            "valueLimit": "0",
+            "argumentEquals": []
+          }
+        ],
+        "validAfter": 100,
+        "validUntil": 190,
+        "perChainOperationLimit": {
+          "count": 10,
+          "intervalSeconds": null
+        }
+      }
     }
   },
   {
