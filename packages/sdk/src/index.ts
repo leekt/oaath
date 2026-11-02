@@ -56,7 +56,11 @@ export type {
   OaathLoginOptions,
   OaathLoginSigner,
 } from "./client/oauth-login.js";
-export { completeOAAthLogin, loginWithOAAth } from "./client/oauth-login.js";
+export {
+  completeOAAthLogin,
+  loginWithOAAth,
+  openAuthorizationPopup,
+} from "./client/oauth-login.js";
 export type {
   OaathIssuerInvalidation,
   OaathOAuthApprovals,

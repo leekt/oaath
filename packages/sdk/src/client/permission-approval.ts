@@ -34,17 +34,14 @@ import {
   parseOperatorCredentialProfile,
   parsePermissionRequest,
 } from "@oaath/protocol";
-import { credentialKey } from "../kernel/key/credential.js";
-import { sessionOperator } from "../kernel/operator/session.js";
 import {
   kernelGrantCapabilityHash,
   parseVersionedKernelGrantApproval,
   verifyKernelPermissionApproval,
 } from "../kernel/permission/approval.js";
+import { grantPermissionPackages } from "../kernel/permission/grant-packages.js";
 import type { KernelPermissionDecision } from "../kernel/permission/prepare-approval.js";
-import { deriveSessionPolicyProfiles } from "../kernel/permission/profiles.js";
 import { OAATH_KERNEL_V33_APPROVAL_VERSION } from "../kernel/permission/v33.js";
-import { kernelV4Deployment } from "../kernel-v4.js";
 import { clientFail, exactClientRecord, mapClientFailure } from "./errors.js";
 import {
   authorizeThroughPopup,
@@ -66,6 +63,12 @@ export interface OaathPermissionApprovalOptions extends OaathLoginOptions {
   readonly expiresAt: number;
   /** The caller's stable identifier for the device holding the session key. */
   readonly deviceId: string;
+  /**
+   * A popup the caller opened synchronously in the user's gesture (with
+   * `openAuthorizationPopup`), for a caller that must await before asking.
+   * The redirect page runs `completeOAAthLogin`. Closed when this settles.
+   */
+  readonly popup?: Window;
   /** Opens the portal somewhere other than a popup and resolves with the redirect URL. */
   readonly launch?: OaathAuthorizationLauncher;
 }
@@ -83,9 +86,14 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 /**
  * Asks the account root to approve one permission for `signer` under `policy`
  * in the issuer's portal and returns it verified. Call it directly from a
- * user gesture: the popup opens before anything is awaited. A member's
- * request that waits for the root fails with `oaath_client_issuer_rejected`;
- * any other approved request fails with `oaath_client_state_conflict`.
+ * user gesture, or pass the `popup` opened in one: the popup opens before
+ * anything is awaited. Only the account root decides in the popup.
+ *
+ * Fails with `oaath_client_popup_blocked`; `oaath_client_access_denied` when
+ * the user cancels or the root denies; `oaath_client_issuer_rejected` with
+ * source `oauth_permission_pending` when a member's request awaits the root,
+ * or without it when the issuer refuses; and `oaath_client_state_conflict`
+ * with source `oauth_grant_mismatch` for any approval other than the one asked.
  */
 export async function requestPermissionApproval(
   value: OaathPermissionApprovalOptions,
@@ -98,13 +106,16 @@ export async function requestPermissionApproval(
     chains,
     expiresAt,
     deviceId,
+    popup: given,
     launch,
     ...options
   } = value;
   if (launch !== undefined && typeof launch !== "function")
     return clientFail("oaath_client_capability_invalid", "launch must be a function");
+  if (launch !== undefined && given !== undefined)
+    return clientFail("oaath_client_input_invalid", "pass a popup or a launcher, not both");
   // Open inside the user's gesture, before anything is awaited.
-  const popup = launch ? null : openAuthorizationPopup();
+  const popup = launch ? null : (given ?? openAuthorizationPopup());
   try {
     let signer: Readonly<OperatorCredentialProfile>;
     let policy: Readonly<GrantPolicy>;
@@ -136,7 +147,11 @@ export async function requestPermissionApproval(
       ? await authorizeThroughPopup(popup, options, extra)
       : await authorizeWithLauncher(launch as OaathAuthorizationLauncher, options, extra);
     if (released === null)
-      return clientFail("oaath_client_issuer_rejected", "the account root has not approved yet");
+      return clientFail(
+        "oaath_client_issuer_rejected",
+        "the request awaits the account root",
+        "oauth_permission_pending",
+      );
     const { token, login } = released;
     const mismatch = (): never =>
       clientFail(
@@ -180,7 +195,21 @@ export async function requestPermissionApproval(
 
     // The decision binds this request, approves its policy unchanged, and
     // commits to this exact approval.
-    const decision = granted.decision as Record<string, unknown> | null;
+    const decision = exactClientRecord(
+      granted.decision,
+      [
+        "version",
+        "kind",
+        "requestId",
+        "requestHash",
+        "decidedAt",
+        "approvedPolicy",
+        "capabilityHash",
+      ],
+      "OAuth grant decision",
+      new WeakSet(),
+      "oaath_client_issuer_unavailable",
+    );
     let approval: ReturnType<typeof parseVersionedKernelGrantApproval>;
     try {
       approval = parseVersionedKernelGrantApproval(granted.enable);
@@ -188,7 +217,6 @@ export async function requestPermissionApproval(
       return mismatch();
     }
     if (
-      !decision ||
       decision.version !== OAATH_PERMISSION_DECISION_VERSION ||
       decision.kind !== "approve" ||
       decision.requestId !== request.requestId ||
@@ -199,26 +227,19 @@ export async function requestPermissionApproval(
     )
       return mismatch();
 
-    // The approval installs exactly `signer` under `policy`. Session packages
-    // are pinned modules: any deployment derives the same ones.
-    const deployment = kernelV4Deployment(chains[0] as number);
-    const key = credentialKey({ credential: signer, validator: null });
-    const operator = sessionOperator({ key, policies: deriveSessionPolicyProfiles(policy) });
-    const packages = operator.resolvePackages(deployment);
+    // The approval installs exactly `signer` under `policy`.
+    const { permissionId, packages, sessionKey } = grantPermissionPackages({ signer, policy });
     if (!same(approval.packages, packages)) return mismatch();
     if (approval.version === OAATH_KERNEL_V33_APPROVAL_VERSION) {
       const owner = request.logicalAccount.ownerCredential;
-      if (owner.kind !== "ecdsa") return mismatch();
+      if (owner.kind !== "ecdsa" || approval.permissionId !== permissionId) return mismatch();
       const verified = await verifyKernelPermissionApproval({
         approval,
         expected: {
           owner: owner.address,
           account: login.account,
-          permissionId: approval.permissionId,
-          sessionKey: {
-            module: operator.resolveAuthorityModule(deployment),
-            publicMaterial: key.publicMaterial,
-          },
+          permissionId,
+          sessionKey,
           packages,
         },
       });

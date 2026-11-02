@@ -5,8 +5,10 @@
  * account's root, is returned. A Kernel 0.3.3 account approves through the
  * SDK's own existing-account preparation.
  */
+
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestPermissionApproval } from "../src/index.js";
+import { openAuthorizationPopup, requestPermissionApproval } from "../src/index.js";
 import { KERNEL_ENTRY_POINT_V07 } from "../src/kernel/deployment/v33.js";
 import * as M from "../src/kernel/modules.js";
 import {
@@ -14,6 +16,7 @@ import {
   verifyKernelPermissionApproval,
 } from "../src/kernel/permission/approval.js";
 import { prepareKernelPermissionApproval } from "../src/kernel/permission/prepare-approval.js";
+import { grantPermissionPackages } from "../src/kernel.js";
 import { installOAuthPortal } from "./support/oauth-portal.js";
 import { portalRoot } from "./support/portal-roots.js";
 
@@ -97,9 +100,10 @@ async function portal(options: Parameters<typeof installOAuthPortal>[0]) {
   return { ...installed, login };
 }
 
-const ask = (login: Record<string, unknown>) =>
+const ask = (login: Record<string, unknown>, extra: object = {}) =>
   requestPermissionApproval({
     ...(login as { issuer: string; clientId: string; redirectUri: string }),
+    ...extra,
     signer: SIGNER,
     policy: POLICY,
     chains: [421_614],
@@ -162,5 +166,52 @@ describe("requestPermissionApproval", () => {
       code: "oaath_client_state_conflict",
       source: "oauth_grant_mismatch",
     });
+  });
+
+  it("navigates a popup the caller opened in its gesture", async () => {
+    const { login, window } = await portal({ accountProfile: V33_ACCOUNT, decide: decideV33() });
+    const popup = openAuthorizationPopup();
+    const approved = await ask(login, { popup });
+    expect(approved.decision.installApproval.version).toBe(
+      "oaath.kernel.v33-permission-approval/v1",
+    );
+    expect(window.open).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails typed when a member's request awaits the root", async () => {
+    const { login } = await portal({ behaviour: "pending" });
+    await expect(ask(login)).rejects.toMatchObject({
+      code: "oaath_client_issuer_rejected",
+      source: "oauth_permission_pending",
+    });
+  });
+});
+
+describe("grantPermissionPackages", () => {
+  it("derives exactly the relay's packages for every fixture signer and policy", () => {
+    const cases = JSON.parse(
+      readFileSync(
+        new URL("../../../relay/fixtures/grant/kernelGrantApproval.json", import.meta.url),
+        "utf8",
+      ),
+    ) as {
+      name: string;
+      input: { request: Record<string, unknown> };
+      expect: { ok?: { packages: unknown } };
+    }[];
+    let checked = 0;
+    for (const { name, input, expect: expected } of cases) {
+      if (!expected.ok) continue;
+      const derived = grantPermissionPackages({
+        signer: input.request.operatorCredential as never,
+        policy: input.request.policy as never,
+      });
+      expect(derived.packages, name).toEqual(expected.ok.packages);
+      expect(derived.permissionId, name).toBe(
+        (expected.ok.packages as { internalData: string }[])[0]!.internalData,
+      );
+      checked += 1;
+    }
+    expect(checked).toBe(9);
   });
 });
