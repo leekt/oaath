@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { credentialKey } from "../src/kernel/key/credential.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
+import { kernelV33PermissionRevocationCalls } from "../src/kernel/permission/v33-revocation.js";
 import { prepareOwnerOperation, verifyOwnerOperation } from "../src/kernel.js";
 import { deriveKernelV4RootAccountAddress, kernelV4Deployment } from "../src/kernel-v4.js";
 import { portalRoot } from "./support/portal-roots.js";
@@ -33,6 +34,72 @@ describe("owner operations", () => {
       );
       expect(outcome, fixture.name).toEqual(fixture.expect);
     }
+  });
+
+  it("signs a Kernel 0.3.3 account's revocation on EntryPoint 0.7 and verifies it", async () => {
+    const grants = await relayFixture("grant/kernelGrantApproval.json");
+    const grant = grants.find(
+      (entry: { name: string }) => entry.name === "kernel 0.3.3 ecdsa root, webauthn signer",
+    );
+    const approval = JSON.parse(grant.expect.ok.artifact).installApproval;
+    // An enabled-nowhere permission: revocation consumes its own enable nonce.
+    const calls = kernelV33PermissionRevocationCalls({
+      approval,
+      state: {
+        currentNonce: approval.nonce,
+        validationNonce: "0",
+        hook: `0x${"00".repeat(20)}`,
+        signer: `0x${"00".repeat(20)}`,
+        permissionFlag: "0x0000",
+        policies: [],
+      },
+    });
+    expect(calls).toHaveLength(2);
+    const root = portalRoot("ecdsa");
+    const account = {
+      version: "oaath.kernel-existing-account-profile/v1",
+      kind: "kernel",
+      kernelVersion: "0.3.3",
+      address: approval.account,
+      entryPoint: { version: "0.7" },
+      ownerCredential: root.credential,
+    } as const;
+    const prepared = prepareOwnerOperation({
+      account: account as never,
+      chainId: 8453,
+      deployed: true,
+      calls,
+      nonce: { lane: "7", sequence: "0" },
+      gas: {
+        callGasLimit: "400000",
+        verificationGasLimit: "200000",
+        preVerificationGas: "60000",
+        maxFeePerGas: "2000000",
+        maxPriorityFeePerGas: "1000000",
+      },
+    });
+    expect(prepared.request.entryPoint).toBe("0x0000000071727de22e5e9d8baf0edac6f37da032");
+    const verified = await verifyOwnerOperation(await prepared.sign(root.key));
+    expect(verified.userOperation.sender).toBe(approval.account);
+    // EntryPoint 0.7's RPC shape: factory fields absent, a raw root signature.
+    expect(verified.userOperation).not.toHaveProperty("factory");
+    // An existing account deploys nothing.
+    expect(() =>
+      prepareOwnerOperation({
+        account: account as never,
+        chainId: 8453,
+        deployed: false,
+        calls,
+        nonce: { lane: "7", sequence: "0" },
+        gas: {
+          callGasLimit: "1",
+          verificationGasLimit: "1",
+          preVerificationGas: "1",
+          maxFeePerGas: "1",
+          maxPriorityFeePerGas: "1",
+        },
+      }),
+    ).toThrow(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
   });
 
   it("derives every factory-derived root account offline", async () => {

@@ -1,8 +1,10 @@
 //! One exact owner operation a factory-derived or existing (imported) Kernel
-//! 0.4.0 account's root signs, and its signed artifact (`owner-operation.ts`).
-//! An existing account is deployed, so its operation carries no factory.
+//! 0.4.0 account's root signs, or an existing Kernel 0.3.3 account's, and its
+//! signed artifact (`owner-operation.ts`). An existing account is deployed, so
+//! its operation carries no factory.
 //!
-//! The root signs the EntryPoint 0.9 UserOperation hash, which binds chain,
+//! The root signs its account's EntryPoint UserOperation hash (0.9 for Kernel
+//! 0.4.0, 0.7 for Kernel 0.3.3), which binds chain,
 //! EntryPoint, account, nonce, calls, gas, factory and paymaster. Capture
 //! proves only address-free facts, exactly as TypeScript does; the account's
 //! address (derived, or the existing profile's own), factory and EntryPoint
@@ -32,6 +34,23 @@ pub const MAX_OWNER_OPERATION_CALLS: usize = 16;
 
 /// EntryPoint 0.9, which every Kernel 0.4.0 account uses.
 const ENTRY_POINT_V09: &str = "0x433709009b8330fda32311df1c2afa402ed8d009";
+/// EntryPoint 0.7, which every Kernel 0.3.3 account uses.
+const ENTRY_POINT_V07: &str = "0x0000000071727de22e5e9d8baf0edac6f37da032";
+
+/// Whether the account is an existing Kernel 0.3.3 account (EntryPoint 0.7).
+fn is_v33(account: &KernelAccountProfile) -> bool {
+    matches!(account, KernelAccountProfile::Existing(profile)
+        if profile.kernel_version == KernelExistingAccountVersion::V0_3_3)
+}
+
+/// The account's reviewed EntryPoint.
+fn entry_point_for(account: &KernelAccountProfile) -> &'static str {
+    if is_v33(account) {
+        ENTRY_POINT_V07
+    } else {
+        ENTRY_POINT_V09
+    }
+}
 /// `KernelFactory` for EntryPoint 0.9.
 const KERNEL_V4_FACTORY: &str = "0x3d6d678742e276b6388fd06c1b8ecd19e2d64c2d";
 
@@ -246,8 +265,15 @@ fn word16(text: &str) -> [u8; 16] {
         .expect("sixteen bytes")
 }
 
-/// EntryPoint 0.9 `getUserOpHash`: EIP-712 over the packed operation.
-fn user_operation_hash(chain_id: u64, entry_point: &str, op: &OwnerUserOperation) -> B256 {
+/// `getUserOpHash` of EntryPoint 0.9 (EIP-712 over the packed operation) or,
+/// with `v07`, of EntryPoint 0.7 (the packed operation's hash with the
+/// EntryPoint and chain).
+fn user_operation_hash(
+    chain_id: u64,
+    entry_point: &str,
+    op: &OwnerUserOperation,
+    v07: bool,
+) -> B256 {
     let text_hash = |text: &str| keccak256(text.as_bytes());
     let domain = keccak256(
         (
@@ -278,6 +304,24 @@ fn user_operation_hash(chain_id: u64, entry_point: &str, op: &OwnerUserOperation
         .concat()
     });
     let pair = |high: &str, low: &str| B256::from_slice(&[word16(high), word16(low)].concat());
+    if v07 {
+        let packed = keccak256(
+            (
+                address_of(&op.sender),
+                u256(&op.nonce),
+                keccak256(&init_code),
+                keccak256(bytes_of(&op.call_data)),
+                pair(&op.verification_gas_limit, &op.call_gas_limit),
+                u256(&op.pre_verification_gas),
+                pair(&op.max_priority_fee_per_gas, &op.max_fee_per_gas),
+                keccak256(&paymaster_and_data),
+            )
+                .abi_encode_params(),
+        );
+        return keccak256(
+            (packed, address_of(entry_point), U256::from(chain_id)).abi_encode_params(),
+        );
+    }
     let struct_hash = keccak256(
         (
             text_hash(
@@ -326,13 +370,8 @@ fn capture_request(value: &Value) -> ProtocolResult<OwnerOperationRequest> {
             )?;
             false
         }
-        KernelAccountProfile::Existing(profile) => {
-            ensure(
-                profile.kernel_version == KernelExistingAccountVersion::V0_4_0,
-                CODE,
-            )?;
-            true
-        }
+        // An existing Kernel 0.4.0 or 0.3.3 account.
+        KernelAccountProfile::Existing(_) => true,
     };
     let chain_id = safe_integer(field(record, "chainId"), 1, MAX_SAFE_INTEGER_U64).or_fail(CODE)?;
     let entry_point = address(field(record, "entryPoint"), false)?;
@@ -343,7 +382,12 @@ fn capture_request(value: &Value) -> ProtocolResult<OwnerOperationRequest> {
     // Standard-mode root validation: the 192-bit key is only the uint16 lane.
     ensure(u256(&user_operation.nonce) >> 80 == U256::ZERO, CODE)?;
     ensure(user_operation.call_data == kernel_execution(&calls), CODE)?;
-    let hash = hex_hash(user_operation_hash(chain_id, &entry_point, &user_operation));
+    let hash = hex_hash(user_operation_hash(
+        chain_id,
+        &entry_point,
+        &user_operation,
+        is_v33(&account),
+    ));
     ensure(field(record, "userOperationHash") == hash.as_str(), CODE)?;
     Ok(OwnerOperationRequest {
         account,
@@ -357,7 +401,8 @@ fn capture_request(value: &Value) -> ProtocolResult<OwnerOperationRequest> {
 
 /// Composes the exact request for `calls` on `account`: `callData` is
 /// Kernel's execution of the calls (the given one is ignored) and the hash is
-/// EntryPoint 0.9's, then the whole request is captured as a received one is.
+/// the account's EntryPoint's, then the whole request is captured as a
+/// received one is.
 pub fn compose_owner_operation_request(
     account: KernelAccountProfile,
     chain_id: u64,
@@ -366,16 +411,18 @@ pub fn compose_owner_operation_request(
 ) -> ProtocolResult<OwnerOperationRequest> {
     ensure((1..=MAX_OWNER_OPERATION_CALLS).contains(&calls.len()), CODE)?;
     user_operation.call_data = kernel_execution(&calls);
+    let entry_point = entry_point_for(&account);
     let user_operation_hash = hex_hash(user_operation_hash(
         chain_id,
-        ENTRY_POINT_V09,
+        entry_point,
         &user_operation,
+        is_v33(&account),
     ));
     capture_request(
         &OwnerOperationRequest {
             account,
             chain_id,
-            entry_point: ENTRY_POINT_V09.to_owned(),
+            entry_point: entry_point.to_owned(),
             calls,
             user_operation,
             user_operation_hash,
@@ -442,7 +489,10 @@ pub fn verify_owner_operation_binding(
     request: &OwnerOperationRequest,
     owner_validator: Option<&str>,
 ) -> ProtocolResult<()> {
-    ensure(request.entry_point == ENTRY_POINT_V09, BINDING)?;
+    ensure(
+        request.entry_point == entry_point_for(&request.account),
+        BINDING,
+    )?;
     let profile = match &request.account {
         KernelAccountProfile::Existing(profile) => {
             return ensure(

@@ -122,7 +122,7 @@ function altered(signed, rootKey, change) {
 }
 
 /** One field of the operation replaced and the hash recomputed; callData stays. */
-function rehashed(signed, change) {
+function rehashed(signed, change, version = "0.9") {
   const request = clone(signed.request);
   Object.assign(request, change.request ?? {});
   Object.assign(request.userOperation, change.userOperation ?? {});
@@ -130,9 +130,21 @@ function rehashed(signed, change) {
     ownerUserOperationForCetane(request.userOperation),
     request.chainId,
     request.entryPoint,
-    "0.9",
+    version,
   );
   return { ...signed, request };
+}
+
+/** An existing Kernel 0.3.3 account (EntryPoint 0.7) with an ECDSA root, at `address`. */
+function v33Account(rootKey, address) {
+  return {
+    version: OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
+    kind: "kernel",
+    address,
+    kernelVersion: "0.3.3",
+    entryPoint: { version: "0.7" },
+    ownerCredential: rootKey.credential,
+  };
 }
 
 function flipByte(hex, index) {
@@ -325,7 +337,7 @@ for (const kind of ["ecdsa", "p256", "webauthn"]) {
   );
   await record(
     kind,
-    "existing account: a Kernel 0.3.3 profile",
+    "existing account: a Kernel 0.3.3 profile hashed for EntryPoint 0.9",
     rehashed(imported, {
       request: { account: { ...existing, kernelVersion: "0.3.3", entryPoint: { version: "0.7" } } },
     }),
@@ -372,6 +384,66 @@ await record(
   "valid, EIP-191 wallet signature",
   clone(await prepareOwnerOperation({ ...base, account: account(ecdsaRoot) }).sign(walletKey)),
   true,
+);
+
+// An existing Kernel 0.3.3 account: EntryPoint 0.7, its own address, no factory.
+const v33 = v33Account(ecdsaRoot, `0x${"c3".repeat(20)}`);
+const v33Signed = clone(
+  await prepareOwnerOperation({ ...base, deployed: true, account: v33 }).sign(ecdsaRoot.key),
+);
+await record("ecdsa", "Kernel 0.3.3 account: valid", v33Signed, true);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 account: valid, EIP-191 wallet signature",
+  clone(await prepareOwnerOperation({ ...base, deployed: true, account: v33 }).sign(walletKey)),
+  true,
+);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 account: carries a factory",
+  rehashed(
+    v33Signed,
+    { userOperation: { factory: { address: `0x${"fa".repeat(20)}`, data: "0x1234" } } },
+    "0.7",
+  ),
+  false,
+);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 account: hashed for EntryPoint 0.9",
+  rehashed(v33Signed, {}, "0.9"),
+  false,
+);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 account: EntryPoint 0.9",
+  rehashed(
+    v33Signed,
+    { request: { entryPoint: "0x433709009b8330fda32311df1c2afa402ed8d009" } },
+    "0.7",
+  ),
+  false,
+);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 account: nonce outside root validation",
+  rehashed(v33Signed, { userOperation: { nonce: String(2n << 240n) } }, "0.7"),
+  false,
+);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 account: sender is not its address",
+  rehashed(v33Signed, { userOperation: { sender: `0x${"5e".repeat(20)}` } }, "0.7"),
+  false,
+);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 account: signed by another key",
+  {
+    ...v33Signed,
+    signature: await portalRoot("ecdsa", "other").key.sign(v33Signed.request.userOperationHash),
+  },
+  false,
 );
 
 mkdirSync(OUTPUT, { recursive: true });

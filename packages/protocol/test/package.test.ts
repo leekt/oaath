@@ -82,6 +82,7 @@ describe("package boundary", () => {
       "isGrantPolicyAttenuation",
       "isKernelExistingAccountProfile",
       "operationOccupiesLane",
+      "ownerOperationEntryPointVersion",
       "ownerUserOperationForCetane",
       "parseAccountId",
       "parseCanonicalEip712TypedData",

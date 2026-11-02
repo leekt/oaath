@@ -1,6 +1,7 @@
 /**
- * One exact owner operation for a factory-derived or an existing (imported)
- * Kernel 0.4.0 account: the request its root reviews and signs offline, and
+ * One exact owner operation for a factory-derived Kernel 0.4.0 account or an
+ * existing (imported) Kernel 0.4.0 or 0.3.3 account (EntryPoint 0.9 or 0.7):
+ * the request its root reviews and signs offline, and
  * the verification a holder of the signed artifact runs before submitting it.
  * Nothing is read from a chain: the caller states the nonce, gas, fees,
  * paymaster, and whether a derived account is deployed; an existing account is
@@ -18,6 +19,7 @@ import {
   OAATH_SIGNED_OWNER_OPERATION_VERSION,
   type OwnerCredentialProfile,
   type OwnerOperationRequest,
+  ownerOperationEntryPointVersion,
   ownerUserOperationForCetane,
   parseKernelAccountProfile,
   parseOwnerOperationRequest,
@@ -37,7 +39,7 @@ import {
   kernelV4Deployment,
 } from "../../kernel-v4.js";
 import { type PreparedPaymaster, prepareUserOperation } from "../../prepared-user-operation.js";
-import { ECDSA_VALIDATOR } from "../deployment/v33.js";
+import { ECDSA_VALIDATOR, KERNEL_ENTRY_POINT_V07 } from "../deployment/v33.js";
 import { captureKeyProfile, exactInput, inputInvalid, runtimeFail } from "../internal.js";
 import { credentialKey } from "../key/credential.js";
 import { ecdsaKey, ecdsaWalletKey } from "../key/ecdsa.js";
@@ -96,6 +98,13 @@ function rootValidator(credential: Readonly<OwnerCredentialProfile>): `0x${strin
   return credential.kind === "ecdsa" ? ECDSA_VALIDATOR : null;
 }
 
+/** The account's EntryPoint: 0.7 for an existing Kernel 0.3.3 account, else 0.9. */
+function ownerEntryPoint(account: Readonly<OwnerOperationRequest["account"]>) {
+  return ownerOperationEntryPointVersion(account) === "0.7"
+    ? ({ version: "0.7", address: KERNEL_ENTRY_POINT_V07.address } as const)
+    : ({ version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 } as const);
+}
+
 /** An existing account's own address. */
 function existingAddress(account: Readonly<OwnerOperationRequest["account"]>): `0x${string}` {
   return (account as Readonly<KernelExistingAccountProfile>).address as `0x${string}`;
@@ -128,10 +137,10 @@ export function prepareOwnerOperation(
   const nonce = exactInput(input.nonce, ["lane", "sequence"], "owner operation nonce", context);
   const account = parseKernelAccountProfile(input.account);
   const existing = isKernelExistingAccountProfile(account);
-  if (existing ? account.kernelVersion !== "0.4.0" : account.factoryRoute !== "kernel_factory")
+  if (!existing && account.factoryRoute !== "kernel_factory")
     return runtimeFail(
       "kernel_runtime_unsupported",
-      "owner operations require a factory-derived or an existing Kernel 0.4.0 account",
+      "owner operations require a factory-derived or an existing Kernel account",
     );
   if (existing && !input.deployed)
     return inputInvalid("an existing account is deployed; nothing deploys it");
@@ -160,7 +169,7 @@ export function prepareOwnerOperation(
     kind: "execution",
     grantId: "owner",
     chainId: input.chainId,
-    entryPoint: { version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 },
+    entryPoint: ownerEntryPoint(account),
     userOperation: {
       sender: accountInput
         ? deriveKernelV4RootAccountAddress(accountInput)
@@ -332,7 +341,8 @@ export async function verifyOwnerOperation(
         (factory.address === KERNEL_V4_FACTORY_V09 &&
           factory.data === encodeKernelV4FactoryDeploy(accountInput)));
   }
-  if (request.entryPoint !== KERNEL_V4_ENTRY_POINT_V09 || !bound)
+  const entryPoint = ownerEntryPoint(account);
+  if (request.entryPoint !== entryPoint.address || !bound)
     return runtimeFail(
       "kernel_runtime_binding_mismatch",
       "owner operation is not bound to its derived account",
@@ -355,7 +365,7 @@ export async function verifyOwnerOperation(
     userOperation: Object.freeze(
       toRpc(
         { ...ownerUserOperationForCetane(request.userOperation), signature: signed.signature },
-        "0.9",
+        entryPoint.version,
       ),
     ),
   });
