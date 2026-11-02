@@ -22,8 +22,10 @@ describe("package boundary", () => {
       "completeOAAthLogin",
       "createOAAth",
       "loginWithOAAth",
+      "openAuthorizationPopup",
       "parseOaathCallsReview",
       "requestOwnerOperationApproval",
+      "requestPermissionApproval",
     ]);
   });
 
@@ -66,6 +68,7 @@ describe("package boundary", () => {
       "deriveOperationId",
       "diagnoseKernelCapability",
       "enrolWebAuthnCredential",
+      "grantPermissionPackages",
       "kernelAccountDeployment",
       "kernelDeployment",
       "kernelKey",

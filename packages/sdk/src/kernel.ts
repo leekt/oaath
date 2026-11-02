@@ -121,6 +121,8 @@ export {
   verifyKernelPermissionApproval,
 } from "./kernel/permission/approval.js";
 export { compileKernelPermissionPolicy } from "./kernel/permission/compile.js";
+export type { GrantPermissionPackages } from "./kernel/permission/grant-packages.js";
+export { grantPermissionPackages } from "./kernel/permission/grant-packages.js";
 export type { KernelPermissionMaterialization } from "./kernel/permission/materialize.js";
 export { OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION } from "./kernel/permission/materialize.js";
 export type {
