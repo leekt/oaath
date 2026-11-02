@@ -84,10 +84,13 @@ export interface OaathRequestPermissionInput {
   /** Seconds of Grant lifetime from now. */
   readonly expiresIn: number;
   /**
-   * Operations each chain may validate: a bare count is a lifetime cap, and
-   * `{ count, intervalSeconds }` refills `count` once per fixed window.
+   * Operations each chain may validate: a bare count is a lifetime cap,
+   * `{ count, intervalSeconds }` refills `count` once per fixed window, and
+   * null sets no limit. A permission with an empty `calls` list requests a
+   * sudo Grant: any call, no limit, and `expiresIn` of at most 600 seconds.
    */
   readonly perChainOperationLimit:
+    | null
     | number
     | Readonly<{
         count: number;
@@ -137,6 +140,7 @@ function operationLimitFromInput(
   value: unknown,
   context: CaptureContext,
 ): GrantPolicy["perChainOperationLimit"] {
+  if (value === null) return null;
   if (typeof value === "number") {
     return Object.freeze({
       count: safeCount(value, "perChainOperationLimit", MAX_OPERATION_COUNT),
@@ -206,6 +210,10 @@ function policyFromInput(
       );
       if (typeof call.target !== "string" || typeof call.valueLimit !== "string") {
         return clientFail("oaath_client_input_invalid", "permission call fields are invalid");
+      }
+      // An empty selector list would expand to no calls, which reads as sudo.
+      if (selectors.length === 0) {
+        return clientFail("oaath_client_input_invalid", "permission call selectors are empty");
       }
       for (const selector of selectors) {
         if (typeof selector !== "string") {

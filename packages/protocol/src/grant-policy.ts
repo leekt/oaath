@@ -24,6 +24,19 @@ const MAX_UINT48 = 2 ** 48 - 1;
 const MAX_ARGUMENT_INDEX = Math.floor(Number.MAX_SAFE_INTEGER / 32);
 const MAX_GRANT_ID_LENGTH = 256;
 
+/**
+ * A sudo Grant policy (`calls: []`) permits any call the account can make. It
+ * must expire: `validUntil` is non-null and the inclusive window
+ * `[validAfter, validUntil]` spans at most this many seconds
+ * (`validUntil - validAfter + 1 <= 600`), and it carries no operation limit.
+ */
+export const OAATH_SUDO_GRANT_MAX_SECONDS = 600;
+
+/** Whether a captured policy is sudo: no call list, so every call is permitted. */
+export function isSudoGrantPolicy(policy: Readonly<GrantPolicy>): boolean {
+  return policy.calls.length === 0;
+}
+
 export type GrantPolicyErrorCode =
   | "grant_policy_invalid"
   | "grant_policy_attenuation_input_invalid"
@@ -332,7 +345,6 @@ function capturePolicy(
     return invalid(code, "grant policy version is unsupported");
   }
   const callInputs = captureDenseArray(record.calls, "grant policy calls", context, failFor(code));
-  if (callInputs.length === 0) return invalid(code, "grant policy calls must not be empty");
   const calls = callInputs.map((entry, index) => parseCall(entry, code, context, index));
   for (let index = 1; index < calls.length; index += 1) {
     const previous = calls[index - 1];
@@ -348,6 +360,17 @@ function capturePolicy(
       : safeInteger(record.validUntil, "grant policy validUntil", code, 1, MAX_UINT48);
   if (validUntil !== null && validAfter > validUntil) {
     return invalid(code, "grant policy time window is inverted");
+  }
+  if (
+    calls.length === 0 &&
+    (validUntil === null ||
+      validUntil - validAfter >= OAATH_SUDO_GRANT_MAX_SECONDS ||
+      record.perChainOperationLimit !== null)
+  ) {
+    return invalid(
+      code,
+      "a sudo grant policy must expire within 600 seconds and carry no operation limit",
+    );
   }
   return Object.freeze({
     version: OAATH_GRANT_POLICY_VERSION,
@@ -582,6 +605,10 @@ export function isGrantPolicyAttenuation(requested: unknown, approved: unknown):
     ) {
       return false;
     }
+    // A sudo approval permits every call, so only a sudo request covers it; a
+    // sudo request is covered by any call list.
+    if (isSudoGrantPolicy(approvedPolicy)) return isSudoGrantPolicy(requestedPolicy);
+    if (isSudoGrantPolicy(requestedPolicy)) return true;
     const requestedCalls = new Map(
       requestedPolicy.calls.map((call) => [callKey(call), call] as const),
     );
@@ -773,8 +800,10 @@ export function evaluateGrantPolicyCoverage(value: unknown): GrantPolicyCoverage
     const permittedCalls = new Map(
       input.policy.calls.map((call) => [callKey(call), call] as const),
     );
-    for (let index = 0; index < input.calls.length; index += 1) {
-      const candidate = input.calls[index];
+    // A sudo policy permits every call: there is no call list to match.
+    const matched = isSudoGrantPolicy(input.policy) ? [] : input.calls;
+    for (let index = 0; index < matched.length; index += 1) {
+      const candidate = matched[index];
       if (!candidate) return invalid("grant_policy_coverage_input_invalid", "call is missing");
       const candidateSelector = candidate.data.slice(0, 10);
       const permitted = permittedCalls.get(`${candidate.target}:${candidateSelector}`);

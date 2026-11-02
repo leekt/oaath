@@ -21,7 +21,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { CaptureContext } from "@oaath/protocol";
+import { type CaptureContext, OAATH_SUDO_GRANT_MAX_SECONDS } from "@oaath/protocol";
 import { concatHex, decodeAbiParameters, encodeAbiParameters, toHex } from "cetane/utils";
 import type { KernelCall } from "../../kernel-v4.js";
 import {
@@ -267,30 +267,41 @@ export function compileCapturedKernelPermissionPolicy(
     return inputInvalid("Kernel policy profile kind is unsupported");
   }
 
-  // Without permitted calls there is no scope to enforce: CallPolicy would reject
-  // every operation, so an installation like that is never expressible.
-  if (!permissions) {
-    return inputInvalid("Kernel policy profiles must bound the calls a session may make");
+  // Without a call profile the session may make any call (a sudo Grant), so its
+  // only policy must be one validity window of at most
+  // OAATH_SUDO_GRANT_MAX_SECONDS inclusive seconds.
+  if (
+    !permissions &&
+    (entries.length !== 1 ||
+      validUntil === null ||
+      BigInt(validUntil) - BigInt(validAfter ?? "0") >= BigInt(OAATH_SUDO_GRANT_MAX_SECONDS))
+  ) {
+    return inputInvalid(
+      "Kernel policy profiles must bound the calls a session may make or expire within 600 seconds",
+    );
   }
 
   // Packages are emitted in one fixed order, independent of the order the
   // profiles arrived in, so one scope always compiles to one permission ID and
   // one signature slice layout. Each permission's value limit is part of the
   // encoded payload, so changing any single limit changes the permission ID.
-  const packages: Readonly<CompiledKernelPolicyPackage>[] = [
-    Object.freeze({
-      module: resolvePolicyModule("call"),
-      policyData: encodeAbiParameters(PERMISSION_PARAMETERS, [
-        permissions.map((permission) => ({
-          callType: CALLTYPE_SINGLE,
-          target: permission.target,
-          selector: permission.selector,
-          valueLimit: BigInt(permission.valueLimit),
-          rules: [],
-        })),
-      ]),
-    }),
-  ];
+  const packages: Readonly<CompiledKernelPolicyPackage>[] = [];
+  if (permissions) {
+    packages.push(
+      Object.freeze({
+        module: resolvePolicyModule("call"),
+        policyData: encodeAbiParameters(PERMISSION_PARAMETERS, [
+          permissions.map((permission) => ({
+            callType: CALLTYPE_SINGLE,
+            target: permission.target,
+            selector: permission.selector,
+            valueLimit: BigInt(permission.valueLimit),
+            rules: [],
+          })),
+        ]),
+      }),
+    );
+  }
   if (validUntil !== null) {
     packages.push(
       Object.freeze({

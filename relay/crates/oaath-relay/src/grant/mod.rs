@@ -9,7 +9,7 @@
 //!
 //! ```text
 //! packages      the SDK session permission: one type-5 package per policy
-//!               (call, expiry, operation- or rate-limit), then the type-6
+//!               (call unless sudo, expiry, operation- or rate-limit), then the type-6
 //!               pinned signer for the dapp's operator credential
 //! install nonce (requestHash >> 64) << 64
 //! digest        EIP-712 InstallPackages under the account's chainless domain
@@ -88,11 +88,10 @@ fn be(value: u64, size: usize) -> Vec<u8> {
 /// packages a session installs, in install order. A constraint with no
 /// reviewed Kernel profile is refused rather than silently enforcing less.
 fn policy_packages(policy: &GrantPolicy) -> RelayResult<Vec<(&'static str, Vec<u8>)>> {
-    if policy.calls.is_empty()
-        || policy
-            .calls
-            .iter()
-            .any(|call| !call.argument_equals.is_empty())
+    if policy
+        .calls
+        .iter()
+        .any(|call| !call.argument_equals.is_empty())
     {
         return Err(UNSUPPORTED);
     }
@@ -107,7 +106,12 @@ fn policy_packages(policy: &GrantPolicy) -> RelayResult<Vec<(&'static str, Vec<u
             rules: Vec::new(),
         })
         .collect();
-    let mut packages = vec![(CALL_POLICY, (permissions,).abi_encode_params())];
+    // A sudo policy (no calls) installs no call policy: only its validity window,
+    // which the protocol capture guarantees is present.
+    let mut packages = Vec::new();
+    if !policy.is_sudo() {
+        packages.push((CALL_POLICY, (permissions,).abi_encode_params()));
+    }
     // No expiry installs no validity policy; no limit installs no limit policy.
     if let Some(valid_until) = policy.valid_until {
         if valid_until <= policy.valid_after {

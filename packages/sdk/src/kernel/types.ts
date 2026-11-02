@@ -197,8 +197,11 @@ export interface CompiledKernelPolicyPackage {
  */
 export interface CompiledKernelPermissionPolicy {
   readonly packages: readonly Readonly<CompiledKernelPolicyPackage>[];
-  /** The exact per-call permissions CallPolicy installs, in compile order. */
-  readonly permissions: readonly Readonly<KernelCallPolicyPermission>[];
+  /**
+   * The exact per-call permissions CallPolicy installs, in compile order, or
+   * null for a sudo scope that installs no CallPolicy and permits every call.
+   */
+  readonly permissions: readonly Readonly<KernelCallPolicyPermission>[] | null;
   /** Canonical decimal uint48 seconds, or null when no window was requested. */
   readonly validAfter: string | null;
   readonly validUntil: string | null;

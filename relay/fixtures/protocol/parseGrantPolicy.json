@@ -459,6 +459,71 @@
     }
   },
   {
+    "name": "sudo",
+    "fn": "parseGrantPolicy",
+    "input": {
+      "version": "oaath.grant-policy/v1",
+      "calls": [],
+      "validAfter": 100,
+      "validUntil": 699,
+      "perChainOperationLimit": null
+    },
+    "expect": {
+      "ok": {
+        "version": "oaath.grant-policy/v1",
+        "calls": [],
+        "validAfter": 100,
+        "validUntil": 699,
+        "perChainOperationLimit": null
+      }
+    }
+  },
+  {
+    "name": "sudo without expiry",
+    "fn": "parseGrantPolicy",
+    "input": {
+      "version": "oaath.grant-policy/v1",
+      "calls": [],
+      "validAfter": 100,
+      "validUntil": null,
+      "perChainOperationLimit": null
+    },
+    "expect": {
+      "error": "grant_policy_invalid"
+    }
+  },
+  {
+    "name": "sudo for 601 seconds",
+    "fn": "parseGrantPolicy",
+    "input": {
+      "version": "oaath.grant-policy/v1",
+      "calls": [],
+      "validAfter": 100,
+      "validUntil": 700,
+      "perChainOperationLimit": null
+    },
+    "expect": {
+      "error": "grant_policy_invalid"
+    }
+  },
+  {
+    "name": "sudo with an operation limit",
+    "fn": "parseGrantPolicy",
+    "input": {
+      "version": "oaath.grant-policy/v1",
+      "calls": [],
+      "validAfter": 100,
+      "validUntil": 699,
+      "perChainOperationLimit": {
+        "count": 1,
+        "intervalSeconds": null
+      }
+    },
+    "expect": {
+      "error": "grant_policy_invalid"
+    }
+  },
+  {
     "name": "version v0",
     "fn": "parseGrantPolicy",
     "input": {

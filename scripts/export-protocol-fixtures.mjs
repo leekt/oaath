@@ -588,6 +588,15 @@ for (const fn of ["parseGrantPolicy", "hashGrantPolicy"]) {
   );
   record(fn, "validAfter equals validUntil", { ...POLICY, validAfter: 190 });
   record(fn, "validAfter written 1.0e2", { ...POLICY, validAfter: raw("1.0e2") });
+  // A sudo policy: no call list, at most 600 inclusive seconds, no limit.
+  const sudo = { ...POLICY, calls: [], validUntil: 699, perChainOperationLimit: null };
+  record(fn, "sudo", sudo);
+  record(fn, "sudo without expiry", { ...sudo, validUntil: null });
+  record(fn, "sudo for 601 seconds", { ...sudo, validUntil: 700 });
+  record(fn, "sudo with an operation limit", {
+    ...sudo,
+    perChainOperationLimit: { count: 1, intervalSeconds: null },
+  });
 }
 {
   const fn = "parseGrantPolicy";
@@ -738,6 +747,11 @@ for (const fn of ["parseGrantPolicy", "hashGrantPolicy"]) {
   record(fn, "earlier validUntil", pair({ ...POLICY, validUntil: 150 }));
   record(fn, "later validUntil", pair({ ...POLICY, validUntil: 191 }));
   record(fn, "indefinite approval of finite request", pair({ ...POLICY, validUntil: null }));
+  const sudo = { ...POLICY, calls: [], validUntil: 699, perChainOperationLimit: null };
+  const unlimited = { ...POLICY, validUntil: 699, perChainOperationLimit: null };
+  record(fn, "sudo approval of sudo request", pair(sudo, sudo));
+  record(fn, "call-list approval of sudo request", pair(unlimited, sudo));
+  record(fn, "sudo approval of call-list request", pair(sudo, unlimited));
   record(
     fn,
     "finite approval of indefinite request",

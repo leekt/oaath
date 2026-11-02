@@ -91,10 +91,12 @@ export {
   hashGrantPolicy,
   hashGrantPolicyCalls,
   isGrantPolicyAttenuation,
+  isSudoGrantPolicy,
   OAATH_GRANT_POLICY_CALLS_HASH_DOMAIN,
   OAATH_GRANT_POLICY_HASH_DOMAIN,
   OAATH_GRANT_POLICY_USAGE_VERSION,
   OAATH_GRANT_POLICY_VERSION,
+  OAATH_SUDO_GRANT_MAX_SECONDS,
   OaathGrantPolicyError,
   parseGrantPolicy,
 } from "./grant-policy.js";

@@ -5,7 +5,12 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import type { GrantPolicy, OperatorCredentialProfile, PermissionRequest } from "@oaath/protocol";
+import {
+  type GrantPolicy,
+  isSudoGrantPolicy,
+  type OperatorCredentialProfile,
+  type PermissionRequest,
+} from "@oaath/protocol";
 import { useEffect, useRef, useState } from "react";
 import {
   type GrantDetail,
@@ -73,6 +78,11 @@ function limit(policy: GrantPolicy): string | null {
     : `Up to ${times} per chain every ${duration(intervalSeconds)}`;
 }
 
+/** A sudo policy always expires; its inclusive window, rounded up to whole minutes. */
+function sudoMinutes(policy: GrantPolicy): number {
+  return Math.ceil(((policy.validUntil ?? policy.validAfter) - policy.validAfter + 1) / 60);
+}
+
 function signerText(credential: OperatorCredentialProfile): string {
   return credential.kind === "ecdsa"
     ? `Ethereum key ${credential.address}`
@@ -123,6 +133,12 @@ export function GrantTerms({
       <dd className="mono">{signerText(credential)}</dd>
       <dt>Allowed calls</dt>
       <dd>
+        {isSudoGrantPolicy(policy) && (
+          <span className="warning">
+            Full control of this account for {sudoMinutes(policy)} minutes: this app can make any
+            transaction, including changing the account's owner.
+          </span>
+        )}
         <ul className="calls">
           {policy.calls.map((call) => (
             <li key={`${call.target}:${call.selector}`}>

@@ -159,6 +159,12 @@ async fn the_root_creates_edits_lists_and_deletes_templates_and_nothing_else_doe
     let mut unlimited = template_body("x", "1");
     unlimited["policy"]["perChainOperationLimit"] = json!(null);
     refused.push(unlimited);
+    // A template is never sudo, even in a sudo-shaped 60-second window.
+    let mut sudo = template_body("x", "1");
+    sudo["policy"]["calls"] = json!([]);
+    sudo["policy"]["perChainOperationLimit"] = json!(null);
+    sudo["lifetime_seconds"] = json!(60);
+    refused.push(sudo);
     for lifetime in [json!(0), json!(59), json!((1u64 << 42) + 1), json!("86400")] {
         let mut body = template_body("x", "1");
         body["lifetime_seconds"] = lifetime;
