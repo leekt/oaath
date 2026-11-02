@@ -246,7 +246,7 @@ describe.skipIf(!postgresAvailable)("HTTP API", () => {
       ["occurrence:0", "occurrence", 0, "due"],
     ] as const)
       await service.context.pool.query(
-        "INSERT INTO automation_runs(plan_id,run_key,kind,slot,lane,scheduled_at,status) VALUES($1,$2,$3,$4,0,1,$5)",
+        "INSERT INTO automation_runs(chain_id,plan_id,run_key,kind,slot,lane,scheduled_at,status) VALUES(31337,$1,$2,$3,$4,0,1,$5)",
         [plan.id, key, kind, slot, status],
       );
     const runs = (await call("GET", `/v1/plans/${plan.id}/runs`, alice)).json.runs;

@@ -6,8 +6,8 @@
  * The Operation journal is also where a run's operation becomes durable. The
  * SDK journals every new UserOperation identity in state `prepared` before it
  * signs or submits it; in that same transaction this adapter copies the hash
- * and nonce onto the plan's one `prepared` run on that lane (the journal key's
- * lane equals the run's stored lane). A new identity no prepared run on its
+ * and nonce onto the plan's one `prepared` run on that chain and lane (the
+ * journal key's chain and lane equal the run's stored ones). A new identity no prepared run on its
  * lane claims is refused, so nothing can be sent that a run does not record,
  * and no run can take another lane's operation.
  *
@@ -89,9 +89,16 @@ async function claimIdentity(
   const claimed = await client.query(
     `UPDATE automation_runs r SET op_hash=$2, op_nonce=$3
      FROM automation_plans p
-     WHERE p.id=r.plan_id AND p.grant_id=$1 AND r.lane=$5 AND r.status='prepared'
+     WHERE p.id=r.plan_id AND p.grant_id=$1 AND r.chain_id=$6 AND r.lane=$5 AND r.status='prepared'
        AND (r.op_hash IS NULL OR r.op_hash=$4)`,
-    [key.grantId, next.identity.userOperationHash, next.identity.nonce, replaceable, laneOf(key)],
+    [
+      key.grantId,
+      next.identity.userOperationHash,
+      next.identity.nonce,
+      replaceable,
+      laneOf(key),
+      key.chainId,
+    ],
   );
   return claimed.rowCount === 1;
 }

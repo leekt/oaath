@@ -111,8 +111,8 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
       [START + 3600 + 99],
     );
     await context.pool.query(
-      `INSERT INTO automation_runs(plan_id,run_key,kind,lane,scheduled_at,status)
-       VALUES($1,'setup','setup',0,$2,'finalized')`,
+      `INSERT INTO automation_runs(chain_id,plan_id,run_key,kind,lane,scheduled_at,status)
+       VALUES(31337,$1,'setup','setup',0,$2,'finalized')`,
       [PLAN, START - 50],
     );
     await tick(context);
@@ -145,8 +145,8 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
     const context = await testContext(await cluster.database(), clock);
     await insertPlan(context, "active");
     await context.pool.query(
-      `INSERT INTO automation_runs(plan_id,run_key,kind,lane,scheduled_at,status)
-       VALUES($1,'setup','setup',0,$2,'finalized')`,
+      `INSERT INTO automation_runs(chain_id,plan_id,run_key,kind,lane,scheduled_at,status)
+       VALUES(31337,$1,'setup','setup',0,$2,'finalized')`,
       [PLAN, START - 50],
     );
     await tick(context);
@@ -167,8 +167,8 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
     });
     await insertPlan(context, "active", true, 4);
     await context.pool.query(
-      `INSERT INTO automation_runs(plan_id,run_key,kind,lane,scheduled_at,status)
-       VALUES($1,'setup','setup',0,$2,'finalized')`,
+      `INSERT INTO automation_runs(chain_id,plan_id,run_key,kind,lane,scheduled_at,status)
+       VALUES(31337,$1,'setup','setup',0,$2,'finalized')`,
       [PLAN, START - 50],
     );
     await tick(context);
@@ -225,8 +225,8 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
     const b = await testContext(url, clock, "replica-b");
     await insertPlan(a, "active");
     await a.pool.query(
-      `INSERT INTO automation_runs(plan_id,run_key,kind,lane,scheduled_at,status)
-       VALUES($1,'setup','setup',0,$2,'finalized')`,
+      `INSERT INTO automation_runs(chain_id,plan_id,run_key,kind,lane,scheduled_at,status)
+       VALUES(31337,$1,'setup','setup',0,$2,'finalized')`,
       [PLAN, START - 50],
     );
     await Promise.all([tick(a), tick(b), tick(a), tick(b)]);
@@ -245,8 +245,8 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
     await insertPlan(context, "active");
     const insert = (key: string, status: string) =>
       context.pool.query(
-        `INSERT INTO automation_runs(plan_id,run_key,kind,slot,lane,scheduled_at,status)
-         VALUES($1,$2,'occurrence',0,0,$3,$4)`,
+        `INSERT INTO automation_runs(chain_id,plan_id,run_key,kind,slot,lane,scheduled_at,status)
+         VALUES(31337,$1,$2,'occurrence',0,0,$3,$4)`,
         [PLAN, key, START, status],
       );
     await insert("setup-like", "observed");
@@ -301,8 +301,8 @@ describe.skipIf(!postgresAvailable)("scheduler", () => {
     const context = await testContext(await cluster.database(), clock);
     await insertPlan(context, "cancelling");
     await context.pool.query(
-      `INSERT INTO automation_runs(plan_id,run_key,kind,lane,scheduled_at,status,op_hash)
-       VALUES($1,'setup','setup',0,$2,'finalized',$3)`,
+      `INSERT INTO automation_runs(chain_id,plan_id,run_key,kind,lane,scheduled_at,status,op_hash)
+       VALUES(31337,$1,'setup','setup',0,$2,'finalized',$3)`,
       [PLAN, START, `0x${"cd".repeat(32)}`],
     );
     await tick(context);

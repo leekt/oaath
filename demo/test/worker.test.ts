@@ -1,4 +1,9 @@
-import { createPlanTerms, derivePlanPolicy, parseAutomation } from "@oaath/automation";
+import {
+  createPlanTerms,
+  derivePlanPolicy,
+  parseAutomation,
+  type ScheduledAutomationDefinition,
+} from "@oaath/automation";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { concatHex, encodeAbiParameters, encodeFunctionData, toHex } from "viem";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -456,7 +461,7 @@ describe("demo automation session", () => {
     environment({ AUTOMATION_URL: SERVICE, AUTOMATION_APP_TOKEN: APP_TOKEN });
 
   it("schedules a definition that calls only the demo target", () => {
-    const definition = parseAutomation(pingDefinition);
+    const definition = parseAutomation(pingDefinition) as ScheduledAutomationDefinition;
     expect(definition.id).toBe(DEMO_AUTOMATION);
     expect(Object.values(definition.contracts).map((contract) => contract.address)).toEqual([
       DEMO_TARGET,

@@ -137,7 +137,10 @@ export function configFromEnv(
     throw new ConfigError("AUTOMATION_DEFINITIONS");
 
   const chains = new Map<number, ChainEndpoints>();
-  for (const chainId of new Set(definitions.map((definition) => definition.chainId))) {
+  const named = definitions.flatMap((definition) =>
+    definition.kind === "on-demand" ? definition.chains : [definition.chainId],
+  );
+  for (const chainId of new Set(named)) {
     const paymaster = env[`AUTOMATION_PAYMASTER_URL_${chainId}`];
     const apiKey = env[`AUTOMATION_PAYMASTER_API_KEY_${chainId}`]?.trim() || null;
     const paymasterUrl =

@@ -60,8 +60,8 @@ run   due -> claimed -> prepared -> submitted -> observed -> finalized
 - Each run has one Kernel nonce lane, assigned once at admission: setup and
   cancel use the default lane; occurrence slot N uses lane N + 1 when the plan
   has a setup (still observed on lane 0 until final), else lane N. One open run
-  per plan and lane (a unique index), so one unresolved operation per Grant,
-  chain and lane.
+  per plan, chain and lane (a unique index), so one unresolved operation per
+  Grant, chain and lane.
 - A slot does not wait for an earlier operation's finality: once one of the
   plan's operations is included (the permission install is on chain), up to
   `AUTOMATION_MAX_OPEN_SLOTS` occurrences run side by side. Before that, slots
@@ -76,6 +76,64 @@ run   due -> claimed -> prepared -> submitted -> observed -> finalized
   receipt, drop or unreadable observation never resubmits.
 - Session keys are generated per user (default) or per application
   (`POST /v1/application {"keyScope":"application"}`) and sealed at rest.
+
+### On-demand plans
+
+An [on-demand definition](../automation#on-demand-automations) lets the
+application's backend submit exact calls under one Grant that covers every
+chain the definition lists, without a person signing each operation. Create the
+plan with `{ "automation": "<id>", "validFor": <seconds>, "idempotencyKey": "…" }`;
+it becomes `active` as soon as the root approves it (there is no setup).
+
+```text
+plan  draft -> awaiting_consent -> authorized -> active <-> paused
+      active|paused -> expired at the Grant end once no run is open (never completed)
+      cancel: stops admission -> cancelled once no run is open (no cancel calls)
+```
+
+`POST /v1/plans/{id}/operations` (user session) with
+`{ "chainId": 8453, "calls": [{ "to": "0x…", "data": "0x…", "value": "0" }], "idempotencyKey": "…" }`
+admits one operation in one transaction holding the plan row. It is refused
+unless the plan is `active` and before its Grant end (`plan_not_active`,
+`plan_expired`, 409), the chain is one of the plan's (`chain_not_in_plan`, 422),
+and every call fits the approved policy: its `to` and selector (the first 4
+bytes of `data`; empty data is `0x00000000`, 1 to 3 bytes are refused) are an
+allowed call and `value` is within that call's limit (`call_not_permitted`,
+`value_limit_exceeded`, 422). The calls are persisted on a new `request` run
+and the executor sends exactly them. The response is `201` (or `200` for a
+replay):
+
+```json
+{ "run": { "id": "request:<sha256(idempotencyKey)>", "kind": "request", "slot": null,
+  "chainId": 8453, "lane": 0, "status": "due", "scheduledAt": 1900000000,
+  "closesAt": 1900604800, "operation": null, "nonce": null,
+  "transactionHash": null, "reason": null } }
+```
+
+The same `idempotencyKey` with the same body returns the same run; a different
+body is `409 idempotency_conflict`. `GET /v1/plans/{id}/runs/{runId}` (URL-encode
+the id) returns the same `{ run }`; `GET /v1/plans/{id}/runs` lists runs in that
+shape. Journal the run's `operation` (UserOperation hash) and `transactionHash`
+from there; a lost reply is recovered by replaying the same key, never by a new
+one.
+
+Lanes are per chain: until one of the plan's operations is included on a chain,
+requests there run one at a time on lane 0, whose first operation installs the
+permission in enable mode; afterwards each takes the lowest free lane in
+`1..AUTOMATION_MAX_OPEN_SLOTS`. When none is free the request is refused with
+`429 lanes_busy` and nothing is queued; retry later with the same key.
+
+The Grant bounds targets, selectors, native value, the per-chain operation
+count and expiry. It does not bound arguments: for a deployer target, it does
+not bound which initcode is deployed. Whoever holds a user session for the
+account can deploy anything through the allowed calls until the plan ends or
+is cancelled, and the root revokes the permission on chain in the portal.
+
+A Kernel 0.3.3 approval covers every listed chain only when the account's
+enable nonce for this permission is the same on each (the portal reads it on one
+chain). Where an account's chains differ, align them first with
+`kernelPermissionNonceAlignmentCalls` from `@oaath/sdk/kernel` as one owner
+operation per lower chain; otherwise the install fails on that chain.
 
 Authorization pushes an `oaath_grant` request (PKCE, the session key as the
 Grant's signer, the policy derived from the plan) to the issuer. The account

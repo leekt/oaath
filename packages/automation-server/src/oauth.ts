@@ -21,7 +21,7 @@
  * @author taek <leekt216@gmail.com>
  */
 import { createHash, randomBytes } from "node:crypto";
-import { derivePlanPolicy } from "@oaath/automation";
+import { derivePlanPolicy, planChains, planEnd } from "@oaath/automation";
 import {
   advanceGrant,
   applyPermissionDecision,
@@ -105,7 +105,7 @@ export async function startAuthorization(
   const policy = derivePlanPolicy(plan.definition, plan.terms, context.now());
   const expected = {
     policy,
-    expiresAt: plan.terms.schedule.endAt,
+    expiresAt: planEnd(plan.terms),
     deviceId: signer.deviceId,
     signer: signer.address,
   };
@@ -116,7 +116,7 @@ export async function startAuthorization(
     type: "oaath_grant",
     signer: operatorCredential(signer.address),
     policy,
-    chains: [plan.terms.chainId],
+    chains: planChains(plan.terms),
     expires_at: expected.expiresAt,
     device_id: signer.deviceId,
   };

@@ -1,7 +1,10 @@
 /**
  * The one owner of the automation definition schema.
  *
- * An automation is declarative data: the contracts it calls, a bounded
+ * An automation is declarative data, of one of two kinds. An on-demand
+ * automation is only a call list (target, selector, value ceiling), chains and
+ * limits: the application submits exact calls later, each checked against the
+ * approved list. A scheduled automation declares the contracts it calls, a bounded
  * schedule, typed user parameters, and the calls themselves with a minimal
  * reference language. There is no scripting: an argument is a literal or one
  * `$` reference, nothing else.
@@ -78,7 +81,8 @@ export interface AutomationSchedule {
   readonly grace?: number | string;
 }
 
-export interface AutomationDefinitionInput {
+export interface ScheduledAutomationDefinitionInput {
+  readonly kind?: "scheduled";
   readonly id: string;
   readonly name: string;
   readonly chainId: number;
@@ -107,9 +111,10 @@ export interface NormalizedAutomationCall {
   readonly value: string;
 }
 
-/** A validated, frozen definition. Durations are normalized to seconds. */
-export interface AutomationDefinition {
+/** A validated, frozen scheduled definition. Durations are normalized to seconds. */
+export interface ScheduledAutomationDefinition {
   readonly version: typeof AUTOMATION_DEFINITION_VERSION;
+  readonly kind: "scheduled";
   readonly id: string;
   readonly name: string;
   readonly chainId: number;
@@ -126,6 +131,61 @@ export interface AutomationDefinition {
   readonly limits: Readonly<{ valuePerCall: string }>;
 }
 
+/** One call an on-demand automation allows: a target, a selector and a value ceiling. */
+export interface OnDemandCall {
+  readonly target: Address;
+  /** 4-byte selector; `0x00000000` is a call with empty calldata (a plain transfer). */
+  readonly selector: Hex;
+  /** Canonical decimal native value ceiling per call. Defaults to "0". */
+  readonly valueLimit?: string;
+}
+
+export interface OnDemandLimits {
+  /**
+   * Operations per chain: `count` per window of `intervalSeconds` (86400 for a
+   * daily limit, enforced by the Kernel rate-limit policy), or a lifetime cap
+   * when `intervalSeconds` is null.
+   */
+  readonly operationsPerChain: Readonly<{ count: number; intervalSeconds: number | null }>;
+  /** Longest validity a plan may request: seconds, or `<n>s|m|h|d`. */
+  readonly maxValidFor: number | string;
+}
+
+/**
+ * An automation with no schedule: the application submits exact calls on
+ * demand, each one checked against the approved call list before it is sent.
+ */
+export interface OnDemandAutomationDefinitionInput {
+  readonly version?: typeof AUTOMATION_DEFINITION_VERSION;
+  readonly kind: "on-demand";
+  readonly id: string;
+  readonly name: string;
+  readonly chains: readonly number[];
+  readonly calls: readonly OnDemandCall[];
+  readonly limits: OnDemandLimits;
+}
+
+export interface OnDemandAutomationDefinition {
+  readonly version: typeof AUTOMATION_DEFINITION_VERSION;
+  readonly kind: "on-demand";
+  readonly id: string;
+  readonly name: string;
+  /** Ascending, unique. */
+  readonly chains: readonly number[];
+  /** Unique, sorted by `target:selector`, lowercase. */
+  readonly calls: readonly Readonly<Required<OnDemandCall>>[];
+  readonly limits: Readonly<{
+    operationsPerChain: Readonly<{ count: number; intervalSeconds: number | null }>;
+    maxValidFor: number;
+  }>;
+}
+
+export type AutomationDefinitionInput =
+  | ScheduledAutomationDefinitionInput
+  | OnDemandAutomationDefinitionInput;
+/** One validated definition; `kind` tells a scheduled automation from an on-demand one. */
+export type AutomationDefinition = ScheduledAutomationDefinition | OnDemandAutomationDefinition;
+
 const ID = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/u;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
@@ -134,6 +194,9 @@ const DURATION = /^([1-9][0-9]{0,8})([smhd])$/u;
 const UNIT = { s: 1, m: 60, h: 3600, d: 86400 } as const;
 const MAX_OCCURRENCES = 1000;
 const MAX_CALLS = 8;
+const MAX_ON_DEMAND_CALLS = 32;
+const MAX_CHAINS = 32;
+const MAX_UINT48 = 2 ** 48 - 1;
 const MAX_UINT256 = (1n << 256n) - 1n;
 /** Ten years: every schedule must end inside a representable Kernel window. */
 const MAX_SPAN_SECONDS = 10 * 365 * 86400;
@@ -231,7 +294,7 @@ const PLAN_REFERENCES: Readonly<Record<string, "bytes32" | "address" | "uint">> 
 /** What a reference produces: a fixed kind, or a parameter's declared type. */
 function referenceKind(
   reference: string,
-  definition: Pick<AutomationDefinition, "contracts" | "params">,
+  definition: Pick<ScheduledAutomationDefinition, "contracts" | "params">,
   inSlot: boolean,
 ): "bytes32" | "address" | "uint" | "bool" | AutomationValueType {
   if (reference.startsWith("$slot.") && !inSlot)
@@ -254,7 +317,7 @@ function referenceKind(
 function argumentFits(
   argument: AutomationArgument,
   type: AutomationValueType,
-  definition: Pick<AutomationDefinition, "contracts" | "params">,
+  definition: Pick<ScheduledAutomationDefinition, "contracts" | "params">,
   inSlot: boolean,
   label: string,
 ): void {
@@ -286,7 +349,7 @@ function argumentFits(
 
 function call(
   value: unknown,
-  definition: Pick<AutomationDefinition, "contracts" | "params">,
+  definition: Pick<ScheduledAutomationDefinition, "contracts" | "params">,
   valueLimit: bigint,
   inSlot: boolean,
   label: string,
@@ -324,7 +387,7 @@ function call(
 
 function calls(
   value: unknown,
-  definition: Pick<AutomationDefinition, "contracts" | "params">,
+  definition: Pick<ScheduledAutomationDefinition, "contracts" | "params">,
   valueLimit: bigint,
   label: string,
 ): readonly NormalizedAutomationCall[] {
@@ -336,25 +399,102 @@ function calls(
   );
 }
 
+function identity(record: Record<string, unknown>): void {
+  if (record.version !== undefined && record.version !== AUTOMATION_DEFINITION_VERSION)
+    fail("automation version is unsupported");
+  if (typeof record.id !== "string" || !ID.test(record.id)) fail("automation id is invalid");
+  if (typeof record.name !== "string" || record.name.length < 1 || record.name.length > 80)
+    fail("automation name must be 1 to 80 characters");
+}
+
+function positive(value: unknown, maximum: number, label: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > maximum)
+    fail(`${label} must be an integer from 1 to ${maximum}`);
+  return value as number;
+}
+
+function defineOnDemand(record: Record<string, unknown>): OnDemandAutomationDefinition {
+  exactKeys(record, ["kind", "id", "name", "chains", "calls", "limits"], ["version"], "automation");
+  identity(record);
+  const chainList = record.chains;
+  if (!Array.isArray(chainList) || chainList.length < 1 || chainList.length > MAX_CHAINS)
+    fail(`chains must name 1 to ${MAX_CHAINS} chains`);
+  const chains = (chainList as unknown[]).map((chain) =>
+    positive(chain, Number.MAX_SAFE_INTEGER, "chain id"),
+  );
+  if (new Set(chains).size !== chains.length) fail("chains must be unique");
+  const callList = record.calls;
+  if (!Array.isArray(callList) || callList.length < 1 || callList.length > MAX_ON_DEMAND_CALLS)
+    fail(`calls must hold 1 to ${MAX_ON_DEMAND_CALLS} calls`);
+  const calls = (callList as unknown[]).map((value, index) => {
+    const entry = plainRecord(value, `call ${index}`);
+    exactKeys(entry, ["target", "selector"], ["valueLimit"], `call ${index}`);
+    if (typeof entry.target !== "string" || !ADDRESS.test(entry.target))
+      fail(`call ${index} target is invalid`);
+    if (typeof entry.selector !== "string" || !/^0x[0-9a-fA-F]{8}$/u.test(entry.selector))
+      fail(`call ${index} selector must be 4 bytes`);
+    return Object.freeze({
+      target: (entry.target as string).toLowerCase() as Address,
+      selector: (entry.selector as string).toLowerCase() as Hex,
+      valueLimit:
+        entry.valueLimit === undefined
+          ? "0"
+          : decimal(entry.valueLimit, `call ${index} valueLimit`),
+    });
+  });
+  const key = (call: { target: string; selector: string }) => `${call.target}:${call.selector}`;
+  calls.sort((a, b) => (key(a) < key(b) ? -1 : 1));
+  if (new Set(calls.map(key)).size !== calls.length)
+    fail("calls must be unique by target and selector");
+  const limits = plainRecord(record.limits, "limits");
+  exactKeys(limits, ["operationsPerChain", "maxValidFor"], [], "limits");
+  const operations = plainRecord(limits.operationsPerChain, "operationsPerChain");
+  exactKeys(operations, ["count", "intervalSeconds"], [], "operationsPerChain");
+  const operationsPerChain = Object.freeze({
+    count: positive(operations.count, MAX_UINT48, "operationsPerChain count"),
+    intervalSeconds:
+      operations.intervalSeconds === null
+        ? null
+        : positive(operations.intervalSeconds, MAX_UINT48, "operationsPerChain intervalSeconds"),
+  });
+  const maxValidFor = duration(limits.maxValidFor, "maxValidFor");
+  if (maxValidFor > MAX_SPAN_SECONDS) fail("maxValidFor spans too long");
+  return Object.freeze({
+    version: AUTOMATION_DEFINITION_VERSION,
+    kind: "on-demand",
+    id: record.id as string,
+    name: record.name as string,
+    chains: Object.freeze(chains.sort((a, b) => a - b)),
+    calls: Object.freeze(calls),
+    limits: Object.freeze({ operationsPerChain, maxValidFor }),
+  });
+}
+
 /**
- * Validates and freezes one automation definition. Every declared call is
- * checked against its contract's ABI, and every argument against its
- * parameter type, before any plan can use it.
+ * Validates and freezes one automation definition, either kind. Every
+ * declared scheduled call is checked against its contract's ABI, and every
+ * argument against its parameter type, before any plan can use it.
  */
+export function defineAutomation(
+  input: ScheduledAutomationDefinitionInput,
+): ScheduledAutomationDefinition;
+export function defineAutomation(
+  input: OnDemandAutomationDefinitionInput,
+): OnDemandAutomationDefinition;
+export function defineAutomation(input: AutomationDefinitionInput): AutomationDefinition;
 export function defineAutomation(input: AutomationDefinitionInput): AutomationDefinition {
   const record = plainRecord(input, "automation");
-  const optional = ["version", "params", "setup", "cancel", "limits"];
+  if (record.kind === "on-demand") return defineOnDemand(record);
+  if (record.kind !== undefined && record.kind !== "scheduled")
+    fail("automation kind is unsupported");
+  const optional = ["version", "kind", "params", "setup", "cancel", "limits"];
   exactKeys(
     record,
     ["id", "name", "chainId", "contracts", "schedule", "call"],
     optional,
     "automation",
   );
-  if (record.version !== undefined && record.version !== AUTOMATION_DEFINITION_VERSION)
-    fail("automation version is unsupported");
-  if (typeof record.id !== "string" || !ID.test(record.id)) fail("automation id is invalid");
-  if (typeof record.name !== "string" || record.name.length < 1 || record.name.length > 80)
-    fail("automation name must be 1 to 80 characters");
+  identity(record);
   if (
     typeof record.chainId !== "number" ||
     !Number.isSafeInteger(record.chainId) ||
@@ -445,8 +585,9 @@ export function defineAutomation(input: AutomationDefinitionInput): AutomationDe
   const valuePerCall =
     limits.valuePerCall === undefined ? "0" : decimal(limits.valuePerCall, "valuePerCall");
   const shape = { contracts, params };
-  const definition: AutomationDefinition = {
+  const definition: ScheduledAutomationDefinition = {
     version: AUTOMATION_DEFINITION_VERSION,
+    kind: "scheduled",
     id: record.id as string,
     name: record.name as string,
     chainId: record.chainId as number,

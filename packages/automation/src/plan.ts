@@ -24,6 +24,8 @@ import {
   type Hex,
   hashAutomation,
   type NormalizedAutomationCall,
+  type OnDemandAutomationDefinition,
+  type ScheduledAutomationDefinition,
   uintBits,
 } from "./definition.js";
 import { AutomationError } from "./error.js";
@@ -43,6 +45,8 @@ export interface AutomationPlanInput {
   readonly occurrences?: number;
   /** Unix seconds of the first occurrence; defaults to five minutes from now. */
   readonly startAt?: number;
+  /** On-demand only, and required there: seconds the plan stays valid, at most `limits.maxValidFor`. */
+  readonly validFor?: number;
 }
 
 export interface AutomationPlanSchedule {
@@ -54,9 +58,10 @@ export interface AutomationPlanSchedule {
   readonly endAt: number;
 }
 
-/** The frozen, hashed terms a plan executes and its owner approves. */
-export interface AutomationPlanTerms {
+/** The frozen, hashed terms a scheduled plan executes and its owner approves. */
+export interface ScheduledPlanTerms {
   readonly version: typeof AUTOMATION_PLAN_VERSION;
+  readonly kind: "scheduled";
   readonly planId: Hex;
   readonly account: Address;
   readonly chainId: number;
@@ -64,6 +69,22 @@ export interface AutomationPlanTerms {
   readonly params: Readonly<Record<string, AutomationParamValue>>;
   readonly schedule: Readonly<AutomationPlanSchedule>;
 }
+
+/** An on-demand plan's terms: its chains and validity window. */
+export interface OnDemandPlanTerms {
+  readonly version: typeof AUTOMATION_PLAN_VERSION;
+  readonly kind: "on-demand";
+  readonly planId: Hex;
+  readonly account: Address;
+  readonly chains: readonly number[];
+  readonly automation: Readonly<{ id: string; hash: Hex }>;
+  /** Unix seconds the plan was created. */
+  readonly startAt: number;
+  /** Exclusive: `startAt + validFor`; the Grant's validUntil is `endAt - 1`. */
+  readonly endAt: number;
+}
+
+export type AutomationPlanTerms = ScheduledPlanTerms | OnDemandPlanTerms;
 
 export interface ResolvedCall {
   readonly target: Address;
@@ -104,19 +125,62 @@ function paramValue(
   return value.toLowerCase();
 }
 
+type PlanIdentity = Readonly<{ planId: Hex; account: Address; now: number }>;
+
+function onDemandTerms(
+  definition: OnDemandAutomationDefinition,
+  input: PlanIdentity & AutomationPlanInput,
+): OnDemandPlanTerms {
+  if (input.params !== undefined || input.occurrences !== undefined || input.startAt !== undefined)
+    invalid("plan_invalid", "an on-demand plan takes only validFor");
+  const { validFor } = input;
+  if (
+    validFor === undefined ||
+    !Number.isSafeInteger(validFor) ||
+    validFor < 1 ||
+    validFor > definition.limits.maxValidFor
+  )
+    invalid("plan_valid_for_invalid", `validFor must be 1 to ${definition.limits.maxValidFor}`);
+  return Object.freeze({
+    version: AUTOMATION_PLAN_VERSION,
+    kind: "on-demand",
+    planId: input.planId,
+    account: input.account,
+    chains: definition.chains,
+    automation: Object.freeze({ id: definition.id, hash: hashAutomation(definition) }),
+    startAt: input.now,
+    endAt: input.now + (validFor as number),
+  });
+}
+
 /**
- * Freezes one plan: validated parameters, the concrete schedule, and the
- * definition hash. Every declared call is resolved once here, so a value that
- * cannot be encoded fails at creation rather than at execution.
+ * Freezes one plan: for a scheduled definition, validated parameters, the
+ * concrete schedule, and the definition hash (every declared call is resolved
+ * once here, so a value that cannot be encoded fails at creation rather than
+ * at execution); for an on-demand definition, its chains and validity window.
  */
 export function createPlanTerms(
+  definition: ScheduledAutomationDefinition,
+  input: PlanIdentity & AutomationPlanInput,
+): ScheduledPlanTerms;
+export function createPlanTerms(
+  definition: OnDemandAutomationDefinition,
+  input: PlanIdentity & AutomationPlanInput,
+): OnDemandPlanTerms;
+export function createPlanTerms(
   definition: AutomationDefinition,
-  input: Readonly<{ planId: Hex; account: Address; now: number }> & AutomationPlanInput,
+  input: PlanIdentity & AutomationPlanInput,
+): AutomationPlanTerms;
+export function createPlanTerms(
+  definition: AutomationDefinition,
+  input: PlanIdentity & AutomationPlanInput,
 ): AutomationPlanTerms {
   if (!/^0x[0-9a-f]{64}$/u.test(input.planId) || /^0x0+$/u.test(input.planId))
     invalid("plan_invalid", "planId must be a nonzero lowercase bytes32");
   if (!/^0x[0-9a-f]{40}$/u.test(input.account))
     invalid("plan_invalid", "account must be a lowercase address");
+  if (definition.kind === "on-demand") return onDemandTerms(definition, input);
+  if (input.validFor !== undefined) invalid("plan_invalid", "validFor is only for on-demand plans");
   const supplied = input.params ?? {};
   for (const name of Object.keys(supplied)) {
     if (!Object.hasOwn(definition.params, name))
@@ -143,8 +207,9 @@ export function createPlanTerms(
     startAt > input.now + MAX_START_DELAY_SECONDS
   )
     invalid("plan_start_invalid", "startAt must be within the next year");
-  const terms: AutomationPlanTerms = Object.freeze({
+  const terms: ScheduledPlanTerms = Object.freeze({
     version: AUTOMATION_PLAN_VERSION,
+    kind: "scheduled",
     planId: input.planId,
     account: input.account,
     chainId: definition.chainId,
@@ -170,8 +235,18 @@ export function hashPlanTerms(terms: AutomationPlanTerms): Hex {
   return keccak256(stringToHex(canonicalJson(terms))) as Hex;
 }
 
+/** Exclusive Unix seconds at which the plan's terms end, either kind. */
+export function planEnd(terms: AutomationPlanTerms): number {
+  return terms.kind === "on-demand" ? terms.endAt : terms.schedule.endAt;
+}
+
+/** The chains the plan's Grant is used on, either kind. */
+export function planChains(terms: AutomationPlanTerms): readonly number[] {
+  return terms.kind === "on-demand" ? terms.chains : [terms.chainId];
+}
+
 /** Unix seconds at which occurrence `slot` opens. */
-export function slotTime(terms: AutomationPlanTerms, slot: number): number {
+export function slotTime(terms: ScheduledPlanTerms, slot: number): number {
   if (!Number.isSafeInteger(slot) || slot < 0 || slot >= terms.schedule.occurrences)
     return invalid("plan_slot_invalid", "slot is outside the schedule");
   return terms.schedule.startAt + slot * terms.schedule.every;
@@ -179,8 +254,8 @@ export function slotTime(terms: AutomationPlanTerms, slot: number): number {
 
 function referenceValue(
   reference: string,
-  definition: AutomationDefinition,
-  terms: AutomationPlanTerms,
+  definition: ScheduledAutomationDefinition,
+  terms: ScheduledPlanTerms,
   slot: number | null,
 ): unknown {
   const { schedule } = terms;
@@ -213,8 +288,8 @@ function referenceValue(
 function argumentValue(
   argument: AutomationArgument,
   type: AutomationValueType,
-  definition: AutomationDefinition,
-  terms: AutomationPlanTerms,
+  definition: ScheduledAutomationDefinition,
+  terms: ScheduledPlanTerms,
   slot: number | null,
 ): unknown {
   const value =
@@ -230,8 +305,8 @@ function argumentValue(
 }
 
 function resolveCall(
-  definition: AutomationDefinition,
-  terms: AutomationPlanTerms,
+  definition: ScheduledAutomationDefinition,
+  terms: ScheduledPlanTerms,
   call: NormalizedAutomationCall,
   slot: number | null,
 ): ResolvedCall {
@@ -250,8 +325,8 @@ function resolveCall(
 
 /** The exact calls of one operation: the setup, the cancellation, or one occurrence. */
 export function resolveCalls(
-  definition: AutomationDefinition,
-  terms: AutomationPlanTerms,
+  definition: ScheduledAutomationDefinition,
+  terms: ScheduledPlanTerms,
   which: "setup" | "cancel" | Readonly<{ slot: number }>,
 ): readonly ResolvedCall[] {
   if (which === "setup" || which === "cancel")
@@ -264,8 +339,8 @@ export function resolveCalls(
 
 /** Operations the Grant must allow: every occurrence, plus setup and cancel when declared. */
 export function planOperationCount(
-  definition: AutomationDefinition,
-  terms: AutomationPlanTerms,
+  definition: ScheduledAutomationDefinition,
+  terms: ScheduledPlanTerms,
 ): number {
   return (
     terms.schedule.occurrences +
@@ -276,14 +351,29 @@ export function planOperationCount(
 
 /**
  * The Grant policy the owner approves: exactly the declared contract
- * functions, valid from `validAfter` until the schedule ends, for at most the
- * plan's operations. A definition can never authorize a call it does not declare.
+ * functions (on-demand: the declared calls), valid from `validAfter` until the
+ * terms end, for at most the plan's operations (on-demand: the declared per-chain
+ * limit). A definition can never authorize a call it does not declare.
  */
 export function derivePlanPolicy(
   definition: AutomationDefinition,
   terms: AutomationPlanTerms,
   validAfter: number,
 ): Readonly<GrantPolicy> {
+  if (definition.kind === "on-demand") {
+    if (terms.kind !== "on-demand")
+      return invalid("plan_invalid", "terms belong to another automation");
+    // An on-demand plan allows exactly the declared calls, per chain count, until its end.
+    return parseGrantPolicy({
+      version: OAATH_GRANT_POLICY_VERSION,
+      calls: definition.calls.map((call) => ({ ...call, argumentEquals: [] })),
+      validAfter,
+      validUntil: terms.endAt - 1,
+      perChainOperationLimit: definition.limits.operationsPerChain,
+    });
+  }
+  if (terms.kind !== "scheduled")
+    return invalid("plan_invalid", "terms belong to another automation");
   const allowed = new Map<string, { target: Address; selector: Hex; valueLimit: bigint }>();
   for (const call of [...definition.setup, definition.call, ...definition.cancel]) {
     const contract = definition.contracts[call.contract] as (typeof definition.contracts)[string];

@@ -4,14 +4,21 @@ import { pingSlots } from "../src/runs.js";
 
 const START = 1_800_000_000;
 const plan = (status: Plan["status"]) =>
-  ({ status, terms: { schedule: { startAt: START, every: 60, occurrences: 3 } } }) as Plan;
+  ({
+    status,
+    terms: { kind: "scheduled", schedule: { startAt: START, every: 60, occurrences: 3 } },
+  }) as Plan;
 const run = (
   slot: number | null,
   status: Run["status"],
   kind: Run["kind"] = "occurrence",
 ): Run => ({
+  id: kind === "occurrence" ? `occurrence:${slot}` : kind,
   kind,
   slot,
+  chainId: 31337,
+  lane: slot ?? 0,
+  nonce: null,
   status,
   scheduledAt: START + (slot ?? 0) * 60 + 5,
   closesAt: null,
