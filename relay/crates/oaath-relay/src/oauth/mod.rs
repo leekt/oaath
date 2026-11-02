@@ -195,7 +195,7 @@ pub fn discovery(issuer: &str) -> Value {
         "token_endpoint": format!("{issuer}/oauth/token"),
         "jwks_uri": format!("{issuer}/oauth/jwks"),
         "registration_endpoint": format!("{issuer}/oauth/clients"),
-        "require_pushed_authorization_requests": true,
+        "require_pushed_authorization_requests": false,
         "authorization_response_iss_parameter_supported": true,
         "scopes_supported": ["openid", "account"],
         "response_types_supported": ["code"],
