@@ -24,7 +24,9 @@ describe("package boundary", () => {
       "loginWithOAAth",
       "openAuthorizationPopup",
       "parseOaathCallsReview",
+      "portalWallet",
       "requestOwnerOperationApproval",
+      "requestOwnerTransaction",
       "requestPermissionApproval",
     ]);
   });

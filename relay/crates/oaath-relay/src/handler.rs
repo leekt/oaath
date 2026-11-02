@@ -62,7 +62,7 @@ use crate::oauth::OAuthFailure;
 use crate::oauth::{
     LoginDecision, OAuthConfiguration, OAuthResult, decide_login, discovery, exchange_code, grant,
     is_bound_selection, login_decision, operation, parse_form, pending, prepare_grant,
-    push_authorization_request, read_transaction, recover_redirect, register_client,
+    push_authorization_request, read_transaction, recover_redirect, register_client, transaction,
 };
 use crate::policy::{delete_template, list_templates, save_template};
 use crate::portal::{
@@ -737,11 +737,15 @@ impl Relay {
                         // id_token_hint or login_hint bound needs no session: the root's
                         // signature, verified below, proves the signer.
                         let signed_and_bound = match &decision {
+                            // A transaction hash proves nothing: its signer needs a session.
                             LoginDecision::Grant {
                                 signer_id,
                                 account_id,
                                 ..
-                            } => is_bound_selection(store, id, signer_id, account_id).await?,
+                            } => {
+                                is_bound_selection(store, id, signer_id, account_id).await?
+                                    && !transaction::is_transaction_request(store, id).await?
+                            }
                             _ => false,
                         };
                         if let LoginDecision::Approved { signer_id, .. }
@@ -774,6 +778,21 @@ impl Relay {
                             artifact,
                         } = &decision
                         {
+                            if transaction::is_transaction_request(store, id).await? {
+                                let redirect = transaction::decide_transaction(
+                                    store,
+                                    clock,
+                                    kms,
+                                    oauth,
+                                    self.code_ttl_ms,
+                                    id,
+                                    signer_id,
+                                    account_id,
+                                    artifact,
+                                )
+                                .await?;
+                                return reply(200, &redirect);
+                            }
                             if operation::is_operation_transaction(store, id).await? {
                                 let redirect = operation::decide_operation(
                                     store,

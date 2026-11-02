@@ -47,6 +47,12 @@ export interface OperationDetail {
   readonly request: OwnerOperationRequest;
 }
 
+/** One exact plain transaction the app asks the signer's own wallet to send. */
+export interface TransactionDetail {
+  readonly type: "oaath_transaction";
+  readonly request: unknown;
+}
+
 /** `GET /portal/transactions/{par_id}`: one pending authorization. */
 export interface PortalTransaction {
   readonly transaction_id: string;
@@ -55,7 +61,7 @@ export interface PortalTransaction {
   /** Origin of the registered redirect URI the dapp asked to return to. */
   readonly redirect_origin: string;
   /** Empty for a login; one `oaath_grant` or `oaath_operation` detail otherwise. */
-  readonly authorization_details: readonly (GrantDetail | OperationDetail)[];
+  readonly authorization_details: readonly (GrantDetail | OperationDetail | TransactionDetail)[];
   /** Resource-server scopes the app asks for (e.g. `orchestra:read`); empty for most logins. */
   readonly scopes: readonly string[];
   /** Unix seconds after which the request is no longer usable. */
