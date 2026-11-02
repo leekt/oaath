@@ -318,9 +318,16 @@ describe("portal worker plain authorization requests", () => {
     expect((await call(`/authorize?${query}`, {}, refusing)).status).toBe(400);
   });
 
-  it("serves the page for a pushed request", async () => {
-    const response = await call("/authorize?client_id=a&request_uri=b");
-    expect(await response.text()).toBe("<!doctype html>");
+  it("serves the page for a pushed request, even one that repeats response_type", async () => {
+    for (const path of [
+      "/authorize?client_id=a&request_uri=b",
+      "/authorize?response_type=code&client_id=a&request_uri=b",
+    ]) {
+      const recorded = environment();
+      const response = await call(path, {}, recorded);
+      expect(await response.text()).toBe("<!doctype html>");
+      expect(recorded.requests).toHaveLength(0);
+    }
   });
 });
 
