@@ -1293,7 +1293,10 @@ async function createHarness() {
         value: parseEther("1"),
       }),
     });
-    const now = Number((await client.getBlock({ blockTag: "latest" })).timestamp);
+    // EntryPoint refuses an operation whose block timestamp is not after
+    // validAfter (AA22), and a fast local chain can mine the next block in the
+    // same second, so the window opens one second before the latest block.
+    const validAfter = Number((await client.getBlock({ blockTag: "latest" })).timestamp) - 1;
     const sudoRuntime = createKernelRuntime({
       deployment,
       operator: sessionOperator({
@@ -1301,7 +1304,9 @@ async function createHarness() {
           account: privateKeyToAccount(generatePrivateKey()),
           validator: await deployValidator(),
         }),
-        policies: [{ kind: "expiry", validAfter: String(now), validUntil: String(now + 599) }],
+        policies: [
+          { kind: "expiry", validAfter: String(validAfter), validUntil: String(validAfter + 599) },
+        ],
       }),
       reads,
     });
