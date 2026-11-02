@@ -171,6 +171,39 @@ async function forward(request: Request, url: URL, env: Env, cors: boolean): Pro
   return response;
 }
 
+/**
+ * A plain authorization request (RFC 6749 §4.1.1 with PKCE, no PAR), as MCP
+ * clients send: pushed to the relay exactly as the client could push it
+ * itself, then continued at the pushed request. Grant and operation details
+ * must be pushed by the client, so they are refused here.
+ */
+async function plainAuthorize(request: Request, url: URL, env: Env): Promise<Response> {
+  if (url.searchParams.has("authorization_details"))
+    return failure(400, "Grants and operations must use a pushed authorization request");
+  const par = new URL(`${ORIGIN}/oauth/par`);
+  const pushed = new Request(par, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      "cf-connecting-ip": request.headers.get("cf-connecting-ip") ?? "",
+    },
+    body: url.searchParams.toString(),
+  });
+  const refused = await overBudget(pushed, par, env, false);
+  if (refused) return refused;
+  const response = await forward(pushed, par, env, false);
+  const body = (await response.json().catch(() => null)) as { request_uri?: unknown } | null;
+  if (response.status !== 201 || typeof body?.request_uri !== "string")
+    return failure(400, "This sign-in request is invalid");
+  const next = new URL(`${ORIGIN}/authorize`);
+  next.searchParams.set("client_id", url.searchParams.get("client_id") ?? "");
+  next.searchParams.set("request_uri", body.request_uri);
+  return new Response(null, {
+    status: 303,
+    headers: { Location: next.toString(), "Cache-Control": "no-store" },
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -201,6 +234,14 @@ export default {
         return failure(403, "Cross-site request refused");
       return secured(await proxyRpc(request, env), {});
     }
+
+    if (
+      request.method === "GET" &&
+      url.pathname === "/authorize" &&
+      url.searchParams.has("response_type") &&
+      !url.searchParams.has("request_uri")
+    )
+      return plainAuthorize(request, url, env);
 
     const page =
       url.pathname === "/" ||

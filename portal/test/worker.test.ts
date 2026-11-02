@@ -279,6 +279,58 @@ describe("portal worker", () => {
   });
 });
 
+/** An environment whose relay answers with `fetch`. */
+function relaying(fetch: (request: Request) => Promise<Response>): Recorded {
+  const recorded = environment();
+  return { ...recorded, env: { ...recorded.env, RELAY: { fetch } } };
+}
+
+describe("portal worker plain authorization requests", () => {
+  const query =
+    "response_type=code&client_id=c1&redirect_uri=http%3A%2F%2F127.0.0.1%3A5555%2Fcb" +
+    "&code_challenge=x&code_challenge_method=S256&scope=openid&state=s";
+
+  it("pushes a plain request for the client and continues at it", async () => {
+    const pushed: { body: string; path: string }[] = [];
+    const recorded = relaying(async (request) => {
+      pushed.push({ path: new URL(request.url).pathname, body: await request.text() });
+      return Response.json(
+        { request_uri: "urn:ietf:params:oauth:request_uri:abc", expires_in: 300 },
+        { status: 201 },
+      );
+    });
+    const response = await call(`/authorize?${query}`, {}, recorded);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      `${ORIGIN}/authorize?client_id=c1&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3Aabc`,
+    );
+    expect(pushed).toEqual([{ path: "/oauth/par", body: query }]);
+  });
+
+  it("refuses grant details and a request the relay refuses", async () => {
+    const recorded = environment();
+    const details = await call(`/authorize?${query}&authorization_details=%5B%5D`, {}, recorded);
+    expect(details.status).toBe(400);
+    expect(recorded.requests).toHaveLength(0);
+    const refusing = relaying(async () =>
+      Response.json({ error: "invalid_request" }, { status: 400 }),
+    );
+    expect((await call(`/authorize?${query}`, {}, refusing)).status).toBe(400);
+  });
+
+  it("serves the page for a pushed request, even one that repeats response_type", async () => {
+    for (const path of [
+      "/authorize?client_id=a&request_uri=b",
+      "/authorize?response_type=code&client_id=a&request_uri=b",
+    ]) {
+      const recorded = environment();
+      const response = await call(path, {}, recorded);
+      expect(await response.text()).toBe("<!doctype html>");
+      expect(recorded.requests).toHaveLength(0);
+    }
+  });
+});
+
 describe("portal worker write budget", () => {
   const post = (path: string, env: Env, ip = "198.51.100.1") =>
     worker.fetch(
