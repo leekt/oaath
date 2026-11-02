@@ -266,10 +266,10 @@ const V33_NOTE =
 /** Hard cap for one imported account's approval preparation (binding reads). */
 const APPROVAL_REQUESTS = 48;
 
-/** Budgeted chain reads through the portal's proxy, for preparing an approval. */
-export function importChainReads(rpcUrl: string) {
+/** Budgeted chain reads through one of the portal's proxies, for preparing an approval. */
+export function importChainReads(rpcUrl: string, chainId: number = IMPORT_CHAIN_ID) {
   const [ports] = createCetaneChainPorts(
-    { [IMPORT_CHAIN_ID]: { publicRpcUrls: [rpcUrl] } },
+    { [chainId]: { publicRpcUrls: [rpcUrl] } },
     { timeoutMs: TIMEOUT_MS, maxRequests: APPROVAL_REQUESTS, retry: { attempts: 1 } },
   );
   if (!ports) throw new Error("chain reads unavailable");

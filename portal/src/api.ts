@@ -37,6 +37,8 @@ export interface GrantDetail {
   /** Unix seconds: the Grant's exclusive expiry. */
   readonly expires_at: number;
   readonly device_id: string;
+  /** The app's own JSON-RPC per chain id; the portal reads that chain through it. */
+  readonly rpc_urls?: Readonly<Record<string, string>>;
 }
 
 /** One exact owner operation the dapp asks the account's root to sign. */

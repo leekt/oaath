@@ -171,6 +171,30 @@ async function forward(request: Request, url: URL, env: Env, cors: boolean): Pro
   return response;
 }
 
+/**
+ * The app's own RPC for `chainId`, from its pending grant request's
+ * `rpc_urls` as the relay captured it (https only), or null.
+ */
+async function appRpcUrl(env: Env, transactionId: string, chainId: string): Promise<string | null> {
+  let transaction: { authorization_details?: { type?: unknown; rpc_urls?: unknown }[] };
+  try {
+    const response = await env.RELAY.fetch(
+      new Request(`http://oaath.taek.tech/portal/transactions/${transactionId}`, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(10_000),
+      }),
+    );
+    if (!response.ok) return null;
+    transaction = await response.json();
+  } catch {
+    return null;
+  }
+  const grant = transaction.authorization_details?.find((detail) => detail?.type === "oaath_grant");
+  const urls = grant?.rpc_urls as Record<string, unknown> | undefined;
+  const upstream = urls && Object.hasOwn(urls, chainId) ? urls[chainId] : undefined;
+  return typeof upstream === "string" && upstream.startsWith("https://") ? upstream : null;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -193,6 +217,16 @@ export default {
       if (!reading && !["POST", "PUT", "DELETE"].includes(request.method))
         return failure(405, "Unsupported method");
       return (await overBudget(request, url, env, false)) ?? forward(request, url, env, false);
+    }
+
+    const appRpc = /^\/rpc\/tx\/([A-Za-z0-9._~-]{1,256})\/([1-9][0-9]{0,15})$/u.exec(url.pathname);
+    if (appRpc) {
+      const site = request.headers.get("sec-fetch-site");
+      if ((site !== null && site !== "same-origin") || request.headers.get("origin") !== ORIGIN)
+        return failure(403, "Cross-site request refused");
+      const upstream = await appRpcUrl(env, appRpc[1] as string, appRpc[2] as string);
+      if (!upstream) return failure(404, "This request names no RPC for that chain");
+      return secured(await proxyRpc(request, env, upstream), {});
     }
 
     if (url.pathname === "/rpc/421614") {

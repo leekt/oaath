@@ -157,8 +157,16 @@ async function boundedText(response: Response): Promise<string | null> {
   );
 }
 
-/** Serves one same-origin proxy request; the caller has checked the path and origin. */
-export async function proxyRpc(request: Request, env: RpcEnv): Promise<Response> {
+/**
+ * Serves one same-origin proxy request; the caller has checked the path and
+ * origin. `upstreamUrl` is an app's own RPC for one pending request
+ * (`/rpc/tx/{id}/{chainId}`); every bound above applies to it unchanged.
+ */
+export async function proxyRpc(
+  request: Request,
+  env: RpcEnv,
+  upstreamUrl?: string,
+): Promise<Response> {
   if (request.method !== "POST") return reply(405, { error: "Unsupported method" });
   if (Number(request.headers.get("content-length") ?? "0") > RPC_MAX_BODY_BYTES)
     return reply(413, { error: "Request too large" });
@@ -206,7 +214,7 @@ export async function proxyRpc(request: Request, env: RpcEnv): Promise<Response>
   if (forwarded.length > 0) {
     let upstream: Response;
     try {
-      upstream = await fetch(env.RPC_UPSTREAM_421614 ?? RPC_DEFAULT_UPSTREAM, {
+      upstream = await fetch(upstreamUrl ?? env.RPC_UPSTREAM_421614 ?? RPC_DEFAULT_UPSTREAM, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(forwarded),

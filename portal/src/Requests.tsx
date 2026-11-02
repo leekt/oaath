@@ -20,7 +20,7 @@ import {
   portalApi,
 } from "./api.js";
 import { GrantTerms, grantFailure, when } from "./GrantReview.js";
-import { reviewedRequest, signGrantApproval } from "./root-signing.js";
+import { grantReads, reviewedRequest, signGrantApproval } from "./root-signing.js";
 import { Button as SchematicAction } from "./schematic/components";
 import { CancelButton, Frame, message, Notice, QrCode, SignerStep } from "./shared.js";
 import { type RememberedSigner, shortAddress, signerDetail } from "./signers.js";
@@ -69,6 +69,8 @@ async function approveRequest(
     chainId: view.chains[0],
     signer,
     account,
+    // A request awaiting the root carries no app RPC: the portal's own reads.
+    reads: grantReads(null, view),
   });
   return portalApi.approvePending(view.request_id, artifact);
 }

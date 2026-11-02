@@ -88,6 +88,22 @@ async fn captures_a_grant_detail_and_shows_it_to_the_portal() {
 }
 
 #[tokio::test]
+async fn carries_the_apps_own_rpc_urls_for_its_chains() {
+    let h = harness();
+    let client_id = client(&h).await;
+    let mut with_rpcs = detail();
+    with_rpcs["rpc_urls"] =
+        json!({ "8453": "https://base.example/rpc", "1": "https://eth.example" });
+    let id = transaction_id(&par(&h, &client_id, Some(&json!([with_rpcs.clone()]))).await);
+    let transaction = h
+        .send(get(&format!("/portal/transactions/{id}"), None))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(transaction["authorization_details"], json!([with_rpcs]));
+}
+
+#[tokio::test]
 async fn refuses_details_it_cannot_compose_or_enforce() {
     let h = harness();
     let client_id = client(&h).await;
@@ -115,6 +131,17 @@ async fn refuses_details_it_cannot_compose_or_enforce() {
             "signer",
             json!({ "version": "oaath.operator-credential-profile/v1", "kind": "p256", "publicKey": "0x04" }),
         ),
+        // RPC URLs: https, for the detail's own chains, canonically keyed.
+        with("rpc_urls", json!({})),
+        with("rpc_urls", json!({ "8453": "http://base.example/rpc" })),
+        with(
+            "rpc_urls",
+            json!({ "8453": "https://user:key@base.example/rpc" }),
+        ),
+        with("rpc_urls", json!({ "8453": "https://base.example/rpc#x" })),
+        with("rpc_urls", json!({ "10": "https://op.example/rpc" })),
+        with("rpc_urls", json!({ "08453": "https://base.example/rpc" })),
+        with("rpc_urls", json!({ "8453": 1 })),
     ] {
         let reply = par(&h, &client_id, Some(&details)).await;
         assert_eq!(reply.status, 400, "{details}");

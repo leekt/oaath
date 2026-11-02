@@ -138,15 +138,38 @@ export async function rootKey(signer: RememberedSigner, typedData: unknown) {
   return refuse("root-unsupported");
 }
 
+/** Where a grant's approval reads its chain: the app's own RPC, or the portal's. */
+export interface GrantReads {
+  readonly chainId: number;
+  readonly rpcUrl: string;
+}
+
+/**
+ * The first of the app's chains it named an RPC for, read through the
+ * portal's per-request proxy; otherwise the portal's own Arbitrum Sepolia.
+ */
+export function grantReads(
+  transactionId: string | null,
+  detail: Pick<GrantDetail, "chains" | "rpc_urls">,
+): GrantReads {
+  const chainId = detail.chains.find((chain) => detail.rpc_urls?.[String(chain)] !== undefined);
+  if (transactionId !== null && chainId !== undefined)
+    return { chainId, rpcUrl: `${location.origin}/rpc/tx/${transactionId}/${chainId}` };
+  return { chainId: 421_614, rpcUrl: `${location.origin}/rpc/421614` };
+}
+
 /** The SDK's reads-backed preparation for an imported (existing) account. */
-async function prepareImportedAccountApproval(request: Readonly<PermissionRequest>) {
+async function prepareImportedAccountApproval(
+  request: Readonly<PermissionRequest>,
+  reads: GrantReads,
+) {
   // Module discovery and chain reads load only when an imported account signs.
-  const { IMPORT_CHAIN_ID, importChainReads } = await import("./account-import.js");
+  const { importChainReads } = await import("./account-import.js");
   try {
     return await prepareKernelPermissionApproval({
       request,
-      chainId: IMPORT_CHAIN_ID,
-      reads: importChainReads(`${location.origin}/rpc/${IMPORT_CHAIN_ID}`),
+      chainId: reads.chainId,
+      reads: importChainReads(reads.rpcUrl, reads.chainId),
     });
   } catch {
     return refuse("account-unreadable");
@@ -165,13 +188,15 @@ export async function signGrantApproval(input: {
   readonly chainId: number | undefined;
   readonly signer: RememberedSigner;
   readonly account: Pick<PortalAccount, "address">;
+  /** Where an imported account's approval reads its chain (`grantReads`). */
+  readonly reads: GrantReads;
 }): Promise<string> {
-  const { request, prepared, chainId, signer, account } = input;
+  const { request, prepared, chainId, signer, account, reads } = input;
   if (chainId === undefined) return refuse("request-mismatch");
   // An imported account is bound on chain first: the SDK proves its root owner
   // through the portal's budgeted read proxy. A derived one needs no read.
   const approval = isKernelExistingAccountProfile(request.logicalAccount)
-    ? await prepareImportedAccountApproval(request)
+    ? await prepareImportedAccountApproval(request, reads)
     : prepareDerivedAccountPermissionApproval({
         request,
         chainId,

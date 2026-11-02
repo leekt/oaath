@@ -15,7 +15,12 @@ import {
   type PrepareGrantResponse,
   portalApi,
 } from "./api.js";
-import { RootSigningError, reviewedRequest, signGrantApproval } from "./root-signing.js";
+import {
+  grantReads,
+  RootSigningError,
+  reviewedRequest,
+  signGrantApproval,
+} from "./root-signing.js";
 import { Button as SchematicAction } from "./schematic/components";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 
@@ -194,6 +199,7 @@ export function GrantReview({
           chainId: detail.chains[0],
           signer,
           account,
+          reads: grantReads(transaction.transaction_id, detail),
         }),
       );
     } catch (cause) {
