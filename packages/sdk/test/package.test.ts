@@ -24,6 +24,7 @@ describe("package boundary", () => {
       "loginWithOAAth",
       "parseOaathCallsReview",
       "requestOwnerOperationApproval",
+      "requestPermissionApproval",
     ]);
   });
 

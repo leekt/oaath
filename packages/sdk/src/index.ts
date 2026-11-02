@@ -85,6 +85,11 @@ export type {
   OaathOwnerOptions,
   OaathOwnerStores,
 } from "./client/owner-realm.js";
+export type {
+  OaathApprovedPermission,
+  OaathPermissionApprovalOptions,
+} from "./client/permission-approval.js";
+export { requestPermissionApproval } from "./client/permission-approval.js";
 export type { OaathSession, OaathSessionCustody } from "./client/session-credential.js";
 export type { OaathPayer, OaathPaymasterServicePayer } from "./client/sponsorship.js";
 export type { OaathStoreBackend, OaathStores } from "./client/stores.js";

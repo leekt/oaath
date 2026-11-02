@@ -37,6 +37,10 @@ export interface OAuthPortalOptions {
   readonly invalidation?: number | "down";
   /** The id_token `oaath_accounts` claim; defaults to the account, as root. */
   readonly accounts?: unknown;
+  /** The signed-in account's profile; defaults to the root's factory-derived Kernel 0.4.0 account. */
+  readonly accountProfile?: object;
+  /** The root's decision for a composed grant request; defaults to the derived-account approval. */
+  readonly decide?: (request: unknown, requestedAt: number) => Promise<Record<string, unknown>>;
 }
 
 function ecdsaRoot() {
@@ -60,7 +64,7 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
   const chainId = options.chainId ?? 31_337;
   const account = options.account ?? "0x62b5f314710bc515d87276a9d00527ac482b2e6a";
   const root = options.root ?? ecdsaRoot();
-  const accountProfile = {
+  const accountProfile = options.accountProfile ?? {
     version: "oaath.kernel-account-profile/v1",
     kind: "kernel",
     accountIndex: "0",
@@ -152,11 +156,13 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
       sessionSigner: null,
     };
     if (typeof behaviour === "object") behaviour.tamper(request);
-    const decision = await prepareDerivedAccountPermissionApproval({
-      request: request as never,
-      chainId,
-      account,
-    }).sign(root.key, requestedAt);
+    const decision = options.decide
+      ? await options.decide(request, requestedAt)
+      : await prepareDerivedAccountPermissionApproval({
+          request: request as never,
+          chainId,
+          account,
+        }).sign(root.key, requestedAt);
     const { installApproval, ...rest } = decision;
     const idToken = await signIn(par.get("nonce"));
     token = {
