@@ -193,7 +193,9 @@ async function appRpcUrl(env: Env, transactionId: string, chainId: string): Prom
   const urls = grant?.rpc_urls as Record<string, unknown> | undefined;
   const upstream = urls && Object.hasOwn(urls, chainId) ? urls[chainId] : undefined;
   return typeof upstream === "string" && upstream.startsWith("https://") ? upstream : null;
+}
 
+/**
  * A plain authorization request (RFC 6749 §4.1.1 with PKCE, no PAR), as MCP
  * clients send: pushed to the relay exactly as the client could push it
  * itself, then continued at the pushed request. Grant and operation details
