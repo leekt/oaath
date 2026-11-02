@@ -49,6 +49,34 @@ pub fn redirect_uri_allowed(uri: &str) -> bool {
         && url.password().is_none()
 }
 
+/// Whether `requested` is one of the client's `registered` redirect URIs:
+/// exactly, or, for an `http` loopback URI, on any port (RFC 8252 §7.3).
+/// Native apps such as MCP clients listen on an ephemeral port; the scheme,
+/// host, path and query must still match.
+pub fn redirect_uri_registered(registered: &[String], requested: &str) -> bool {
+    if registered.iter().any(|uri| uri == requested) {
+        return true;
+    }
+    let Ok(requested) = Url::parse(requested) else {
+        return false;
+    };
+    let loopback = |url: &Url| {
+        url.scheme() == "http" && matches!(url.host_str(), Some("localhost" | "127.0.0.1"))
+    };
+    if !loopback(&requested) || !redirect_uri_allowed(requested.as_str()) {
+        return false;
+    }
+    registered
+        .iter()
+        .filter_map(|uri| Url::parse(uri).ok())
+        .any(|uri| {
+            loopback(&uri)
+                && uri.host_str() == requested.host_str()
+                && uri.path() == requested.path()
+                && uri.query() == requested.query()
+        })
+}
+
 fn version(value: Option<&Value>, expected: &str) -> RelayResult<()> {
     match value {
         Some(Value::String(text)) if text == expected => Ok(()),
@@ -280,7 +308,42 @@ impl AccessTokenRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::redirect_uri_allowed;
+    use super::{redirect_uri_allowed, redirect_uri_registered};
+
+    #[test]
+    fn matches_a_loopback_redirect_on_any_port_and_everything_else_exactly() {
+        let registered = vec![
+            "http://127.0.0.1/callback".to_owned(),
+            "http://localhost:3000/cb?x=1".to_owned(),
+            "https://app.example/callback".to_owned(),
+        ];
+        for requested in [
+            "http://127.0.0.1/callback",
+            "http://127.0.0.1:53682/callback",
+            "http://localhost:4100/cb?x=1",
+            "https://app.example/callback",
+        ] {
+            assert!(
+                redirect_uri_registered(&registered, requested),
+                "{requested}"
+            );
+        }
+        for requested in [
+            // Another path, query or loopback host.
+            "http://127.0.0.1:53682/other",
+            "http://localhost:4100/cb?x=2",
+            "http://localhost:53682/callback",
+            // Never for https or another host.
+            "https://app.example:8443/callback",
+            "http://app.example/callback",
+            "http://127.0.0.1:53682/callback#fragment",
+        ] {
+            assert!(
+                !redirect_uri_registered(&registered, requested),
+                "{requested}"
+            );
+        }
+    }
 
     #[test]
     fn allows_https_and_loopback_http_redirects_only() {

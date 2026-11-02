@@ -46,6 +46,7 @@ use self::id_token::IdTokenKey;
 use self::records::{
     MAX_CLIENT_NAME, MAX_REDIRECT_URIS, MAX_STATE, OAUTH_CLIENT_RECORD_VERSION,
     OAUTH_PAR_RECORD_VERSION, OAuthClientRecord, ParRecord, redirect_uri_allowed,
+    redirect_uri_registered,
 };
 use crate::authentication::{RelayCaller, RelayCallerRole};
 use crate::authority::stored_permission_request;
@@ -584,8 +585,8 @@ async fn push(transaction: &mut dyn RelayTransaction, record: &ParRecord) -> OAu
         .lock_oauth_client(&record.client_id)
         .await?
         .ok_or_else(|| OAuthFailure::new(401, "invalid_client", RelayErrorCode::NotFound))?;
-    // Exact match against the URIs fixed at registration.
-    if !client.redirect_uris.contains(&record.redirect_uri) {
+    // The URIs fixed at registration; a loopback one on any port.
+    if !redirect_uri_registered(&client.redirect_uris, &record.redirect_uri) {
         return Err(OAuthFailure::new(
             400,
             "invalid_request",
