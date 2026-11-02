@@ -580,8 +580,14 @@ impl Relay {
                     Some("prepare") => {
                         require_method(method, &Method::POST)?;
                         exact_body(&body_record(headers, body, self.max_body_bytes).await?, &[])?;
-                        let prepared =
-                            pending::prepare_pending(store, clock, request_id, &session).await?;
+                        let prepared = pending::prepare_pending(
+                            store,
+                            clock,
+                            self.chain.as_deref(),
+                            request_id,
+                            &session,
+                        )
+                        .await?;
                         reply(200, &prepared)
                     }
                     Some(action @ ("approve" | "reject")) => {
@@ -811,8 +817,15 @@ impl Relay {
                             Err(code) => return Err(code),
                         };
                         let body = body_record(headers, body, self.max_body_bytes).await?;
-                        let prepared =
-                            prepare_grant(store, clock, id, &body, session.as_deref()).await?;
+                        let prepared = prepare_grant(
+                            store,
+                            clock,
+                            self.chain.as_deref(),
+                            id,
+                            &body,
+                            session.as_deref(),
+                        )
+                        .await?;
                         return reply(200, &prepared);
                     }
                     Some("redirect") => {

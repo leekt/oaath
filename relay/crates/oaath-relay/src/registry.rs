@@ -27,8 +27,8 @@
 
 use oaath_protocol::capture::parse_json;
 use oaath_protocol::identity::{
-    KernelAccountProfile, KernelExistingAccountVersion, KernelFactoryRoute, OwnerCredentialProfile,
-    parse_kernel_account_profile, parse_owner_credential_profile,
+    KernelAccountProfile, KernelFactoryRoute, OwnerCredentialProfile, parse_kernel_account_profile,
+    parse_owner_credential_profile,
 };
 use oaath_protocol::kernel_account::derive_kernel_v4_account_address;
 use serde::Serialize;
@@ -213,7 +213,7 @@ impl AccountRecord {
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
         };
         // A canonical factory-derived profile at the stored index and its
-        // derived address, or an imported 0.4.0 account at its own address.
+        // derived address, or an imported account at its own address.
         let account = record.account_profile()?;
         let canonical = account.to_json().to_string();
         if record.profile != canonical
@@ -232,8 +232,7 @@ impl AccountRecord {
                         == Some(record.address.as_str())
             }
             (KernelAccountProfile::Existing(profile), None) if record.creation_key.is_none() => {
-                profile.kernel_version == KernelExistingAccountVersion::V0_4_0
-                    && profile.address == record.address
+                profile.address == record.address
             }
             _ => false,
         };

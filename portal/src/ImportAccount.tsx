@@ -1,6 +1,6 @@
 /**
  * "Import an existing account": checks that the signed-in signer is the root of
- * a deployed Kernel v4 account on Arbitrum Sepolia and lists every installed
+ * a deployed Kernel v4 or 0.3.3 account on Arbitrum Sepolia and lists every installed
  * module. Checking signs and saves nothing; importing asks the root to sign one
  * statement that acknowledges this reading, and adds the account.
  *
@@ -115,8 +115,8 @@ export function ImportAccount({
     <section id="import-account" className="import" aria-labelledby="import-heading">
       <h2 id="import-heading">Import an existing account</h2>
       <p className="quiet">
-        A Kernel v4 account on {IMPORT_NETWORK} whose root is {signer.label}. Checking reads the
-        account; nothing is signed or saved.
+        A Kernel v4 or 0.3.3 account on {IMPORT_NETWORK} whose root is {signer.label}. Checking
+        reads the account; nothing is signed or saved.
       </p>
       <form onSubmit={check}>
         <label htmlFor="import-address">Account address</label>

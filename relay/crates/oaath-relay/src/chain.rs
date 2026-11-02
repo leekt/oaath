@@ -23,12 +23,17 @@
 //!    owner address, or the P-256 / WebAuthn `(x, y)`. As in the SDK, a
 //!    WebAuthn validator stores no authenticator ID; it stays a client-side
 //!    assertion binding.
+//!
+//! When the slot names the Kernel 0.3.3 implementation instead, it mirrors
+//! the SDK's `bindKernelV33Account` (`kernel/deployment/v33.ts`) for an ECDSA
+//! root: `accountId()`, `entrypoint()`, `rootValidator()` and the ECDSA
+//! validator's stored owner.
 
 use std::time::Duration;
 
-use alloy_primitives::{Address, B256, Bytes, U256};
-use alloy_sol_types::{SolCall, sol};
-use oaath_protocol::identity::OwnerCredentialProfile;
+use alloy_primitives::{Address, B256, Bytes, FixedBytes, U256};
+use alloy_sol_types::{SolCall, SolValue, sol};
+use oaath_protocol::identity::{KernelExistingAccountVersion, OwnerCredentialProfile};
 use serde_json::{Value, json};
 
 use crate::error::{RelayErrorCode, RelayResult};
@@ -41,6 +46,11 @@ pub const TIMEOUT: Duration = Duration::from_secs(8);
 /// The reviewed Kernel v4 UUPS implementation (EntryPoint 0.9), as the SDK's
 /// `KERNEL_V4_UUPS_IMPLEMENTATION_V09`.
 pub const KERNEL_V4_IMPLEMENTATION: &str = "0x6250926dd0309d9deaaeb4a2c413da5f3c4de37a";
+/// The Kernel 0.3.3 implementation (EntryPoint 0.7), its `accountId()`, and
+/// EntryPoint 0.7, as the SDK's `kernelV33Deployment`.
+pub const KERNEL_V33_IMPLEMENTATION: &str = "0xd6cedde84be40893d153be9d467cd6ad37875b28";
+pub const KERNEL_V33_ACCOUNT_ID: &str = "kernel.advanced.v0.3.3";
+pub const ENTRY_POINT_V07: &str = "0x0000000071727de22e5e9d8baf0edac6f37da032";
 pub const P256_ROOT_VALIDATOR: &str = "0x9906ab44ff795883c5a725687a2705be4118b0f3";
 pub const WEBAUTHN_ROOT_VALIDATOR: &str = "0x6f781fff97b830daa2e11ee0ad6344aff7131ef2";
 /// ERC-1967 `implementation` slot.
@@ -68,6 +78,11 @@ sol! {
     function isModuleInstalled(uint256 moduleType, address module, bytes additionalContext) external view returns (bool);
     function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
     function nonce(uint192 key) external view returns (uint256);
+    function accountId() external view returns (string);
+    function entrypoint() external view returns (address);
+    function rootValidator() external view returns (bytes21);
+    function currentNonce() external view returns (uint32);
+    function validationConfig(bytes21 validationId) external view returns (uint32 nonce, address hook);
 }
 
 /// One configured chain endpoint. Its URL is a credential: never printed.
@@ -208,14 +223,127 @@ fn expected_owner(owner: &OwnerCredentialProfile) -> (&'static str, Vec<u8>) {
     }
 }
 
-/// Proves, at one block, that `account` is a deployed reviewed Kernel v4
-/// account whose root validator stores `owner`. A mismatch is
-/// `relay_forbidden`; anything unreadable is `relay_chain_unavailable`.
+/// A 32-byte ABI word holding a `width`-byte unsigned integer, or none.
+fn small_uint(word: &[u8], width: usize) -> Option<u64> {
+    (word.len() == 32 && word[..32 - width].iter().all(|byte| *byte == 0)).then(|| {
+        word[32 - width..]
+            .iter()
+            .fold(0u64, |n, b| n << 8 | u64::from(*b))
+    })
+}
+
+/// `bindKernelV33Account` for an ECDSA root, at `block`: the account reports
+/// Kernel 0.3.3 and EntryPoint 0.7, its root is `0x01 ‖ ECDSA_ROOT_VALIDATOR`,
+/// and that validator stores `owner` for it.
+async fn prove_kernel_v33_root(
+    reads: &mut Reads<'_>,
+    account: Address,
+    owner: &OwnerCredentialProfile,
+    block: &str,
+) -> RelayResult<()> {
+    if !matches!(owner, OwnerCredentialProfile::Ecdsa { .. }) {
+        return Err(REFUSED);
+    }
+    let account_text = format!("{account:#x}");
+    let id = reads
+        .call(&account_text, accountIdCall {}.abi_encode(), block)
+        .await?;
+    if id != (KERNEL_V33_ACCOUNT_ID.to_owned(),).abi_encode_params() {
+        return Err(REFUSED);
+    }
+    let entry_point = reads
+        .call(&account_text, entrypointCall {}.abi_encode(), block)
+        .await?;
+    if entry_point.len() != 32 {
+        return Err(UNAVAILABLE);
+    }
+    if entry_point[..12] != [0; 12]
+        || Address::from_slice(&entry_point[12..]) != address(ENTRY_POINT_V07)
+    {
+        return Err(REFUSED);
+    }
+    let root = reads
+        .call(&account_text, rootValidatorCall {}.abi_encode(), block)
+        .await?;
+    if root.len() != 32 {
+        return Err(UNAVAILABLE);
+    }
+    if root != root_word(ECDSA_ROOT_VALIDATOR).as_slice() {
+        return Err(REFUSED);
+    }
+    let stored = reads
+        .call(
+            ECDSA_ROOT_VALIDATOR,
+            ecdsaValidatorStorageCall { account }.abi_encode(),
+            block,
+        )
+        .await?;
+    if stored.len() != 32 {
+        return Err(UNAVAILABLE);
+    }
+    if stored != expected_owner(owner).1 {
+        return Err(REFUSED);
+    }
+    Ok(())
+}
+
+/// Kernel 0.3.3's effective enable nonce for `permission_id`, at one block,
+/// as the SDK's `kernel_v33_permission_nonce` read: `currentNonce()`, plus
+/// one when the permission's own validation already holds it. A permission
+/// that cannot be enabled at it is `relay_forbidden`; anything unreadable is
+/// `relay_chain_unavailable`, never zero.
+pub async fn kernel_v33_enable_nonce(
+    reader: &ChainReader,
+    account: Address,
+    permission_id: [u8; 4],
+) -> RelayResult<u32> {
+    let mut reads = reader.session();
+    if reads.quantity("eth_chainId").await? != reader.chain_id {
+        return Err(UNAVAILABLE);
+    }
+    let block = format!("0x{:x}", reads.quantity("eth_blockNumber").await?);
+    let account_text = format!("{account:#x}");
+    let current = reads
+        .call(&account_text, currentNonceCall {}.abi_encode(), &block)
+        .await?;
+    let current = small_uint(&current, 4).ok_or(UNAVAILABLE)?;
+    let mut validation = [0u8; 21];
+    validation[0] = 0x02;
+    validation[1..5].copy_from_slice(&permission_id);
+    let config = reads
+        .call(
+            &account_text,
+            validationConfigCall {
+                validationId: FixedBytes(validation),
+            }
+            .abi_encode(),
+            &block,
+        )
+        .await?;
+    if config.len() != 64 || config[32..44] != [0; 12] {
+        return Err(UNAVAILABLE);
+    }
+    let configured = small_uint(&config[..32], 4).ok_or(UNAVAILABLE)?;
+    let effective = if configured == current {
+        current + 1
+    } else {
+        current
+    };
+    if effective < 1 || effective > u64::from(u32::MAX) || configured >= effective {
+        return Err(REFUSED);
+    }
+    Ok(effective as u32)
+}
+
+/// Proves, at one block, that `account` is a deployed reviewed Kernel account
+/// whose root validator stores `owner`, and answers its version: Kernel v4
+/// with any supported root, or Kernel 0.3.3 with an ECDSA root. A mismatch
+/// is `relay_forbidden`; anything unreadable is `relay_chain_unavailable`.
 pub async fn prove_kernel_root(
     reader: &ChainReader,
     account: Address,
     owner: &OwnerCredentialProfile,
-) -> RelayResult<()> {
+) -> RelayResult<KernelExistingAccountVersion> {
     let mut reads = reader.session();
     if reads.quantity("eth_chainId").await? != reader.chain_id {
         return Err(UNAVAILABLE);
@@ -237,9 +365,15 @@ pub async fn prove_kernel_root(
         )
         .await?;
     let slot: [u8; 32] = slot.try_into().map_err(|_| UNAVAILABLE)?;
-    if slot[..12] != [0; 12]
-        || Address::from_slice(&slot[12..]) != address(KERNEL_V4_IMPLEMENTATION)
-    {
+    if slot[..12] != [0; 12] {
+        return Err(REFUSED);
+    }
+    let implementation = Address::from_slice(&slot[12..]);
+    if implementation == address(KERNEL_V33_IMPLEMENTATION) {
+        prove_kernel_v33_root(&mut reads, account, owner, &block).await?;
+        return Ok(KernelExistingAccountVersion::V0_3_3);
+    }
+    if implementation != address(KERNEL_V4_IMPLEMENTATION) {
         return Err(REFUSED);
     }
 
@@ -269,7 +403,7 @@ pub async fn prove_kernel_root(
     if stored != material {
         return Err(REFUSED);
     }
-    Ok(())
+    Ok(KernelExistingAccountVersion::V0_4_0)
 }
 
 /// One Kernel v4 permission, identified by its signer module and bytes4 id.

@@ -38,7 +38,8 @@ fn derives_the_sdk_signing_request_for_every_root_and_signer_kind() {
         let name = case["name"].as_str().unwrap();
         let request = request(&case);
         let account = case["input"]["account"].as_str().unwrap();
-        let result = grant_signing_request(&request, &request.policy, account);
+        let v33_nonce = case["input"]["v33Nonce"].as_u64().map(|nonce| nonce as u32);
+        let result = grant_signing_request(&request, &request.policy, account, v33_nonce);
         if let Some(code) = case["expect"].get("error") {
             assert_eq!(code, "kernel_runtime_policy_unavailable", "{name}");
             assert_eq!(result.err(), Some(RelayErrorCode::RequestInvalid), "{name}");
@@ -67,7 +68,7 @@ fn derives_the_sdk_signing_request_for_every_root_and_signer_kind() {
         assert_eq!(Value::Array(packages), expected["packages"], "{name}");
         accepted += 1;
     }
-    assert_eq!(accepted, 7);
+    assert_eq!(accepted, 9);
 }
 
 #[test]
@@ -162,6 +163,73 @@ fn refuses_a_tampered_misbound_or_foreign_approval() {
     assert!(verify(&artifact, &account, &replayed).is_err());
 }
 
+fn v33_grant() -> (PermissionRequest, String, Value) {
+    let case = cases("kernelGrantApproval")
+        .into_iter()
+        .find(|case| case["name"] == "kernel 0.3.3 ecdsa root, ecdsa signer")
+        .unwrap();
+    let artifact = parse_json(case["expect"]["ok"]["artifact"].as_str().unwrap()).unwrap();
+    (
+        request(&case),
+        case["input"]["account"].as_str().unwrap().to_owned(),
+        artifact,
+    )
+}
+
+#[test]
+fn refuses_a_tampered_or_v4_shaped_approval_on_a_kernel_v33_account() {
+    let (request, account, artifact) = v33_grant();
+    let verify = |artifact: &Value| {
+        verify_grant_approval(
+            &request,
+            &account,
+            &artifact.to_string(),
+            DECIDED_AT_MS,
+            &RP,
+        )
+    };
+    assert!(verify(&artifact).is_ok());
+    let mut tampered = Vec::new();
+    // Another nonce re-derives another digest the root never signed.
+    let mut nonce = artifact.clone();
+    nonce["installApproval"]["nonce"] = json!("8");
+    tampered.push(nonce);
+    let mut padded = artifact.clone();
+    padded["installApproval"]["nonce"] = json!("07");
+    tampered.push(padded);
+    let mut digest = artifact.clone();
+    digest["installApproval"]["digest"] = json!(format!("0x{}", "ab".repeat(32)));
+    tampered.push(digest);
+    let mut permission = artifact.clone();
+    permission["installApproval"]["permissionId"] = json!("0x00000000");
+    tampered.push(permission);
+    // The v4 all-chain shape over the same digest and signature.
+    let (_, _, v4) = first_grant();
+    let mut shaped = artifact.clone();
+    let enable = &artifact["installApproval"];
+    shaped["installApproval"] = json!({
+        "version": v4["installApproval"]["version"],
+        "account": enable["account"],
+        "installNonce": enable["nonce"],
+        "packages": enable["packages"],
+        "digest": enable["digest"],
+        "enableSignature": enable["enableSignature"],
+    });
+    tampered.push(shaped);
+    for value in &tampered {
+        assert_eq!(
+            verify(value).err(),
+            Some(RelayErrorCode::RequestInvalid),
+            "{value}"
+        );
+    }
+    // A v3.3 grant is never prepared without Kernel's nonce.
+    assert_eq!(
+        grant_signing_request(&request, &request.policy, &account, None).err(),
+        Some(RelayErrorCode::RequestInvalid)
+    );
+}
+
 #[test]
 fn verifies_root_signatures_exactly_as_the_sdk_keys() {
     for case in cases("kernelEnableSignature") {
@@ -219,7 +287,7 @@ fn agrees_with_the_sdks_anvil_prepared_portal_root_approvals() {
             "{name}"
         );
         assert_eq!(
-            grant_signing_request(&request, &request.policy, account)
+            grant_signing_request(&request, &request.policy, account, None)
                 .unwrap()
                 .to_json(),
             case["signingRequest"],

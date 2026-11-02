@@ -42,8 +42,8 @@ use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::approval::verify_grant_approval;
 use crate::grant::details::{Composition, GrantDetail, compose};
-use crate::grant::grant_signing_request;
 use crate::grant::signature::RelyingParty;
+use crate::grant::{grant_signing_request, is_kernel_v33};
 use crate::kms::{RelayKms, seal_artifact};
 use crate::oauth::PreparedGrant;
 use crate::oauth::grant::{GrantView, read_grant, relying_party};
@@ -133,7 +133,8 @@ pub fn compose_member_request(
 }
 
 pub fn prepared(request: &PermissionRequest, account: &str) -> RelayResult<PreparedGrant> {
-    let signing = grant_signing_request(request, &request.policy, account)?;
+    // Member grants are Kernel v4 only: without a nonce a v3.3 account is refused.
+    let signing = grant_signing_request(request, &request.policy, account, None)?;
     Ok(PreparedGrant {
         permission_request: request.to_json(),
         request_hash: format!("{:#x}", request.hash()),
@@ -150,6 +151,9 @@ pub fn verify_member_approval(
     artifact: &str,
     decided_at: u64,
 ) -> RelayResult<()> {
+    if is_kernel_v33(request) {
+        return Err(INVALID);
+    }
     let (rp_id, origin) = relying_party(issuer)?;
     let verified = verify_grant_approval(
         request,
