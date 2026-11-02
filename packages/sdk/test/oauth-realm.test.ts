@@ -67,6 +67,25 @@ describe("OAuth-approved Grants", () => {
     await realm.close();
   });
 
+  it("sends the configured app RPCs with each grant request", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const { input, pars } = await browser();
+    const realm = createOAAth({
+      ...input,
+      approvals: { ...input.approvals, rpcUrls: { 31337: "https://local.example/rpc" } },
+    });
+    await (await realm.connect()).requestPermission(permissionInput());
+    const [detail] = JSON.parse([...pars.values()][0]!.get("authorization_details")!);
+    expect(detail.rpc_urls).toEqual({ "31337": "https://local.example/rpc" });
+    await realm.close();
+    expect(() =>
+      createOAAth({
+        ...input,
+        approvals: { ...input.approvals, rpcUrls: { 1: "https://eth.example" } },
+      }),
+    ).toThrow(expect.objectContaining({ code: "oaath_client_input_invalid" }));
+  });
+
   it("orders requested calls canonically and refuses a repeated call", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const { input, pars } = await browser();

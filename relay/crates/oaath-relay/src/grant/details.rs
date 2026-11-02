@@ -12,6 +12,8 @@ use oaath_protocol::identity::{
     KernelAccountProfile, OperatorCredentialProfile, parse_operator_credential_profile,
 };
 use oaath_protocol::permission::{PermissionRequest, parse_permission_request};
+use std::collections::BTreeMap;
+
 use serde_json::{Value, json};
 
 use super::grant_packages;
@@ -20,6 +22,7 @@ use crate::records::canonical_str;
 
 pub const GRANT_DETAIL_TYPE: &str = "oaath_grant";
 const MAX_CHAINS: usize = 32;
+const MAX_RPC_URL: usize = 512;
 const INVALID: RelayErrorCode = RelayErrorCode::RequestInvalid;
 
 /// One captured `oaath_grant` detail.
@@ -33,19 +36,46 @@ pub struct GrantDetail {
     /// Exclusive grant expiry, Unix seconds.
     pub expires_at: u64,
     pub device_id: String,
+    /// The app's own read-only JSON-RPC URL for some of `chains`: the portal
+    /// reads that chain through it (`/rpc/tx/{id}/{chainId}`) to prepare the
+    /// root's approval. Visible to the user; it never carries a credential
+    /// the app would not show.
+    pub rpc_urls: BTreeMap<u64, String>,
 }
 
 impl GrantDetail {
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut value = json!({
             "type": GRANT_DETAIL_TYPE,
             "signer": self.signer.to_json(),
             "policy": self.policy.to_json(),
             "chains": self.chains,
             "expires_at": self.expires_at,
             "device_id": self.device_id,
-        })
+        });
+        if !self.rpc_urls.is_empty() {
+            value["rpc_urls"] = json!(
+                self.rpc_urls
+                    .iter()
+                    .map(|(chain, url)| (chain.to_string(), Value::String(url.clone())))
+                    .collect::<serde_json::Map<_, _>>()
+            );
+        }
+        value
     }
+}
+
+/// An app RPC URL: absolute https with a host, no credentials or fragment.
+fn rpc_url(value: &Value) -> Option<String> {
+    let text = value.as_str()?;
+    let url = url::Url::parse(text).ok()?;
+    (text.len() <= MAX_RPC_URL
+        && url.scheme() == "https"
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none())
+    .then(|| text.to_owned())
 }
 
 /// Captures `authorization_details`: exactly one `oaath_grant` whose signer
@@ -64,7 +94,8 @@ pub fn parse_grant_details(value: &Value) -> RelayResult<GrantDetail> {
         "expires_at",
         "device_id",
     ];
-    if record.len() != keys.len() || !keys.iter().all(|key| record.contains_key(*key)) {
+    let optional = usize::from(record.contains_key("rpc_urls"));
+    if record.len() != keys.len() + optional || !keys.iter().all(|key| record.contains_key(*key)) {
         return Err(INVALID);
     }
     if record["type"] != GRANT_DETAIL_TYPE {
@@ -90,6 +121,21 @@ pub fn parse_grant_details(value: &Value) -> RelayResult<GrantDetail> {
     if unique.len() != chains.len() {
         return Err(INVALID);
     }
+    let mut rpc_urls = BTreeMap::new();
+    if let Some(urls) = record.get("rpc_urls") {
+        let urls = urls
+            .as_object()
+            .filter(|urls| !urls.is_empty())
+            .ok_or(INVALID)?;
+        for (chain, url) in urls {
+            // A canonical decimal id of one of the detail's own chains.
+            let id = chain.parse::<u64>().map_err(|_| INVALID)?;
+            if id.to_string() != *chain || !chains.contains(&id) {
+                return Err(INVALID);
+            }
+            rpc_urls.insert(id, rpc_url(url).ok_or(INVALID)?);
+        }
+    }
     let expires_at = record["expires_at"].as_u64().ok_or(INVALID)?;
     let device_id = canonical_str(record["device_id"].as_str().ok_or(INVALID)?, INVALID)?;
     grant_packages(&signer, &policy)?;
@@ -99,6 +145,7 @@ pub fn parse_grant_details(value: &Value) -> RelayResult<GrantDetail> {
         chains,
         expires_at,
         device_id: device_id.to_owned(),
+        rpc_urls,
     })
 }
 

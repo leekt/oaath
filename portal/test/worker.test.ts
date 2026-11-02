@@ -523,3 +523,65 @@ describe("portal worker chain reads", () => {
     expect((await rpc(env, call("eth_chainId"))).status).toBe(502);
   });
 });
+
+describe("portal worker app RPC reads", () => {
+  const APP_RPC = "https://base.example/rpc";
+  function appEnvironment(details: unknown[]) {
+    const fetched: string[] = [];
+    const env: Env = {
+      ...environment().env,
+      RELAY: {
+        fetch: async (request) => {
+          expect(new URL(request.url).pathname).toBe("/portal/transactions/tx-1");
+          return Response.json({ authorization_details: details });
+        },
+      },
+      RPC_LIMIT: { limit: async () => ({ success: true }) },
+    };
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      fetched.push(url);
+      const body = JSON.parse(String(init.body)) as { id: unknown }[];
+      return Response.json(body.map((call) => ({ jsonrpc: "2.0", id: call.id, result: "0x2105" })));
+    });
+    return { env, fetched };
+  }
+  const read = (env: Env, path: string, headers: Record<string, string> = {}) =>
+    worker.fetch(
+      new Request(`${ORIGIN}${path}`, {
+        method: "POST",
+        headers: {
+          origin: ORIGIN,
+          "sec-fetch-site": "same-origin",
+          "content-type": "application/json",
+          ...headers,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
+      }),
+      env,
+    );
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads a chain through the app RPC its pending grant request names", async () => {
+    const { env, fetched } = appEnvironment([
+      { type: "oaath_grant", rpc_urls: { "8453": APP_RPC } },
+    ]);
+    const response = await read(env, "/rpc/tx/tx-1/8453");
+    expect(await response.json()).toEqual({ jsonrpc: "2.0", id: 1, result: "0x2105" });
+    expect(fetched).toEqual([APP_RPC]);
+  });
+
+  it("refuses another chain, a request with no RPCs, and cross-site callers", async () => {
+    const { env, fetched } = appEnvironment([
+      { type: "oaath_grant", rpc_urls: { "8453": APP_RPC } },
+    ]);
+    expect((await read(env, "/rpc/tx/tx-1/1")).status).toBe(404);
+    expect((await read(env, "/rpc/tx/tx-1/8453", { origin: "https://evil.example" })).status).toBe(
+      403,
+    );
+    const bare = appEnvironment([{ type: "oaath_grant" }]);
+    expect((await read(bare.env, "/rpc/tx/tx-1/8453")).status).toBe(404);
+    expect(fetched).toHaveLength(0);
+    expect(bare.fetched).toHaveLength(0);
+  });
+});

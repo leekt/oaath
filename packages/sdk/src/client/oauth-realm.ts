@@ -34,6 +34,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
+
 import {
   type CaptureContext,
   captureDenseArray,
@@ -82,6 +83,7 @@ import {
   openAuthorizationPopup,
   redeemAuthorizationCode,
 } from "./oauth-login.js";
+import { grantRpcUrls } from "./permission-approval.js";
 import { loadServiceSession, saveServiceSession, serviceSessionKeyId } from "./service-session.js";
 import { STORE_NAMES } from "./store-configuration.js";
 import { captureStores, type OaathStores, type OwnedStores, openStores } from "./stores.js";
@@ -175,6 +177,12 @@ export interface OaathOAuthApprovals {
   /** How long the user may take in the popup. Defaults to five minutes. */
   readonly timeoutMs?: number;
   /**
+   * The app's own read-only JSON-RPC per chain ID, sent with each grant
+   * request so the portal reads that chain through it. Keys must be among
+   * `chains`; https only; visible to the user, so never a secret URL.
+   */
+  readonly rpcUrls?: Readonly<Record<number, string>>;
+  /**
    * Opens the portal somewhere other than a popup and resolves with the
    * redirect URL, e.g. `chrome.identity.launchWebAuthFlow` in an extension.
    * `redirectUri` may then be off this page's origin.
@@ -222,7 +230,7 @@ export function createOAuthRealm(
       "issuer",
       "clientId",
       "redirectUri",
-      ...["timeoutMs", "launch"].filter((key) => Object.hasOwn(initialApprovals, key)),
+      ...["timeoutMs", "launch", "rpcUrls"].filter((key) => Object.hasOwn(initialApprovals, key)),
     ],
     "OAuth approvals",
     new WeakSet(),
@@ -249,6 +257,10 @@ export function createOAuthRealm(
   const chains = Object.freeze(entries.map(captureChainCapability));
   if (new Set(chains.map((chain) => chain.chainId)).size !== chains.length)
     return fail("OAuth chains repeat an ID");
+  const rpcUrls = grantRpcUrls(
+    approvals.rpcUrls,
+    chains.map((chain) => chain.chainId),
+  );
   const configuredOrigin =
     config.origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;
   if (typeof configuredOrigin !== "string")
@@ -676,6 +688,7 @@ export function createOAuthRealm(
         chains: chains.map((chain) => chain.chainId),
         expires_at: captured.expiresAt,
         device_id: deviceId,
+        ...(rpcUrls === undefined ? {} : { rpc_urls: rpcUrls }),
       };
       const expected: ExpectedGrant = {
         policy: captured.policy,
