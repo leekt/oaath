@@ -311,7 +311,7 @@ describe("hostile input at the client boundary", () => {
     for (const override of [
       { chainScope: "one" },
       { expiresIn: 0 },
-      { expiresIn: 2 ** 47 + 1 },
+      { expiresIn: 2 ** 42 + 1 },
       { expiresIn: 1.5 },
       { perChainOperationLimit: 0 },
       { perChainOperationLimit: { count: 2 } },

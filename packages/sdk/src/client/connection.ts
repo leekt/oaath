@@ -60,9 +60,10 @@ import {
 } from "./grant-handle.js";
 
 const MAX_PERMISSIONS = 16;
-// Any lifetime an adopter chooses, eternal included: 2^47 s (~4.4 million
-// years) keeps requestedAt + expiresIn a protocol uint48 timestamp.
-const MAX_EXPIRES_IN = 2 ** 47;
+// Any lifetime an adopter chooses, eternal included: 2^42 s (~139,000 years)
+// keeps requestedAt + expiresIn a uint48 timestamp whose milliseconds are
+// still a safe integer.
+const MAX_EXPIRES_IN = 2 ** 42;
 const MAX_OPERATION_COUNT = 2 ** 32 - 1;
 const MAX_UINT48 = 2 ** 48 - 1;
 
