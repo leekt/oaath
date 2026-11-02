@@ -237,6 +237,7 @@ export {
   MAX_OWNER_OPERATION_CALLS,
   OAATH_OWNER_OPERATION_REQUEST_VERSION,
   OAATH_SIGNED_OWNER_OPERATION_VERSION,
+  ownerOperationEntryPointVersion,
   ownerUserOperationForCetane,
   parseOwnerOperationRequest,
   parseSignedOwnerOperation,

@@ -1,12 +1,14 @@
 /**
- * Current-version owner-operation wire owner: one exact Kernel 0.4.0 /
- * EntryPoint 0.9 UserOperation an account's root signs, and the signed
- * artifact a submitter carries. The UserOperation hash is the root's signing
- * digest, so chain, EntryPoint, account, nonce, calls, gas, factory and
- * paymaster are all bound by the one signature.
+ * Current-version owner-operation wire owner: one exact UserOperation an
+ * account's root signs (Kernel 0.4.0 on EntryPoint 0.9, or Kernel 0.3.3 on
+ * EntryPoint 0.7), and the signed artifact a submitter carries. The
+ * UserOperation hash is the root's signing digest, so chain, EntryPoint,
+ * account, nonce, calls, gas, factory and paymaster are all bound by the one
+ * signature.
  *
- * The account is factory-derived, or an existing (imported) Kernel 0.4.0
- * account, which is already deployed and so carries no factory.
+ * The account is a factory-derived Kernel 0.4.0 account, or an existing
+ * (imported) Kernel 0.4.0 or 0.3.3 account, which is already deployed and so
+ * carries no factory.
  *
  * Capture checks only facts derivable without deployment addresses: exact
  * shape, calls against callData, a root-validation nonce, and the hash. The
@@ -240,6 +242,15 @@ export function ownerUserOperationForCetane(value: Readonly<OwnerUserOperation>)
   };
 }
 
+/** The account's EntryPoint version: 0.7 for an existing Kernel 0.3.3 account, else 0.9. */
+export function ownerOperationEntryPointVersion(
+  account: Readonly<OwnerOperationRequest["account"]>,
+): "0.7" | "0.9" {
+  return isKernelExistingAccountProfile(account) && account.kernelVersion === "0.3.3"
+    ? "0.7"
+    : "0.9";
+}
+
 function captureRequest(value: unknown, context: WeakSet<object>): Readonly<OwnerOperationRequest> {
   const record = exactRecord(
     value,
@@ -264,10 +275,8 @@ function captureRequest(value: unknown, context: WeakSet<object>): Readonly<Owne
     return fail("owner operation request version or kind is unsupported");
   const account = captureKernelAccountProfile(record.account, context, fail);
   const existing = isKernelExistingAccountProfile(account);
-  if (existing ? account.kernelVersion !== "0.4.0" : account.factoryRoute !== "kernel_factory")
-    return fail(
-      "owner operation account must be factory-derived or an existing Kernel 0.4.0 account",
-    );
+  if (!existing && account.factoryRoute !== "kernel_factory")
+    return fail("owner operation account must be factory-derived or an existing Kernel account");
   if (
     typeof record.chainId !== "number" ||
     !Number.isSafeInteger(record.chainId) ||
@@ -289,7 +298,7 @@ function captureRequest(value: unknown, context: WeakSet<object>): Readonly<Owne
     ownerUserOperationForCetane(userOperation),
     record.chainId,
     entryPoint,
-    "0.9",
+    ownerOperationEntryPointVersion(account),
   );
   if (record.userOperationHash !== hash)
     return fail("owner operation hash contradicts its operation");

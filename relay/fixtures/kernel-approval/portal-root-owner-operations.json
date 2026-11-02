@@ -1279,7 +1279,7 @@
       }
     },
     {
-      "name": "ecdsa root: existing account: a Kernel 0.3.3 profile",
+      "name": "ecdsa root: existing account: a Kernel 0.3.3 profile hashed for EntryPoint 0.9",
       "rootKind": "ecdsa",
       "signed": {
         "version": "oaath.signed-owner-operation/v1",
@@ -2665,7 +2665,7 @@
       }
     },
     {
-      "name": "p256 root: existing account: a Kernel 0.3.3 profile",
+      "name": "p256 root: existing account: a Kernel 0.3.3 profile hashed for EntryPoint 0.9",
       "rootKind": "p256",
       "signed": {
         "version": "oaath.signed-owner-operation/v1",
@@ -4072,7 +4072,7 @@
       }
     },
     {
-      "name": "webauthn root: existing account: a Kernel 0.3.3 profile",
+      "name": "webauthn root: existing account: a Kernel 0.3.3 profile hashed for EntryPoint 0.9",
       "rootKind": "webauthn",
       "signed": {
         "version": "oaath.signed-owner-operation/v1",
@@ -4369,6 +4369,463 @@
       },
       "expect": {
         "valid": true
+      }
+    },
+    {
+      "name": "ecdsa root: Kernel 0.3.3 account: valid",
+      "rootKind": "ecdsa",
+      "signed": {
+        "version": "oaath.signed-owner-operation/v1",
+        "request": {
+          "version": "oaath.owner-operation-request/v1",
+          "kind": "kernel-owner-operation",
+          "account": {
+            "version": "oaath.kernel-existing-account-profile/v1",
+            "kind": "kernel",
+            "kernelVersion": "0.3.3",
+            "address": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "entryPoint": {
+              "version": "0.7"
+            },
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x70be93514caab13247e9251ba604fd0585a4521a"
+            }
+          },
+          "chainId": 8453,
+          "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+          "calls": [
+            {
+              "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+              "value": "500",
+              "data": "0x12345678"
+            },
+            {
+              "target": "0x7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+              "value": "0",
+              "data": "0xa9059cbb"
+            }
+          ],
+          "userOperation": {
+            "sender": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "nonce": "0",
+            "callData": "0xe9ae5c530100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000007a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a00000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000412345678000000000000000000000000000000000000000000000000000000000000000000000000000000007b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004a9059cbb00000000000000000000000000000000000000000000000000000000",
+            "callGasLimit": "900000",
+            "verificationGasLimit": "3000000",
+            "preVerificationGas": "150000",
+            "maxFeePerGas": "2000000000",
+            "maxPriorityFeePerGas": "1000000000",
+            "factory": null,
+            "paymaster": null
+          },
+          "userOperationHash": "0x9821f0d2e8ef98387b210cb105bf99c9060ef6d87743d8fbc925919583f67c77"
+        },
+        "signature": "0xccb6ddfe577acfe586e4b6e778ec446a10894a7568a76fb5a0cadfd5f35be33b04974534e9f508484063b70b4e65f2375edfe71c903c3cb1b2a505b7a10a7e6e1b"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "name": "ecdsa root: Kernel 0.3.3 account: valid, EIP-191 wallet signature",
+      "rootKind": "ecdsa",
+      "signed": {
+        "version": "oaath.signed-owner-operation/v1",
+        "request": {
+          "version": "oaath.owner-operation-request/v1",
+          "kind": "kernel-owner-operation",
+          "account": {
+            "version": "oaath.kernel-existing-account-profile/v1",
+            "kind": "kernel",
+            "kernelVersion": "0.3.3",
+            "address": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "entryPoint": {
+              "version": "0.7"
+            },
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x70be93514caab13247e9251ba604fd0585a4521a"
+            }
+          },
+          "chainId": 8453,
+          "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+          "calls": [
+            {
+              "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+              "value": "500",
+              "data": "0x12345678"
+            },
+            {
+              "target": "0x7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+              "value": "0",
+              "data": "0xa9059cbb"
+            }
+          ],
+          "userOperation": {
+            "sender": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "nonce": "0",
+            "callData": "0xe9ae5c530100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000007a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a00000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000412345678000000000000000000000000000000000000000000000000000000000000000000000000000000007b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004a9059cbb00000000000000000000000000000000000000000000000000000000",
+            "callGasLimit": "900000",
+            "verificationGasLimit": "3000000",
+            "preVerificationGas": "150000",
+            "maxFeePerGas": "2000000000",
+            "maxPriorityFeePerGas": "1000000000",
+            "factory": null,
+            "paymaster": null
+          },
+          "userOperationHash": "0x9821f0d2e8ef98387b210cb105bf99c9060ef6d87743d8fbc925919583f67c77"
+        },
+        "signature": "0x52e1ef85499d379d5fa64682b1ed024494a32361d52599fdb8430000aa2656611b0c240f8f1b881e6248864e48e103edb9d15ecb06418dcf624460dcecce2dee1b"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "name": "ecdsa root: Kernel 0.3.3 account: carries a factory",
+      "rootKind": "ecdsa",
+      "signed": {
+        "version": "oaath.signed-owner-operation/v1",
+        "request": {
+          "version": "oaath.owner-operation-request/v1",
+          "kind": "kernel-owner-operation",
+          "account": {
+            "version": "oaath.kernel-existing-account-profile/v1",
+            "kind": "kernel",
+            "kernelVersion": "0.3.3",
+            "address": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "entryPoint": {
+              "version": "0.7"
+            },
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x70be93514caab13247e9251ba604fd0585a4521a"
+            }
+          },
+          "chainId": 8453,
+          "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+          "calls": [
+            {
+              "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+              "value": "500",
+              "data": "0x12345678"
+            },
+            {
+              "target": "0x7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+              "value": "0",
+              "data": "0xa9059cbb"
+            }
+          ],
+          "userOperation": {
+            "sender": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "nonce": "0",
+            "callData": "0xe9ae5c530100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000007a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a00000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000412345678000000000000000000000000000000000000000000000000000000000000000000000000000000007b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004a9059cbb00000000000000000000000000000000000000000000000000000000",
+            "callGasLimit": "900000",
+            "verificationGasLimit": "3000000",
+            "preVerificationGas": "150000",
+            "maxFeePerGas": "2000000000",
+            "maxPriorityFeePerGas": "1000000000",
+            "factory": {
+              "address": "0xfafafafafafafafafafafafafafafafafafafafa",
+              "data": "0x1234"
+            },
+            "paymaster": null
+          },
+          "userOperationHash": "0xa1e84930221bdd90db6a57196fb1075cc4c24e23125057d9046640cec58119ea"
+        },
+        "signature": "0xccb6ddfe577acfe586e4b6e778ec446a10894a7568a76fb5a0cadfd5f35be33b04974534e9f508484063b70b4e65f2375edfe71c903c3cb1b2a505b7a10a7e6e1b"
+      },
+      "expect": {
+        "valid": false,
+        "failure": "request"
+      }
+    },
+    {
+      "name": "ecdsa root: Kernel 0.3.3 account: hashed for EntryPoint 0.9",
+      "rootKind": "ecdsa",
+      "signed": {
+        "version": "oaath.signed-owner-operation/v1",
+        "request": {
+          "version": "oaath.owner-operation-request/v1",
+          "kind": "kernel-owner-operation",
+          "account": {
+            "version": "oaath.kernel-existing-account-profile/v1",
+            "kind": "kernel",
+            "kernelVersion": "0.3.3",
+            "address": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "entryPoint": {
+              "version": "0.7"
+            },
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x70be93514caab13247e9251ba604fd0585a4521a"
+            }
+          },
+          "chainId": 8453,
+          "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+          "calls": [
+            {
+              "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+              "value": "500",
+              "data": "0x12345678"
+            },
+            {
+              "target": "0x7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+              "value": "0",
+              "data": "0xa9059cbb"
+            }
+          ],
+          "userOperation": {
+            "sender": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "nonce": "0",
+            "callData": "0xe9ae5c530100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000007a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a00000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000412345678000000000000000000000000000000000000000000000000000000000000000000000000000000007b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004a9059cbb00000000000000000000000000000000000000000000000000000000",
+            "callGasLimit": "900000",
+            "verificationGasLimit": "3000000",
+            "preVerificationGas": "150000",
+            "maxFeePerGas": "2000000000",
+            "maxPriorityFeePerGas": "1000000000",
+            "factory": null,
+            "paymaster": null
+          },
+          "userOperationHash": "0x4ca21095c0809edea6a11fd25147e118211029923c30de303220ea6fad801c5a"
+        },
+        "signature": "0xccb6ddfe577acfe586e4b6e778ec446a10894a7568a76fb5a0cadfd5f35be33b04974534e9f508484063b70b4e65f2375edfe71c903c3cb1b2a505b7a10a7e6e1b"
+      },
+      "expect": {
+        "valid": false,
+        "failure": "request"
+      }
+    },
+    {
+      "name": "ecdsa root: Kernel 0.3.3 account: EntryPoint 0.9",
+      "rootKind": "ecdsa",
+      "signed": {
+        "version": "oaath.signed-owner-operation/v1",
+        "request": {
+          "version": "oaath.owner-operation-request/v1",
+          "kind": "kernel-owner-operation",
+          "account": {
+            "version": "oaath.kernel-existing-account-profile/v1",
+            "kind": "kernel",
+            "kernelVersion": "0.3.3",
+            "address": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "entryPoint": {
+              "version": "0.7"
+            },
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x70be93514caab13247e9251ba604fd0585a4521a"
+            }
+          },
+          "chainId": 8453,
+          "entryPoint": "0x433709009b8330fda32311df1c2afa402ed8d009",
+          "calls": [
+            {
+              "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+              "value": "500",
+              "data": "0x12345678"
+            },
+            {
+              "target": "0x7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+              "value": "0",
+              "data": "0xa9059cbb"
+            }
+          ],
+          "userOperation": {
+            "sender": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "nonce": "0",
+            "callData": "0xe9ae5c530100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000007a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a00000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000412345678000000000000000000000000000000000000000000000000000000000000000000000000000000007b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004a9059cbb00000000000000000000000000000000000000000000000000000000",
+            "callGasLimit": "900000",
+            "verificationGasLimit": "3000000",
+            "preVerificationGas": "150000",
+            "maxFeePerGas": "2000000000",
+            "maxPriorityFeePerGas": "1000000000",
+            "factory": null,
+            "paymaster": null
+          },
+          "userOperationHash": "0x262bec729ac772b2f0bb4907e7d4ed02ac04793fae7f564faa74c6c8081e1730"
+        },
+        "signature": "0xccb6ddfe577acfe586e4b6e778ec446a10894a7568a76fb5a0cadfd5f35be33b04974534e9f508484063b70b4e65f2375edfe71c903c3cb1b2a505b7a10a7e6e1b"
+      },
+      "expect": {
+        "valid": false,
+        "failure": "binding"
+      }
+    },
+    {
+      "name": "ecdsa root: Kernel 0.3.3 account: nonce outside root validation",
+      "rootKind": "ecdsa",
+      "signed": {
+        "version": "oaath.signed-owner-operation/v1",
+        "request": {
+          "version": "oaath.owner-operation-request/v1",
+          "kind": "kernel-owner-operation",
+          "account": {
+            "version": "oaath.kernel-existing-account-profile/v1",
+            "kind": "kernel",
+            "kernelVersion": "0.3.3",
+            "address": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "entryPoint": {
+              "version": "0.7"
+            },
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x70be93514caab13247e9251ba604fd0585a4521a"
+            }
+          },
+          "chainId": 8453,
+          "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+          "calls": [
+            {
+              "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+              "value": "500",
+              "data": "0x12345678"
+            },
+            {
+              "target": "0x7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+              "value": "0",
+              "data": "0xa9059cbb"
+            }
+          ],
+          "userOperation": {
+            "sender": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "nonce": "3533694129556768659166595001485837031654967793751237916243212402585239552",
+            "callData": "0xe9ae5c530100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000007a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a00000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000412345678000000000000000000000000000000000000000000000000000000000000000000000000000000007b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004a9059cbb00000000000000000000000000000000000000000000000000000000",
+            "callGasLimit": "900000",
+            "verificationGasLimit": "3000000",
+            "preVerificationGas": "150000",
+            "maxFeePerGas": "2000000000",
+            "maxPriorityFeePerGas": "1000000000",
+            "factory": null,
+            "paymaster": null
+          },
+          "userOperationHash": "0x29c0c2c934a3dc87d4dc21898bf6f3afee8e5ead97cd241ed2113f601cd76dcd"
+        },
+        "signature": "0xccb6ddfe577acfe586e4b6e778ec446a10894a7568a76fb5a0cadfd5f35be33b04974534e9f508484063b70b4e65f2375edfe71c903c3cb1b2a505b7a10a7e6e1b"
+      },
+      "expect": {
+        "valid": false,
+        "failure": "request"
+      }
+    },
+    {
+      "name": "ecdsa root: Kernel 0.3.3 account: sender is not its address",
+      "rootKind": "ecdsa",
+      "signed": {
+        "version": "oaath.signed-owner-operation/v1",
+        "request": {
+          "version": "oaath.owner-operation-request/v1",
+          "kind": "kernel-owner-operation",
+          "account": {
+            "version": "oaath.kernel-existing-account-profile/v1",
+            "kind": "kernel",
+            "kernelVersion": "0.3.3",
+            "address": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "entryPoint": {
+              "version": "0.7"
+            },
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x70be93514caab13247e9251ba604fd0585a4521a"
+            }
+          },
+          "chainId": 8453,
+          "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+          "calls": [
+            {
+              "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+              "value": "500",
+              "data": "0x12345678"
+            },
+            {
+              "target": "0x7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+              "value": "0",
+              "data": "0xa9059cbb"
+            }
+          ],
+          "userOperation": {
+            "sender": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+            "nonce": "0",
+            "callData": "0xe9ae5c530100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000007a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a00000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000412345678000000000000000000000000000000000000000000000000000000000000000000000000000000007b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004a9059cbb00000000000000000000000000000000000000000000000000000000",
+            "callGasLimit": "900000",
+            "verificationGasLimit": "3000000",
+            "preVerificationGas": "150000",
+            "maxFeePerGas": "2000000000",
+            "maxPriorityFeePerGas": "1000000000",
+            "factory": null,
+            "paymaster": null
+          },
+          "userOperationHash": "0x5a24397aa6d4eebcf1e6a4a359d223629d55788db708180408bf2d48c9a2c38c"
+        },
+        "signature": "0xccb6ddfe577acfe586e4b6e778ec446a10894a7568a76fb5a0cadfd5f35be33b04974534e9f508484063b70b4e65f2375edfe71c903c3cb1b2a505b7a10a7e6e1b"
+      },
+      "expect": {
+        "valid": false,
+        "failure": "binding"
+      }
+    },
+    {
+      "name": "ecdsa root: Kernel 0.3.3 account: signed by another key",
+      "rootKind": "ecdsa",
+      "signed": {
+        "version": "oaath.signed-owner-operation/v1",
+        "request": {
+          "version": "oaath.owner-operation-request/v1",
+          "kind": "kernel-owner-operation",
+          "account": {
+            "version": "oaath.kernel-existing-account-profile/v1",
+            "kind": "kernel",
+            "kernelVersion": "0.3.3",
+            "address": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "entryPoint": {
+              "version": "0.7"
+            },
+            "ownerCredential": {
+              "version": "oaath.owner-credential-profile/v1",
+              "kind": "ecdsa",
+              "address": "0x70be93514caab13247e9251ba604fd0585a4521a"
+            }
+          },
+          "chainId": 8453,
+          "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+          "calls": [
+            {
+              "target": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+              "value": "500",
+              "data": "0x12345678"
+            },
+            {
+              "target": "0x7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b",
+              "value": "0",
+              "data": "0xa9059cbb"
+            }
+          ],
+          "userOperation": {
+            "sender": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+            "nonce": "0",
+            "callData": "0xe9ae5c530100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000007a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a00000000000000000000000000000000000000000000000000000000000001f40000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000412345678000000000000000000000000000000000000000000000000000000000000000000000000000000007b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004a9059cbb00000000000000000000000000000000000000000000000000000000",
+            "callGasLimit": "900000",
+            "verificationGasLimit": "3000000",
+            "preVerificationGas": "150000",
+            "maxFeePerGas": "2000000000",
+            "maxPriorityFeePerGas": "1000000000",
+            "factory": null,
+            "paymaster": null
+          },
+          "userOperationHash": "0x9821f0d2e8ef98387b210cb105bf99c9060ef6d87743d8fbc925919583f67c77"
+        },
+        "signature": "0xa03351c58f6ca350d1097300be5db3d351b95b3930303e6dbaf45dcb24e6cacc2c29c6f8414b72a1c10af55820cf957038fb4e815187cec1da179d9c5f1f1bab1b"
+      },
+      "expect": {
+        "valid": false,
+        "failure": "signature"
       }
     }
   ]
