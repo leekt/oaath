@@ -1,5 +1,12 @@
 # @oaath/protocol
 
+## 0.3.10
+
+### Patch Changes
+
+- 1455629: Unbounded grants: a GrantPolicy may have `validUntil: null` (no expiry policy is installed) and `perChainOperationLimit: null` (no operation or rate limit is installed), so a policy with neither installs only the call policy. A null limit hashes as count zero, which no limited policy can produce; an unlimited request may be approved with a limit, never the reverse. The OAAth portal flags an unbounded grant before the root signs.
+- c1f2f2d: A counterfactual Kernel 0.3.3 account's owner operation may deploy it: `prepareOwnerOperation({ ..., deployed: false, accountIndex })` adds its MetaFactory deployment, re-derived from the root owner and index, and `verifyOwnerOperation` accepts exactly that deployment at the account's own address, so `requestOwnerOperationApproval` covers sponsored org-wallet activation. The portal can import such a wallet before it is deployed by its account index.
+
 ## 0.3.9
 
 ### Patch Changes
