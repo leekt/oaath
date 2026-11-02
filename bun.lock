@@ -64,7 +64,7 @@
     },
     "packages/automation": {
       "name": "@oaath/automation",
-      "version": "0.3.6",
+      "version": "0.3.7",
       "dependencies": {
         "@oaath/protocol": "workspace:*",
         "cetane": "0.0.7",
@@ -75,7 +75,7 @@
     },
     "packages/automation-server": {
       "name": "@oaath/automation-server",
-      "version": "0.3.6",
+      "version": "0.3.7",
       "bin": {
         "oaath-automation": "./dist/cli.mjs",
       },
@@ -94,7 +94,7 @@
     },
     "packages/cli": {
       "name": "@oaath/cli",
-      "version": "0.3.6",
+      "version": "0.3.7",
       "bin": {
         "oaath": "./dist/cli.mjs",
       },
@@ -117,7 +117,7 @@
     },
     "packages/protocol": {
       "name": "@oaath/protocol",
-      "version": "0.3.6",
+      "version": "0.3.7",
       "dependencies": {
         "@noble/curves": "1.9.1",
         "@noble/hashes": "1.8.0",
@@ -131,7 +131,7 @@
     },
     "packages/sdk": {
       "name": "@oaath/sdk",
-      "version": "0.3.6",
+      "version": "0.3.7",
       "dependencies": {
         "@noble/curves": "1.9.1",
         "@noble/hashes": "1.8.0",
@@ -149,7 +149,7 @@
     },
     "packages/testing": {
       "name": "@oaath/testing",
-      "version": "0.3.6",
+      "version": "0.3.7",
       "dependencies": {
         "@account-abstraction/contracts": "0.7.0",
         "@noble/curves": "1.9.1",

@@ -1,5 +1,14 @@
 # @oaath/sdk
 
+## 0.3.7
+
+### Patch Changes
+
+- 6fdac81: Grant requests can name the app's own read-only JSON-RPC per chain (`rpcUrls` on `requestPermissionApproval` and on OAuth `approvals`); the OAAth portal reads that chain through it to prepare the root's approval. Keys must be requested chain IDs and URLs https; they are visible to the user.
+- d6c76fc: `requestPermission` accepts any Grant lifetime: `expiresIn` may be up to 2^42 seconds (about 139,000 years, effectively eternal) instead of one day.
+- 7df2252: `requestPermission` orders the expanded calls in the protocol's canonical target-selector order itself, so adopters no longer pre-sort multi-target permissions; a repeated target and selector still fails as `oaath_client_input_invalid`.
+  - @oaath/protocol@0.3.7
+
 ## 0.3.6
 
 ### Patch Changes

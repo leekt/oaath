@@ -1,5 +1,7 @@
 # @oaath/protocol
 
+## 0.3.7
+
 ## 0.3.6
 
 ### Patch Changes
