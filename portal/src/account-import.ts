@@ -21,6 +21,7 @@ import {
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 import {
   createKernelRuntime,
+  deriveKernelAccount,
   ECDSA_VALIDATOR,
   type KernelModuleSnapshot,
   kernelDeployment,
@@ -291,6 +292,12 @@ export async function inspectAccount(input: {
   readonly issued?: readonly `0x${string}`[];
   /** The portal's `/rpc/421614` proxy URL. */
   readonly rpcUrl: string;
+  /**
+   * A Kernel 0.3.3 wallet not deployed yet: its account index. The address
+   * must be what the signer's ECDSA owner derives at it; its first owner
+   * operation then deploys it.
+   */
+  readonly accountIndex?: string;
 }): Promise<AccountInspection> {
   const checks: ImportCheck[] = [];
   const stop = (id: ImportCheckId, detail: string, status: "fail" | "unknown" = "fail") => {
@@ -329,10 +336,72 @@ export async function inspectAccount(input: {
   } catch {
     return unreadable("deployed");
   }
+  if ((typeof code !== "string" || code === "0x") && input.accountIndex !== undefined) {
+    // A counterfactual Kernel 0.3.3 wallet: proven offline by its derivation.
+    if (input.signer.kind !== "ecdsa")
+      return stop(
+        "root",
+        "A Kernel 0.3.3 wallet's root is an ECDSA owner. Sign in with that wallet.",
+      );
+    let derived: `0x${string}`;
+    try {
+      derived = deriveKernelAccount({
+        deployment: kernelDeployment({ chainId: IMPORT_CHAIN_ID, kernelVersion: "0.3.3" }),
+        owner: input.signer.address,
+        accountIndex: input.accountIndex,
+      }).address.toLowerCase() as `0x${string}`;
+    } catch {
+      return stop("address", "The account index must be a whole number.");
+    }
+    if (derived !== account.toLowerCase())
+      return stop(
+        "owner",
+        `This signer at index ${input.accountIndex} derives ${derived}, not this address. Check the owner and the index.`,
+      );
+    pass("deployed", "Not deployed yet: its first owner operation deploys it.");
+    pass("implementation", "Kernel 0.3.3 with EntryPoint 0.7, deployed by its first operation.");
+    pass("root", "ECDSA validator.");
+    pass("owner", `This signer derives this address at account index ${input.accountIndex}.`);
+    let blockNumber = "0";
+    try {
+      blockNumber = (
+        await createPublicClient({
+          chain: { id: IMPORT_CHAIN_ID, name: IMPORT_NETWORK, nativeAA: false },
+          transport: http(input.rpcUrl, { timeout: TIMEOUT_MS }),
+        }).getBlockNumber()
+      ).toString();
+    } catch {
+      // Display only: a counterfactual wallet's reading needs no block.
+    }
+    const rootValidator = ECDSA_VALIDATOR.toLowerCase() as `0x${string}`;
+    return {
+      checks,
+      compatible: true,
+      inventory: inventoryOf({
+        account,
+        kernelVersion: "0.3.3",
+        blockNumber,
+        root: `0x01${rootValidator.slice(2)}` as `0x${string}`,
+        modules: [
+          {
+            moduleType: 1,
+            module: rootValidator,
+            label: "ECDSA validator",
+            origin: "root",
+            count: 1,
+            evidence: "state",
+          },
+        ],
+        complete: false,
+        note: "Not deployed yet. Its first owner operation deploys it with only this root.",
+      }),
+      inventoryError: null,
+    };
+  }
   if (typeof code !== "string" || code === "0x")
     return stop(
       "deployed",
-      `No contract is deployed at this address on ${IMPORT_NETWORK}. Use Create account for a new account.`,
+      `No contract is deployed at this address on ${IMPORT_NETWORK}. Use Create account for a new account, or enter the account index of a Kernel 0.3.3 wallet that isn't deployed yet.`,
     );
   if (code.toLowerCase().startsWith("0xef0100"))
     return stop(

@@ -29,6 +29,7 @@ const { ECDSA_VALIDATOR, prepareOwnerOperation, verifyOwnerOperation } = await i
   `${sdk}src/kernel.ts`
 );
 const { ecdsaWalletKey } = await import(`${sdk}src/kernel/key/ecdsa.ts`);
+const { deriveKernelV33Account } = await import(`${sdk}src/kernel/deployment/v33.ts`);
 const {
   OAATH_KERNEL_ACCOUNT_PROFILE_VERSION,
   OAATH_KERNEL_EXISTING_ACCOUNT_PROFILE_VERSION,
@@ -443,6 +444,65 @@ await record(
     ...v33Signed,
     signature: await portalRoot("ecdsa", "other").key.sign(v33Signed.request.userOperationHash),
   },
+  false,
+);
+
+// A counterfactual Kernel 0.3.3 account: its first operation deploys it
+// through the MetaFactory at its own index, as Orchestra's org wallets.
+const derived = deriveKernelV33Account({
+  owner: ecdsaRoot.credential.address,
+  accountIndex: "7",
+});
+const counterfactual = v33Account(ecdsaRoot, derived.address);
+const activation = clone(
+  await prepareOwnerOperation({
+    ...base,
+    deployed: false,
+    accountIndex: "7",
+    account: counterfactual,
+  }).sign(ecdsaRoot.key),
+);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 counterfactual account: deploys at its index",
+  activation,
+  true,
+);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 counterfactual account: another index's deployment",
+  rehashed(
+    activation,
+    {
+      userOperation: {
+        factory: {
+          address: derived.factory,
+          data: deriveKernelV33Account({
+            owner: ecdsaRoot.credential.address,
+            accountIndex: "8",
+          }).factoryData,
+        },
+      },
+    },
+    "0.7",
+  ),
+  false,
+);
+await record(
+  "ecdsa",
+  "Kernel 0.3.3 counterfactual account: another factory",
+  rehashed(
+    activation,
+    {
+      userOperation: {
+        factory: {
+          address: `0x${"fa".repeat(20)}`,
+          data: activation.request.userOperation.factory.data,
+        },
+      },
+    },
+    "0.7",
+  ),
   false,
 );
 

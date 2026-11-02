@@ -66,6 +66,7 @@ export function ImportAccount({
   onImported: (account: PortalAccount) => void;
 }) {
   const [address, setAddress] = useState("");
+  const [accountIndex, setAccountIndex] = useState("");
   const [busy, setBusy] = useState(false);
   const [inspection, setInspection] = useState<AccountInspection | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -83,6 +84,7 @@ export function ImportAccount({
           address,
           signer: signer.profile,
           rpcUrl: `${location.origin}/rpc/421614`,
+          ...(accountIndex.trim() === "" ? {} : { accountIndex: accountIndex.trim() }),
         }),
       );
     } finally {
@@ -130,6 +132,20 @@ export function ImportAccount({
           spellCheck={false}
           disabled={busy}
           required
+        />
+        <label htmlFor="import-index">
+          Account index{" "}
+          <span className="quiet">(only for a Kernel 0.3.3 wallet not deployed yet)</span>
+        </label>
+        <SchematicInput
+          id="import-index"
+          className="mono"
+          value={accountIndex}
+          onChange={(event) => setAccountIndex(event.target.value)}
+          placeholder="0"
+          inputMode="numeric"
+          autoComplete="off"
+          disabled={busy}
         />
         <SchematicAction
           type="submit"

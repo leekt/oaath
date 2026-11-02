@@ -28,6 +28,7 @@ import {
 } from "@oaath/protocol";
 import type { Hex } from "cetane";
 import { toRpc } from "cetane/execution/erc4337";
+import { decodeAbiParameters } from "cetane/utils";
 import {
   deriveKernelV4RootAccountAddress,
   encodeKernelV4Execution,
@@ -39,7 +40,11 @@ import {
   kernelV4Deployment,
 } from "../../kernel-v4.js";
 import { type PreparedPaymaster, prepareUserOperation } from "../../prepared-user-operation.js";
-import { ECDSA_VALIDATOR, KERNEL_ENTRY_POINT_V07 } from "../deployment/v33.js";
+import {
+  deriveKernelV33Account,
+  ECDSA_VALIDATOR,
+  KERNEL_ENTRY_POINT_V07,
+} from "../deployment/v33.js";
 import { captureKeyProfile, exactInput, inputInvalid, runtimeFail } from "../internal.js";
 import { credentialKey } from "../key/credential.js";
 import { ecdsaKey, ecdsaWalletKey } from "../key/ecdsa.js";
@@ -64,6 +69,12 @@ export interface PrepareOwnerOperationInput {
    * a derived account. An existing account is deployed: always `true`.
    */
   readonly deployed: boolean;
+  /**
+   * An existing Kernel 0.3.3 account that is not deployed yet: its account
+   * index, so `deployed: false` adds its MetaFactory deployment
+   * (`deriveKernelV33Account`); the derived address must be the profile's.
+   */
+  readonly accountIndex?: string;
   readonly calls: readonly Readonly<KernelCall>[];
   /** Root-validation uint16 lane and that lane's next EntryPoint sequence on this chain. */
   readonly nonce: Readonly<{ lane: string; sequence: string }>;
@@ -105,6 +116,40 @@ function ownerEntryPoint(account: Readonly<OwnerOperationRequest["account"]>) {
     : ({ version: "0.9", address: KERNEL_V4_ENTRY_POINT_V09 } as const);
 }
 
+const DEPLOY_WITH_FACTORY = [{ type: "address" }, { type: "bytes" }, { type: "bytes32" }] as const;
+
+/** A counterfactual Kernel 0.3.3 account's MetaFactory deployment at `accountIndex`. */
+function v33Counterfactual(
+  account: Readonly<KernelExistingAccountProfile>,
+  accountIndex: unknown,
+): Readonly<{ address: `0x${string}`; data: `0x${string}` }> {
+  if (account.ownerCredential.kind !== "ecdsa")
+    return inputInvalid("a Kernel 0.3.3 account's root is an ECDSA owner");
+  if (typeof accountIndex !== "string")
+    return inputInvalid("a counterfactual Kernel 0.3.3 account needs its account index");
+  const derived = deriveKernelV33Account({ owner: account.ownerCredential.address, accountIndex });
+  if (derived.address !== account.address)
+    return runtimeFail(
+      "kernel_runtime_binding_mismatch",
+      "the owner and account index derive another address",
+    );
+  return Object.freeze({ address: derived.factory, data: derived.factoryData as `0x${string}` });
+}
+
+/** Whether `factory` is exactly the account's own Kernel 0.3.3 deployment. */
+function isV33Deployment(
+  account: Readonly<KernelExistingAccountProfile>,
+  factory: Readonly<{ address: `0x${string}`; data: `0x${string}` }>,
+): boolean {
+  try {
+    const [, , salt] = decodeAbiParameters(DEPLOY_WITH_FACTORY, `0x${factory.data.slice(10)}`);
+    const expected = v33Counterfactual(account, BigInt(salt).toString(10));
+    return expected.address === factory.address && expected.data === factory.data;
+  } catch {
+    return false;
+  }
+}
+
 /** An existing account's own address. */
 function existingAddress(account: Readonly<OwnerOperationRequest["account"]>): `0x${string}` {
   return (account as Readonly<KernelExistingAccountProfile>).address as `0x${string}`;
@@ -131,6 +176,8 @@ export function prepareOwnerOperation(
   const keys = ["account", "chainId", "deployed", "calls", "nonce", "gas"];
   if (value !== null && typeof value === "object" && Object.hasOwn(value, "paymaster"))
     keys.push("paymaster");
+  if (value !== null && typeof value === "object" && Object.hasOwn(value, "accountIndex"))
+    keys.push("accountIndex");
   const input = exactInput(value, keys, "owner operation", context);
   if (typeof input.deployed !== "boolean") return inputInvalid("owner operation state is invalid");
   if (typeof input.chainId !== "number") return inputInvalid("owner operation chain is invalid");
@@ -142,8 +189,15 @@ export function prepareOwnerOperation(
       "kernel_runtime_unsupported",
       "owner operations require a factory-derived or an existing Kernel account",
     );
-  if (existing && !input.deployed)
-    return inputInvalid("an existing account is deployed; nothing deploys it");
+  // Only a Kernel 0.3.3 account may still be counterfactual, at its index.
+  const v33Deployment =
+    existing && !input.deployed && account.kernelVersion === "0.3.3"
+      ? v33Counterfactual(account, input.accountIndex)
+      : null;
+  if (existing && !input.deployed && v33Deployment === null)
+    return inputInvalid("an existing Kernel 0.4.0 account is deployed; nothing deploys it");
+  if (input.accountIndex !== undefined && v33Deployment === null)
+    return inputInvalid("an account index only deploys a counterfactual Kernel 0.3.3 account");
   const accountInput = existing
     ? null
     : {
@@ -185,9 +239,10 @@ export function prepareOwnerOperation(
       callData: encodeKernelV4Execution({ calls }),
       ...gas,
       factory:
-        input.deployed || !accountInput
+        v33Deployment ??
+        (input.deployed || !accountInput
           ? null
-          : { address: KERNEL_V4_FACTORY_V09, data: encodeKernelV4FactoryDeploy(accountInput) },
+          : { address: KERNEL_V4_FACTORY_V09, data: encodeKernelV4FactoryDeploy(accountInput) }),
       paymaster: input.paymaster ?? null,
     },
   });
@@ -328,8 +383,12 @@ export async function verifyOwnerOperation(
   const factory = request.userOperation.factory;
   let bound: boolean;
   if (isKernelExistingAccountProfile(account)) {
-    // An existing account executes at its own address and is never deployed here.
-    bound = request.userOperation.sender === account.address && factory === null;
+    // An existing account executes at its own address; only a counterfactual
+    // Kernel 0.3.3 account carries a deployment, exactly its own.
+    bound =
+      request.userOperation.sender === account.address &&
+      (factory === null ||
+        (account.kernelVersion === "0.3.3" && isV33Deployment(account, factory)));
   } else {
     const accountInput = {
       initialPackages: rootPackages(account, request.chainId),
