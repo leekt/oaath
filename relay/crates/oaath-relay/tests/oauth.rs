@@ -386,6 +386,40 @@ async fn cancels_with_access_denied_and_no_code() {
 }
 
 #[tokio::test]
+async fn registers_an_mcp_clients_rfc_7591_metadata_and_ignores_the_rest() {
+    let h = harness();
+    // The body the MCP TypeScript SDK sends (Claude Code, MCP Inspector).
+    let registered = h
+        .send(post(
+            "/oauth/clients",
+            None,
+            Some(json!({
+                "client_name": "Claude Code",
+                "redirect_uris": ["http://localhost:53682/callback"],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+                "token_endpoint_auth_method": "none",
+                "scope": "orchestra:read orchestra:register",
+                "client_uri": "https://claude.ai",
+                "software_id": "claude-code",
+                "software_version": "1.0.0",
+                "contacts": ["dev@example.com"],
+            })),
+        ))
+        .await
+        .ok(201)
+        .clone();
+    assert_eq!(
+        registered["redirect_uris"],
+        json!(["http://localhost:53682/callback"])
+    );
+    // What is actually registered: the code grant only.
+    assert_eq!(registered["grant_types"], json!(["authorization_code"]));
+    assert_eq!(registered["response_types"], json!(["code"]));
+    assert_eq!(registered["token_endpoint_auth_method"], json!("none"));
+}
+
+#[tokio::test]
 async fn refuses_malformed_registrations_and_pushed_requests() {
     let h = harness();
     for (body, error) in [
@@ -403,6 +437,19 @@ async fn refuses_malformed_registrations_and_pushed_requests() {
         ),
         (
             json!({ "redirect_uris": [REDIRECT_URI] }),
+            "invalid_client_metadata",
+        ),
+        // Understood metadata must be supported.
+        (
+            json!({ "client_name": "x", "redirect_uris": [REDIRECT_URI], "grant_types": ["client_credentials"] }),
+            "invalid_client_metadata",
+        ),
+        (
+            json!({ "client_name": "x", "redirect_uris": [REDIRECT_URI], "grant_types": ["refresh_token"] }),
+            "invalid_client_metadata",
+        ),
+        (
+            json!({ "client_name": "x", "redirect_uris": [REDIRECT_URI], "response_types": ["token"] }),
             "invalid_client_metadata",
         ),
     ] {
