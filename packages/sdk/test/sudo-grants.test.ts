@@ -60,5 +60,13 @@ describe("sudo grants", () => {
     });
     expect(capturePermissionInput(input(600), 1_000).policy).toMatchObject(SUDO);
     expect(() => capturePermissionInput(input(601), 1_000)).toThrow();
+    // A call with no selectors is refused, never expanded into a sudo request.
+    const noSelectors = {
+      ...input(600),
+      permissions: [
+        { calls: [{ target: `0x${"aa".repeat(20)}`, selectors: [], valueLimit: "0" }] },
+      ],
+    };
+    expect(() => capturePermissionInput(noSelectors, 1_000)).toThrow(/selectors are empty/u);
   });
 });

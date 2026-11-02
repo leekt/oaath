@@ -211,6 +211,10 @@ function policyFromInput(
       if (typeof call.target !== "string" || typeof call.valueLimit !== "string") {
         return clientFail("oaath_client_input_invalid", "permission call fields are invalid");
       }
+      // An empty selector list would expand to no calls, which reads as sudo.
+      if (selectors.length === 0) {
+        return clientFail("oaath_client_input_invalid", "permission call selectors are empty");
+      }
       for (const selector of selectors) {
         if (typeof selector !== "string") {
           return clientFail("oaath_client_input_invalid", "permission selector is invalid");
