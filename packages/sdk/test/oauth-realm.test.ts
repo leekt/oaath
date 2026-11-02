@@ -54,6 +54,19 @@ describe("OAuth-approved Grants", () => {
     await realm.close();
   });
 
+  it("asks for an effectively eternal grant", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const { input, pars } = await browser();
+    const realm = createOAAth(input);
+    const grant = await (await realm.connect()).requestPermission(
+      permissionInput({ expiresIn: 2 ** 47 }),
+    );
+    expect(grant.state).toBe("active");
+    const [detail] = JSON.parse([...pars.values()][0]!.get("authorization_details")!);
+    expect(detail.policy.validUntil - detail.policy.validAfter).toBe(2 ** 47 - 1);
+    await realm.close();
+  });
+
   it("refuses a returned request with someone else's signer before storing anything", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     const stranger = privateKeyToAccount(generatePrivateKey());
