@@ -1,6 +1,8 @@
 /**
- * Reading an existing Kernel v4 account before it is imported: whether the
- * signed-in signer is its root, and every module installed on it.
+ * Reading an existing Kernel account before it is imported: whether the
+ * signed-in signer is its root, and every module installed on it. A Kernel
+ * 0.3.3 account imports with its ECDSA owner; its modules cannot be listed,
+ * so its inventory is the root alone and marked incomplete.
  *
  * Every read goes through the portal's own budgeted `/rpc/421614` proxy. The
  * checks stop at the first failure with a plain explanation. The inventory
@@ -89,7 +91,7 @@ export interface AccountInspection {
 const LABELS: Readonly<Record<ImportCheckId, string>> = {
   address: "Account address",
   deployed: "Deployed account",
-  implementation: "Kernel v4 implementation",
+  implementation: "Kernel implementation",
   root: "Root validator",
   owner: "Root owner",
 };
@@ -224,30 +226,42 @@ export function attributeModules(input: {
       a.moduleType - b.moduleType ||
       a.module.localeCompare(b.module),
   );
-  const outsideModules = modules.filter((row) => row.origin === "outside");
   const complete = snapshot.complete;
-  return {
-    chainId: IMPORT_CHAIN_ID,
+  return inventoryOf({
     account: input.account,
     blockNumber: snapshot.blockNumber.toString(),
     root,
     modules,
-    outside: outsideModules.reduce((sum, row) => sum + row.count, 0),
     complete,
     note: !complete && snapshot.reason ? COVERAGE_NOTES[snapshot.reason] : null,
+  });
+}
+
+/** An inventory and the fingerprint the root acknowledges for it. */
+function inventoryOf(
+  input: Omit<AccountInventory, "chainId" | "outside" | "fingerprint">,
+): AccountInventory {
+  const outsideModules = input.modules.filter((row) => row.origin === "outside");
+  return {
+    chainId: IMPORT_CHAIN_ID,
+    ...input,
+    outside: outsideModules.reduce((sum, row) => sum + row.count, 0),
     fingerprint: keccak256(
       toHex(
         JSON.stringify({
           chainId: IMPORT_CHAIN_ID,
           account: input.account,
-          root,
-          complete,
+          root: input.root,
+          complete: input.complete,
           outside: outsideModules.map((row) => [row.moduleType, row.module, row.count]),
         }),
       ),
     ),
   };
 }
+
+const V33_NOTE =
+  "Kernel 0.3.3 modules cannot be listed. Modules installed outside OAAth keep their authority over this account.";
 
 /** Hard cap for one imported account's approval preparation (binding reads). */
 const APPROVAL_REQUESTS = 48;
@@ -263,8 +277,9 @@ export function importChainReads(rpcUrl: string) {
 }
 
 /**
- * Checks, in order, that `value` is a deployed reviewed Kernel v4 account whose
- * root is `signer`, then lists its modules. The first failure stops the checks.
+ * Checks, in order, that `value` is a deployed reviewed Kernel v4 or 0.3.3
+ * account whose root is `signer`, then lists its modules. The first failure
+ * stops the checks.
  */
 export async function inspectAccount(input: {
   readonly address: string;
@@ -304,7 +319,6 @@ export async function inspectAccount(input: {
   );
   if (!ports) return unreadable("deployed");
   const reads = ports.reads;
-  const deployment = kernelDeployment({ chainId: IMPORT_CHAIN_ID });
 
   let code: unknown;
   try {
@@ -320,7 +334,7 @@ export async function inspectAccount(input: {
   if (code.toLowerCase().startsWith("0xef0100"))
     return stop(
       "deployed",
-      "This address is an EIP-7702 delegated wallet, not a Kernel v4 smart account.",
+      "This address is an EIP-7702 delegated wallet, not a Kernel smart account.",
     );
   pass("deployed", `Contract deployed on ${IMPORT_NETWORK}.`);
 
@@ -341,19 +355,38 @@ export async function inspectAccount(input: {
       "implementation",
       "This contract is not a Kernel smart account: it has no upgradeable implementation.",
     );
-  if (implementation !== deployment.implementation)
+  const deployment = [
+    kernelDeployment({ chainId: IMPORT_CHAIN_ID, kernelVersion: "0.4.0" }),
+    kernelDeployment({ chainId: IMPORT_CHAIN_ID, kernelVersion: "0.3.3" }),
+  ].find((candidate) => candidate.implementation === implementation);
+  if (!deployment)
     return stop(
       "implementation",
-      `The account runs implementation ${implementation}, not the reviewed Kernel v4 (0.4.0) build OAAth supports.`,
+      `The account runs implementation ${implementation}, not a reviewed Kernel v4 (0.4.0) or 0.3.3 build OAAth supports.`,
     );
-  pass("implementation", "Reviewed Kernel v4 (0.4.0) with EntryPoint 0.9.");
+  const v33 = deployment.kernelVersion === "0.3.3";
+  pass(
+    "implementation",
+    v33
+      ? "Reviewed Kernel 0.3.3 with EntryPoint 0.7."
+      : "Reviewed Kernel v4 (0.4.0) with EntryPoint 0.9.",
+  );
+  if (v33 && input.signer.kind !== "ecdsa")
+    return stop(
+      "root",
+      "A Kernel 0.3.3 account imports with its ECDSA owner. Sign in with the wallet that owns the account.",
+    );
 
   const key = kernelKey({ credential: input.signer, validator: rootValidatorFor(input.signer) });
   const rootValidator = key.resolveValidator(deployment).toLowerCase() as `0x${string}`;
   let root: string;
   try {
     root = String(
-      await reads.read({ type: "kernel_v4_account_root", chainId: IMPORT_CHAIN_ID, account }),
+      await reads.read({
+        type: v33 ? "kernel_account_root_validator" : "kernel_v4_account_root",
+        chainId: IMPORT_CHAIN_ID,
+        account,
+      }),
     ).toLowerCase();
   } catch {
     return unreadable("root");
@@ -396,6 +429,29 @@ export async function inspectAccount(input: {
         timeout: TIMEOUT_MS,
       }),
     });
+    if (v33)
+      return {
+        checks,
+        compatible: true,
+        inventory: inventoryOf({
+          account,
+          blockNumber: (await client.getBlockNumber()).toString(),
+          root: root as `0x${string}`,
+          modules: [
+            {
+              moduleType: 1,
+              module: rootValidator,
+              label: moduleLabels(input.signer, rootValidator)(rootValidator, 1),
+              origin: "root",
+              count: 1,
+              evidence: "state",
+            },
+          ],
+          complete: false,
+          note: V33_NOTE,
+        }),
+        inventoryError: null,
+      };
     const snapshot = await readKernelModules(client, {
       address: account,
       version: "4",

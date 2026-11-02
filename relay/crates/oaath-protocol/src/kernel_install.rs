@@ -1,5 +1,5 @@
 //! The exact Kernel v4 replayable-install signing profile
-//! (`kernel-v4-replayable-install.ts`).
+//! (`kernel-v4-replayable-install.ts`), and Kernel 0.3.3's enable typed data.
 
 use alloy_primitives::B256;
 use serde_json::{Value, json};
@@ -139,6 +139,58 @@ pub fn kernel_v4_replayable_install_typed_data(
         "primaryType": "InstallPackages",
         "domain": {"name": "Kernel", "version": "0.4.0", "verifyingContract": account},
         "message": {"nonce": nonce, "packages": packages},
+    })
+}
+
+/// Kernel 0.3.3's `Enable` typed data for one session permission, in the
+/// canonical signing-request form the SDK states it in
+/// (`kernelV33PermissionEnableTypedData`, `existingSigningRequest`): a
+/// chain-zero domain, the permission's validation ID, Kernel's enable nonce,
+/// no hook, and every package as `0x0002 ‖ module ‖ config` (policies run for
+/// operations only). `packages` are a validated session permission whose
+/// first install carries the permission ID.
+pub fn kernel_v33_enable_typed_data(
+    account: &str,
+    nonce: u32,
+    packages: &[KernelInstall],
+) -> Value {
+    use alloy_primitives::Bytes;
+    use alloy_sol_types::SolValue;
+    let permission_id = &packages[0].internal_data[2..10];
+    let configs: Vec<Bytes> = packages
+        .iter()
+        .map(|install| {
+            let text = format!("0002{}{}", &install.module[2..], &install.module_data[66..]);
+            Bytes::from(hex::decode(text).expect("captured install"))
+        })
+        .collect();
+    json!({
+        "types": {
+            "EIP712Domain": [
+                {"name": "name", "type": "string"},
+                {"name": "version", "type": "string"},
+                {"name": "chainId", "type": "uint256"},
+                {"name": "verifyingContract", "type": "address"},
+            ],
+            "Enable": [
+                {"name": "validationId", "type": "bytes21"},
+                {"name": "nonce", "type": "uint32"},
+                {"name": "hook", "type": "address"},
+                {"name": "validatorData", "type": "bytes"},
+                {"name": "hookData", "type": "bytes"},
+                {"name": "selectorData", "type": "bytes"},
+            ],
+        },
+        "primaryType": "Enable",
+        "domain": {"name": "Kernel", "version": "0.3.3", "chainId": "0", "verifyingContract": account},
+        "message": {
+            "validationId": format!("0x02{permission_id}{}", "00".repeat(16)),
+            "nonce": nonce.to_string(),
+            "hook": "0x0000000000000000000000000000000000000001",
+            "validatorData": format!("0x{}", hex::encode((configs,).abi_encode_params())),
+            "hookData": "0x",
+            "selectorData": "0xe9ae5c53",
+        },
     })
 }
 

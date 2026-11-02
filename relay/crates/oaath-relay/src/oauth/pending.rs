@@ -54,10 +54,11 @@ use super::records::ParRecord;
 use super::{LoginRedirect, PreparedGrant, compose_par_grant, redirect_origin, redirect_url};
 use crate::authority::stored_permission_request;
 use crate::authorization::challenge::{random_identifier, sha256_base64url, verify_pkce_s256};
+use crate::chain::ChainReader;
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::approval::verify_grant_approval;
-use crate::grant::grant_signing_request;
+use crate::grant::prepare_signing_request;
 use crate::grant::signature::RelyingParty;
 use crate::kms::{RelayKms, open_artifact, seal_artifact};
 use crate::records::{
@@ -533,6 +534,7 @@ async fn for_root(
 pub async fn prepare_pending(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
+    chain: Option<&ChainReader>,
     request_id: &str,
     session: &str,
 ) -> RelayResult<PreparedGrant> {
@@ -542,7 +544,8 @@ pub async fn prepare_pending(
     let Locked {
         request, account, ..
     } = settle(transaction, result).await?;
-    let signing = grant_signing_request(&request, &request.policy, &account.address)?;
+    let signing =
+        prepare_signing_request(chain, &request, &request.policy, &account.address).await?;
     Ok(PreparedGrant {
         permission_request: request.to_json(),
         request_hash: format!("{:#x}", request.hash()),

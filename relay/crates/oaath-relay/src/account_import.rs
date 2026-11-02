@@ -1,5 +1,5 @@
-//! Importing an existing Kernel v4 account whose root is the signed-in
-//! signer.
+//! Importing an existing Kernel v4 account, or a Kernel 0.3.3 account with an
+//! ECDSA root, whose root is the signed-in signer.
 //!
 //! ```text
 //! POST /portal/accounts/import
@@ -21,7 +21,7 @@
 //!                      or over another account, owner, fingerprint, time or
 //!                      nonce; a statement older than five minutes or from the
 //!                      future; an account that is not this signer's reviewed
-//!                      Kernel v4 account on chain; unreadable chain evidence
+//!                      Kernel v4 or 0.3.3 account on chain; unreadable chain evidence
 //! ```
 //!
 //! The root signs one EIP-712 statement under the OAAth domain (as the
@@ -35,7 +35,8 @@
 //!
 //! A signature proves control of a key, not that the key is the account's
 //! root, so the relay also proves the root itself on chain before recording
-//! anything (`chain.rs`): reviewed Kernel v4 code, the root validator for the
+//! anything (`chain.rs`): reviewed Kernel v4 or 0.3.3 code, recorded as the
+//! profile's version, the root validator for the
 //! signer's kind, and this signer's key stored in it, at one block. Without a
 //! configured chain, or with unreadable evidence, the import is refused. The
 //! portal shows the same checks and every module first; the root
@@ -43,9 +44,7 @@
 
 use alloy_primitives::{Address, B256};
 use alloy_sol_types::{SolStruct, sol};
-use oaath_protocol::identity::{
-    KernelAccountProfile, KernelExistingAccountProfile, KernelExistingAccountVersion,
-};
+use oaath_protocol::identity::{KernelAccountProfile, KernelExistingAccountProfile};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -255,12 +254,12 @@ pub async fn import_account(
     let owner = settle(transaction, result).await?;
     // Without a configured chain nothing is trusted.
     let reader = chain.ok_or(RelayErrorCode::ChainUnavailable)?;
-    prove_kernel_root(reader, address, &owner).await?;
+    let kernel_version = prove_kernel_root(reader, address, &owner).await?;
 
     let mut transaction = store.begin().await?;
     let result = async {
         let profile = KernelAccountProfile::Existing(KernelExistingAccountProfile {
-            kernel_version: KernelExistingAccountVersion::V0_4_0,
+            kernel_version,
             address: account_address.clone(),
             owner_credential: owner.clone(),
         });

@@ -294,6 +294,79 @@ grants.push({
     perChainOperationLimit: { count: 3, intervalSeconds: 3600 },
   })),
 });
+// An imported Kernel 0.3.3 account: prepareKernelPermissionApproval (the
+// portal's own path) over reads that show a v3.3 account rooted in the ECDSA
+// owner, at validation nonce V33_NONCE.
+const V33_NONCE = 7;
+const { KERNEL_ENTRY_POINT_V07 } = await sdk("kernel/deployment/v33.ts");
+const { prepareKernelPermissionApproval } = await sdk("kernel/permission/prepare-approval.ts");
+const M = await sdk("kernel/modules.ts");
+const RUNTIME_CODE_HASHES = new Map([
+  [KERNEL_ENTRY_POINT_V07.address, KERNEL_ENTRY_POINT_V07.runtimeCodeHash],
+  [M.OAATH_KERNEL_V4_VALIDITY_POLICY, M.OAATH_KERNEL_V4_VALIDITY_POLICY_RUNTIME_CODE_HASH],
+  [M.OAATH_KERNEL_RATE_LIMIT_POLICY, M.OAATH_KERNEL_RATE_LIMIT_POLICY_RUNTIME_CODE_HASH],
+  [M.KERNEL_P256_VERIFIER, M.KERNEL_P256_VERIFIER_RUNTIME_CODE_HASH],
+]);
+
+function v33Reads(owner) {
+  const answers = {
+    chain_id: () => 421614,
+    code: () => "0x6080",
+    runtime_code_hash: ({ address }) => RUNTIME_CODE_HASHES.get(address),
+    kernel_account_implementation: () => "0xd6cedde84be40893d153be9d467cd6ad37875b28",
+    kernel_account_version: () => "kernel.advanced.v0.3.3",
+    kernel_account_entrypoint: () => KERNEL_ENTRY_POINT_V07.address,
+    kernel_account_root_validator: () => "0x01845adb2c711129d4f3966735ed98a9f09fc4ce57",
+    kernel_ecdsa_owner: () => owner,
+    kernel_v33_permission_nonce: () => String(V33_NONCE),
+  };
+  return {
+    read: async (request) => {
+      const answer = answers[request.type];
+      if (!answer) throw new Error(`unexpected v33 read ${request.type}`);
+      return answer(request);
+    },
+  };
+}
+
+async function v33Grant(operatorKind) {
+  const value = request(ecdsaOwner, OPERATORS[operatorKind]);
+  value.logicalAccount = {
+    version: "oaath.kernel-existing-account-profile/v1",
+    kind: "kernel",
+    kernelVersion: "0.3.3",
+    address: ACCOUNT,
+    entryPoint: { version: "0.7" },
+    ownerCredential: ecdsaOwner.credential,
+  };
+  const parsed = P.parsePermissionRequest(value);
+  const approval = await prepareKernelPermissionApproval({
+    request: parsed,
+    chainId: 421614,
+    reads: v33Reads(ecdsaOwner.credential.address),
+  });
+  const decision = await approval.sign(ecdsaOwner.key(), parsed.requestedAt);
+  return {
+    input: { request: value, account: ACCOUNT, v33Nonce: V33_NONCE, rpId: RP_ID, origin: ORIGIN },
+    expect: {
+      ok: {
+        installNonce: String(V33_NONCE),
+        packages: decision.installApproval.packages,
+        signingRequest: approval.signingRequest,
+        digest: decision.installApproval.digest,
+        capabilityHash: decision.capabilityHash,
+        artifact: JSON.stringify(decision),
+      },
+    },
+  };
+}
+
+for (const operatorKind of ["ecdsa", "webauthn"]) {
+  grants.push({
+    name: `kernel 0.3.3 ecdsa root, ${operatorKind} signer`,
+    ...(await v33Grant(operatorKind)),
+  });
+}
 grants.push({
   name: "argument constraint",
   ...(await refused(ecdsaOwner, {

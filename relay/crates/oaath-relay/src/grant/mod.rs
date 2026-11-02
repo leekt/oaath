@@ -1,5 +1,7 @@
 //! Dapp grants: one dapp signer plus one GrantPolicy, approved by the account's
-//! policy-free root with a Kernel 0.4.0 replayable install.
+//! policy-free root with a Kernel 0.4.0 replayable install, or, on an imported
+//! Kernel 0.3.3 account, with a chain-zero `Enable` at Kernel's validation
+//! nonce over the same packages.
 //!
 //! The relay derives what the root signs offline, byte-identical to the SDK
 //! (pinned by `relay/fixtures/grant`, exported from the SDK's own
@@ -23,15 +25,22 @@ pub mod signature;
 use alloy_primitives::{Address, B256, FixedBytes, U256, keccak256};
 use alloy_sol_types::{SolValue, sol};
 use oaath_protocol::grant_policy::GrantPolicy;
-use oaath_protocol::identity::OperatorCredentialProfile;
+use oaath_protocol::identity::{
+    KernelAccountProfile, KernelExistingAccountVersion, OperatorCredentialProfile,
+    OwnerCredentialProfile,
+};
 use oaath_protocol::kernel_install::{
-    KernelInstall, KernelReplayableInstallOwnerSigningRequest,
-    kernel_v4_replayable_install_typed_data, parse_kernel_replayable_install_owner_signing_request,
+    KernelInstall, kernel_v4_replayable_install_typed_data, kernel_v33_enable_typed_data,
+    parse_kernel_replayable_install_owner_signing_request,
 };
 use oaath_protocol::permission::PermissionRequest;
-use oaath_protocol::signing_request::parse_canonical_eip712_typed_data;
-use serde_json::json;
+use oaath_protocol::signing_request::{
+    Eip712OwnerSigningRequest, OwnerSigningRequest, parse_canonical_eip712_typed_data,
+    parse_owner_signing_request,
+};
+use serde_json::{Value, json};
 
+use crate::chain::{ChainReader, kernel_v33_enable_nonce};
 use crate::error::{RelayErrorCode, RelayResult};
 
 const CALL_POLICY: &str = "0x9a52283276a0ec8740df50bf01b28a80d880eaf2";
@@ -191,21 +200,92 @@ pub fn install_nonce(request_hash: B256) -> String {
     ((hash >> 64usize) << 64usize).to_string()
 }
 
+/// `grant_signing_request` for a portal prepare: a Kernel 0.3.3 account's
+/// enable nonce is read from the configured chain first. Without a chain, or
+/// with unreadable evidence, a v3.3 grant is not prepared.
+pub async fn prepare_signing_request(
+    chain: Option<&ChainReader>,
+    request: &PermissionRequest,
+    policy: &GrantPolicy,
+    account: &str,
+) -> RelayResult<GrantSigningRequest> {
+    let nonce = if is_kernel_v33(request) {
+        let packages = grant_packages(&request.operator_credential, policy)?;
+        let permission_id: [u8; 4] = hex_bytes(&packages[0].internal_data)
+            .try_into()
+            .map_err(|_| RelayErrorCode::Internal)?;
+        let reader = chain.ok_or(RelayErrorCode::ChainUnavailable)?;
+        let address = account
+            .parse()
+            .map_err(|_| RelayErrorCode::RecordUnreadable)?;
+        Some(kernel_v33_enable_nonce(reader, address, permission_id).await?)
+    } else {
+        None
+    };
+    grant_signing_request(request, policy, account, nonce)
+}
+
+/// An imported Kernel 0.3.3 account: its enable nonce is Kernel's onchain
+/// validation nonce, not derived from the request.
+pub fn is_kernel_v33(request: &PermissionRequest) -> bool {
+    matches!(
+        &request.logical_account,
+        KernelAccountProfile::Existing(profile)
+            if profile.kernel_version == KernelExistingAccountVersion::V0_3_3
+    )
+}
+
+/// One grant's `kernel-enable` owner signing request with the nonce and
+/// packages it installs.
+#[derive(Debug, Clone)]
+pub struct GrantSigningRequest {
+    pub request: Eip712OwnerSigningRequest,
+    pub nonce: String,
+    pub packages: Vec<KernelInstall>,
+}
+
+impl GrantSigningRequest {
+    pub fn owner_credential(&self) -> &OwnerCredentialProfile {
+        &self.request.signer.owner_credential
+    }
+
+    pub fn expected_digest(&self) -> &str {
+        &self.request.expected_digest
+    }
+
+    pub fn to_json(&self) -> Value {
+        OwnerSigningRequest::Eip712(Box::new(self.request.clone())).to_json()
+    }
+}
+
 /// The exact `kernel-enable` owner signing request the account root signs for
 /// one grant: the dapp signer under `policy` (the requested policy or an
-/// attenuation of it) installed into `account`.
+/// attenuation of it) installed into `account`. A Kernel 0.4.0 account signs a
+/// replayable install whose nonce derives from the request; a Kernel 0.3.3
+/// account signs `Enable` at `v33_nonce`, Kernel's effective validation nonce
+/// (`chain::kernel_v33_enable_nonce`). Without one a v3.3 grant is refused.
 pub fn grant_signing_request(
     request: &PermissionRequest,
     policy: &GrantPolicy,
     account: &str,
-) -> RelayResult<KernelReplayableInstallOwnerSigningRequest> {
+    v33_nonce: Option<u32>,
+) -> RelayResult<GrantSigningRequest> {
     let packages = grant_packages(&request.operator_credential, policy)?;
-    let nonce = install_nonce(request.hash());
-    let typed_data = kernel_v4_replayable_install_typed_data(account, &nonce, &packages);
+    let (nonce, typed_data) = if is_kernel_v33(request) {
+        let nonce = v33_nonce.filter(|nonce| *nonce > 0).ok_or(UNSUPPORTED)?;
+        (
+            nonce.to_string(),
+            kernel_v33_enable_typed_data(account, nonce, &packages),
+        )
+    } else {
+        let nonce = install_nonce(request.hash());
+        let typed_data = kernel_v4_replayable_install_typed_data(account, &nonce, &packages);
+        (nonce, typed_data)
+    };
     let digest = parse_canonical_eip712_typed_data(&typed_data)
         .and_then(|typed| typed.hash())
         .map_err(|_| RelayErrorCode::Internal)?;
-    parse_kernel_replayable_install_owner_signing_request(&json!({
+    let value = json!({
         "version": "oaath.owner-signing-request/v1",
         "kind": "eip712",
         "purpose": "kernel-enable",
@@ -216,6 +296,20 @@ pub fn grant_signing_request(
         "typedData": typed_data,
         "expectedDigest": hex(digest),
         "replay": { "nonce": nonce, "deadline": null },
-    }))
-    .map_err(|_| RelayErrorCode::Internal)
+    });
+    let request = if is_kernel_v33(request) {
+        match parse_owner_signing_request(&value) {
+            Ok(OwnerSigningRequest::Eip712(request)) => *request,
+            _ => return Err(RelayErrorCode::Internal),
+        }
+    } else {
+        parse_kernel_replayable_install_owner_signing_request(&value)
+            .map_err(|_| RelayErrorCode::Internal)?
+            .request
+    };
+    Ok(GrantSigningRequest {
+        request,
+        nonce,
+        packages,
+    })
 }
