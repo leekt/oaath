@@ -19,6 +19,7 @@ pub mod kernel_account;
 pub mod kernel_install;
 pub mod kernel_revocation;
 pub mod owner_operation;
+pub mod owner_transaction;
 pub mod permission;
 pub mod pkce;
 pub mod scope;

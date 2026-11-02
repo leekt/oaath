@@ -34,6 +34,7 @@ pub mod id_token;
 pub mod operation;
 pub mod pending;
 pub mod records;
+pub mod transaction;
 
 use crate::revocation::RevocationDelivery;
 use oaath_protocol::capture::parse_json;
@@ -423,9 +424,19 @@ pub async fn push_authorization_request(
                 .map_err(|_| invalid_details())?
         }
     };
+    let owner_transaction = match (param(form, "authorization_details"), &operation) {
+        (Some(details), None) => {
+            transaction::transaction_request(&parse_json(details).map_err(|_| invalid_details())?)
+                .map_err(|_| invalid_details())?
+        }
+        _ => None,
+    };
     let authorization_details = match (param(form, "authorization_details"), &operation) {
         (None, _) => None,
         (Some(_), Some(request)) => Some(operation::stored_details(request)),
+        (Some(_), None) if owner_transaction.is_some() => {
+            owner_transaction.as_ref().map(transaction::stored_details)
+        }
         (Some(details), None) => Some(
             grant_details(details, &par_id, client_id, redirect_uri, created_at)
                 .map_err(|_| invalid_details())?,
@@ -1151,6 +1162,11 @@ pub async fn exchange_code(
                 claim_encrypted_artifact(store, clock, kms, &caller, &consumed.artifact_id).await?;
             Some(vec![operation::operation_detail(&claimed.artifact)?])
         }
+        Released::Transaction => {
+            let claimed =
+                claim_encrypted_artifact(store, clock, kms, &caller, &consumed.artifact_id).await?;
+            Some(vec![transaction::transaction_detail(&claimed.artifact)?])
+        }
     };
     let credential = signer.credential()?;
     // RFC 8707 / RFC 9068: a login for a resource server answers a JWT access
@@ -1210,6 +1226,7 @@ enum Released {
     /// The composed permission request of a grant.
     Grant(Value),
     Operation,
+    Transaction,
 }
 
 async fn login_claims(
@@ -1232,6 +1249,8 @@ async fn login_claims(
         Released::Login
     } else if request.requested_scope == operation::OPERATION_SCOPE {
         Released::Operation
+    } else if request.requested_scope == transaction::TRANSACTION_SCOPE {
+        Released::Transaction
     } else {
         Released::Grant(
             stored_permission_request(&request.requested_scope, request_id)

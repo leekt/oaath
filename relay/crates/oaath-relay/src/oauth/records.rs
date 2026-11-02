@@ -224,14 +224,17 @@ impl ParRecord {
             authorization_details: match r.get("authorizationDetails") {
                 Some(Value::Null) => None,
                 Some(Value::String(text)) => {
-                    // Stored details stay the canonical form of a valid grant
-                    // or owner operation.
+                    // Stored details stay the canonical form of a valid grant,
+                    // owner operation or owner transaction.
                     let value = parse_json(text).map_err(|_| UNREADABLE)?;
-                    let canonical = match super::operation::operation_request(&value)
-                        .map_err(|_| UNREADABLE)?
-                    {
-                        Some(request) => super::operation::stored_details(&request),
-                        None => json!([parse_grant_details(&value)
+                    let operation =
+                        super::operation::operation_request(&value).map_err(|_| UNREADABLE)?;
+                    let transaction =
+                        super::transaction::transaction_request(&value).map_err(|_| UNREADABLE)?;
+                    let canonical = match (operation, transaction) {
+                        (Some(request), _) => super::operation::stored_details(&request),
+                        (None, Some(request)) => super::transaction::stored_details(&request),
+                        (None, None) => json!([parse_grant_details(&value)
                             .map_err(|_| UNREADABLE)?
                             .to_json()])
                         .to_string(),
