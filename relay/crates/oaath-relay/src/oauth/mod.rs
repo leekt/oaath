@@ -55,11 +55,10 @@ use crate::authorization::challenge::{
     is_code_challenge_s256, random_identifier, sha256_base64url,
 };
 use crate::authorization::code::{ConsumeAuthorizationCode, consume_authorization_code};
-use crate::chain::ChainReader;
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::details::{Composition, compose, parse_grant_details};
-use crate::grant::prepare_signing_request;
+use crate::grant::{enable_nonce, grant_signing_request};
 use crate::kms::{RelayKms, open_artifact, seal_artifact};
 use crate::portal::SignerAccount;
 use crate::records::{
@@ -1224,7 +1223,7 @@ pub struct PreparedGrant {
 pub fn prepare_selection(
     body: &Map<String, Value>,
 ) -> RelayResult<(String, String, Option<GrantPolicy>)> {
-    let allowed = ["signer_id", "account_id", "approved_policy"];
+    let allowed = ["signer_id", "account_id", "approved_policy", "enable_nonce"];
     if body.keys().any(|key| !allowed.contains(&key.as_str())) {
         return Err(INVALID);
     }
@@ -1310,7 +1309,6 @@ pub(crate) fn compose_par_grant(
 pub async fn prepare_grant(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
-    chain: Option<&ChainReader>,
     transaction_id: &str,
     body: &Map<String, Value>,
     session: Option<&str>,
@@ -1341,7 +1339,8 @@ pub async fn prepare_grant(
         Some(policy) if is_captured_policy_attenuation(&request.policy, &policy) => policy,
         Some(_) => return Err(INVALID),
     };
-    let signing = prepare_signing_request(chain, &request, &policy, &account.address).await?;
+    let nonce = enable_nonce(body.get("enable_nonce"))?;
+    let signing = grant_signing_request(&request, &policy, &account.address, nonce)?;
     Ok(PreparedGrant {
         permission_request: request.to_json(),
         request_hash: format!("{:#x}", request.hash()),

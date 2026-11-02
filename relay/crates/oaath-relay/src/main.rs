@@ -8,10 +8,9 @@
 //!                     /oauth/*, discovery, and the portal transaction routes
 //! OAATH_ID_TOKEN_KEY  path to the ES256 (P-256) PKCS#8 PEM id_token key
 //! OAATH_ID_TOKEN_KID  optional `kid`; defaults to the key's RFC 7638 thumbprint
-//! OAATH_RPC_421614    optional JSON-RPC URL for chain 421614, read only to
-//!                     prove an imported account's root; without it imports
-//!                     are refused. Also reads a revocation's permission state.
-//!                     Never logged
+//! OAATH_RPC_421614    optional JSON-RPC URL for chain 421614, read only for a
+//!                     revocation's permission state; without it revocations
+//!                     are refused. Never logged
 //! OAATH_BUNDLER_421614 optional bundler JSON-RPC URL for chain 421614 (a
 //!                     Pimlico endpoint): estimates and submits root-signed
 //!                     revocations; without it none are prepared. Never logged
@@ -131,7 +130,7 @@ async fn run() -> Result<(), String> {
     };
 
     if chain.is_none() {
-        tracing::info!("chain: none; account imports are refused");
+        tracing::info!("chain: none; revocations are refused");
     }
     let options = RelayOptions {
         store: store.clone(),

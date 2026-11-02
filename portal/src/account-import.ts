@@ -71,6 +71,8 @@ export interface InventoryModule {
 export interface AccountInventory {
   readonly chainId: number;
   readonly account: `0x${string}`;
+  /** The Kernel version read on chain; the root signs it into the import. */
+  readonly kernelVersion: "0.4.0" | "0.3.3";
   readonly blockNumber: string;
   readonly root: `0x${string}`;
   readonly modules: readonly InventoryModule[];
@@ -229,6 +231,7 @@ export function attributeModules(input: {
   const complete = snapshot.complete;
   return inventoryOf({
     account: input.account,
+    kernelVersion: "0.4.0",
     blockNumber: snapshot.blockNumber.toString(),
     root,
     modules,
@@ -435,6 +438,7 @@ export async function inspectAccount(input: {
         compatible: true,
         inventory: inventoryOf({
           account,
+          kernelVersion: "0.3.3",
           blockNumber: (await client.getBlockNumber()).toString(),
           root: root as `0x${string}`,
           modules: [
@@ -483,6 +487,7 @@ export async function inspectAccount(input: {
 const IMPORT_TYPES = {
   AccountImport: [
     { name: "account", type: "address" },
+    { name: "kernelVersion", type: "string" },
     { name: "ownerProfileHash", type: "bytes32" },
     { name: "inventoryFingerprint", type: "bytes32" },
     { name: "issuedAt", type: "uint64" },
@@ -507,6 +512,7 @@ export async function signAccountImport(input: {
   ).join("");
   const message = {
     account: inventory.account.toLowerCase() as `0x${string}`,
+    kernelVersion: inventory.kernelVersion,
     ownerProfileHash: hashOwnerCredentialProfile(signer.profile),
     inventoryFingerprint: inventory.fingerprint,
     issuedAt,
@@ -534,6 +540,7 @@ export async function signAccountImport(input: {
   return {
     root_signer_id: signer.signer_id,
     address: message.account,
+    kernel_version: inventory.kernelVersion,
     inventory_fingerprint: inventory.fingerprint,
     issued_at: issuedAt,
     nonce,

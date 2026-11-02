@@ -1814,6 +1814,7 @@ async function memberGrantOnChain(kind: "derived" | "imported") {
         types: {
           AccountImport: [
             { name: "account", type: "address" },
+            { name: "kernelVersion", type: "string" },
             { name: "ownerProfileHash", type: "bytes32" },
             { name: "inventoryFingerprint", type: "bytes32" },
             { name: "issuedAt", type: "uint64" },
@@ -1823,6 +1824,7 @@ async function memberGrantOnChain(kind: "derived" | "imported") {
         primaryType: "AccountImport",
         message: {
           account: address,
+          kernelVersion: "0.4.0",
           ownerProfileHash: hashOwnerCredentialProfile(rootProfile),
           inventoryFingerprint: fingerprint,
           issuedAt: BigInt(issuedAt),
@@ -1834,6 +1836,7 @@ async function memberGrantOnChain(kind: "derived" | "imported") {
       await relayCall("/portal/accounts/import", root.cookie, {
         root_signer_id: root.signerId,
         address,
+        kernel_version: "0.4.0",
         inventory_fingerprint: fingerprint,
         issued_at: issuedAt,
         nonce: "member-grant-1",
@@ -2622,15 +2625,14 @@ describe("importing an existing account through the portal's chain-read proxy", 
     await click(retry, "::-p-text(Import and sign)");
     await retry.waitForSelector("::-p-text(This account is already in OAAth.)");
 
-    // The relay proves the root on chain itself: an API call that skips the
-    // portal's checks cannot import an EOA, a non-Kernel contract, or a
-    // Kernel account whose root is another key.
+    // The relay reads no chain: the root's signed statement is the import, and
+    // an API call cannot import under a Kernel version the root did not sign.
     const ownerProfileHash = hashOwnerCredentialProfile({
       version: "oaath.owner-credential-profile/v1",
       kind: "ecdsa",
       address: WALLET_ADDRESS,
     });
-    for (const address of [`0x${"12".repeat(20)}`, deployment.entryPoint.address, foreign]) {
+    for (const address of [`0x${"12".repeat(20)}`]) {
       const issuedAt = Math.floor(Date.now() / 1000) - 5;
       const fingerprint = `0x${"22".repeat(32)}` as const;
       const signature = await WALLET.sign({
@@ -2639,6 +2641,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
           types: {
             AccountImport: [
               { name: "account", type: "address" },
+              { name: "kernelVersion", type: "string" },
               { name: "ownerProfileHash", type: "bytes32" },
               { name: "inventoryFingerprint", type: "bytes32" },
               { name: "issuedAt", type: "uint64" },
@@ -2648,6 +2651,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
           primaryType: "AccountImport",
           message: {
             account: address as `0x${string}`,
+            kernelVersion: "0.4.0",
             ownerProfileHash,
             inventoryFingerprint: fingerprint,
             issuedAt: BigInt(issuedAt),
@@ -2669,6 +2673,7 @@ describe("importing an existing account through the portal's chain-read proxy", 
         },
         {
           address: address.toLowerCase(),
+          kernel_version: "0.3.3",
           inventory_fingerprint: fingerprint,
           issued_at: issuedAt,
           nonce: "direct-1",

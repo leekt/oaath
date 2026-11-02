@@ -1,9 +1,10 @@
 //! Importing an existing Kernel v4 account, or a Kernel 0.3.3 account with an
-//! ECDSA root, whose root is the signed-in signer.
+//! ECDSA root, on its root's signed statement. The relay reads no chain.
 //!
 //! ```text
 //! POST /portal/accounts/import
-//!   {root_signer_id, address, inventory_fingerprint, issued_at, nonce, signature}
+//!   {root_signer_id, address, kernel_version, inventory_fingerprint, issued_at,
+//!    nonce, signature}
 //!   -> {account_id, address, profile}
 //! ```
 //!
@@ -11,17 +12,18 @@
 //! state and owner      none -> imported account + root membership + import
 //!                      evidence, one transaction; an import is immutable
 //! persisted evidence   oaath_account_v1 (the protocol existing-account
-//!                      profile, no factory index) and oaath_account_import_v1
-//!                      (the acknowledged fingerprint, the statement's time
-//!                      and nonce, and the root's signature)
+//!                      profile at the signed Kernel version, no factory index)
+//!                      and oaath_account_import_v1 (the acknowledged
+//!                      fingerprint, the statement's time and nonce, and the
+//!                      root's signature)
 //! resource occupied?   the address: an account is registered once, derived
 //!                      or imported
 //! retry safe?          a repeated import of the same address is refused
 //! forbidden            another signer's session; a signature by another key
-//!                      or over another account, owner, fingerprint, time or
-//!                      nonce; a statement older than five minutes or from the
-//!                      future; an account that is not this signer's reviewed
-//!                      Kernel v4 or 0.3.3 account on chain; unreadable chain evidence
+//!                      or over another account, owner, version, fingerprint,
+//!                      time or nonce; a statement older than five minutes or
+//!                      from the future; a Kernel 0.3.3 account whose root is
+//!                      not an ECDSA owner
 //! ```
 //!
 //! The root signs one EIP-712 statement under the OAAth domain (as the
@@ -29,27 +31,28 @@
 //! (`grant/signature.rs`):
 //!
 //! ```text
-//! AccountImport(address account, bytes32 ownerProfileHash,
+//! AccountImport(address account, string kernelVersion, bytes32 ownerProfileHash,
 //!               bytes32 inventoryFingerprint, uint64 issuedAt, string nonce)
 //! ```
 //!
-//! A signature proves control of a key, not that the key is the account's
-//! root, so the relay also proves the root itself on chain before recording
-//! anything (`chain.rs`): reviewed Kernel v4 or 0.3.3 code, recorded as the
-//! profile's version, the root validator for the
-//! signer's kind, and this signer's key stored in it, at one block. Without a
-//! configured chain, or with unreadable evidence, the import is refused. The
-//! portal shows the same checks and every module first; the root
-//! acknowledges that reading by its fingerprint.
+//! The signature proves control of the key, not that the key is the account's
+//! root on chain. That is enforced where it matters: every grant installs only
+//! through the root's own Kernel signature, which the account verifies on
+//! chain, so a non-root's approvals install nothing. A signer can still
+//! register an address it does not own first; the real root is then refused
+//! as `relay_already_decided`. The portal reads the account before the root
+//! signs and the root acknowledges that reading by its fingerprint.
 
 use alloy_primitives::{Address, B256};
 use alloy_sol_types::{SolStruct, sol};
-use oaath_protocol::identity::{KernelAccountProfile, KernelExistingAccountProfile};
+use oaath_protocol::identity::{
+    KernelAccountProfile, KernelExistingAccountProfile, KernelExistingAccountVersion,
+    OwnerCredentialProfile,
+};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::authorization::challenge::random_identifier;
-use crate::chain::{ChainReader, prove_kernel_root};
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::signature::{RelyingParty, verify_root_signature};
@@ -74,6 +77,7 @@ sol! {
     /// The statement an account's root signs to import it.
     struct AccountImport {
         address account;
+        string kernelVersion;
         bytes32 ownerProfileHash;
         bytes32 inventoryFingerprint;
         uint64 issuedAt;
@@ -164,12 +168,11 @@ pub struct ImportedAccount {
     pub profile: Value,
 }
 
-/// Records the root-signed import of an existing Kernel v4 account.
+/// Records the root-signed import of an existing Kernel account.
 pub async fn import_account(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
     issuer: &str,
-    chain: Option<&ChainReader>,
     body: &Map<String, Value>,
     session: &str,
 ) -> RelayResult<ImportedAccount> {
@@ -178,6 +181,7 @@ pub async fn import_account(
         &[
             "root_signer_id",
             "address",
+            "kernel_version",
             "inventory_fingerprint",
             "issued_at",
             "nonce",
@@ -194,6 +198,11 @@ pub async fn import_account(
         .and_then(Value::as_str)
         .and_then(|text| text.parse::<Address>().ok())
         .ok_or(INVALID)?;
+    let kernel_version = match body.get("kernel_version").and_then(Value::as_str) {
+        Some("0.4.0") => KernelExistingAccountVersion::V0_4_0,
+        Some("0.3.3") => KernelExistingAccountVersion::V0_3_3,
+        _ => return Err(INVALID),
+    };
     let fingerprint_text = body
         .get("inventory_fingerprint")
         .and_then(Value::as_str)
@@ -224,6 +233,7 @@ pub async fn import_account(
         let owner = signer.credential()?;
         let statement = AccountImport {
             account: address,
+            kernelVersion: kernel_version.as_str().to_owned(),
             ownerProfileHash: signer.profile_hash.parse().map_err(|_| UNREADABLE)?,
             inventoryFingerprint: fingerprint,
             issuedAt: issued_at,
@@ -252,9 +262,12 @@ pub async fn import_account(
     }
     .await;
     let owner = settle(transaction, result).await?;
-    // Without a configured chain nothing is trusted.
-    let reader = chain.ok_or(RelayErrorCode::ChainUnavailable)?;
-    let kernel_version = prove_kernel_root(reader, address, &owner).await?;
+    // Kernel 0.3.3's root is its ECDSA validator.
+    if kernel_version == KernelExistingAccountVersion::V0_3_3
+        && !matches!(owner, OwnerCredentialProfile::Ecdsa { .. })
+    {
+        return Err(RelayErrorCode::Forbidden);
+    }
 
     let mut transaction = store.begin().await?;
     let result = async {
@@ -324,15 +337,16 @@ mod tests {
             account: "0x00000000000000000000000000000000000000aa"
                 .parse()
                 .unwrap(),
+            kernelVersion: "0.4.0".to_owned(),
             ownerProfileHash: B256::repeat_byte(0x11),
             inventoryFingerprint: B256::repeat_byte(0x22),
             issuedAt: 1_700_000_000,
             nonce: "import-1".to_owned(),
         };
-        // Pinned against viem's hashTypedData over the same typed data.
+        // Pinned against cetane's hashTypedData over the same typed data.
         assert_eq!(
             format!("{:#x}", import_digest(&statement)),
-            "0x824271b8fd80234b0d32dd57a7593f32fd1e74817f6d5a81e3c78b6b96690b57"
+            "0x251942d2c0007601749d5aa298e8d5a155a8ef94b96a10cd42d7ce61f5929ec0"
         );
     }
 }

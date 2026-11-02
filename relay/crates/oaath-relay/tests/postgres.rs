@@ -1109,28 +1109,15 @@ async fn keeps_an_imported_account_and_refuses_its_second_import_across_restarts
     let address = "0x00000000000000000000000000000000000000ab";
     let fingerprint = format!("0x{}", "22".repeat(32));
 
-    let chain = support::chain::stub_chain(
-        421_614,
-        &[(
-            address,
-            support::chain::StubAccount::kernel(
-                &oaath_protocol::identity::parse_owner_credential_profile(&root.profile()).unwrap(),
-            ),
-        )],
-    )
-    .await;
-    let process = |clock: Arc<TestClock>| {
-        let reader = chain.reader();
-        async {
-            let store: Arc<dyn RelayStore> =
-                Arc::new(PostgresRelayStore::owning(fixture.pool().await));
-            harness_on(store, clock, move |options| options.chain = Some(reader))
-        }
+    let process = |clock: Arc<TestClock>| async {
+        let store: Arc<dyn RelayStore> = Arc::new(PostgresRelayStore::owning(fixture.pool().await));
+        harness_on(store, clock, |_| {})
     };
     let h = process(clock.clone()).await;
     let (signer_id, cookie) = sign_in(&h, &root).await;
     let digest = import_digest(&AccountImport {
         account: address.parse::<Address>().unwrap(),
+        kernelVersion: "0.4.0".to_owned(),
         ownerProfileHash: oaath_protocol::identity::parse_owner_credential_profile(&root.profile())
             .unwrap()
             .hash(),
@@ -1141,6 +1128,7 @@ async fn keeps_an_imported_account_and_refuses_its_second_import_across_restarts
     let body = json!({
         "root_signer_id": signer_id,
         "address": address,
+        "kernel_version": "0.4.0",
         "inventory_fingerprint": fingerprint,
         "issued_at": CLOCK_SECONDS,
         "nonce": "import-1",

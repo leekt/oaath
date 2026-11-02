@@ -51,6 +51,7 @@ use crate::bundler::Bundler;
 use crate::chain::ChainReader;
 use crate::clock::RelayClock;
 use crate::error::{RelayErrorCode, RelayResult};
+use crate::grant::enable_nonce;
 use crate::kms::RelayKms;
 use crate::link::{
     LinkOutcome, create_link, decide_link, identifier_segment, list_members, prepare_link_grant,
@@ -500,8 +501,7 @@ impl Relay {
                 let session = session_signer(store, clock, headers).await?;
                 let issuer = &self.oauth.as_ref().ok_or(RelayErrorCode::NotFound)?.issuer;
                 let body = body_record(headers, body, self.max_body_bytes).await?;
-                let chain = self.chain.as_deref();
-                let imported = import_account(store, clock, issuer, chain, &body, &session).await?;
+                let imported = import_account(store, clock, issuer, &body, &session).await?;
                 return reply(201, &imported);
             }
             if count == 2 && group == Some("accounts") {
@@ -583,12 +583,15 @@ impl Relay {
                     }
                     Some("prepare") => {
                         require_method(method, &Method::POST)?;
-                        exact_body(&body_record(headers, body, self.max_body_bytes).await?, &[])?;
+                        let body = body_record(headers, body, self.max_body_bytes).await?;
+                        if body.keys().any(|key| key != "enable_nonce") {
+                            return Err(INVALID);
+                        }
                         let prepared = pending::prepare_pending(
                             store,
                             clock,
-                            self.chain.as_deref(),
                             request_id,
+                            enable_nonce(body.get("enable_nonce"))?,
                             &session,
                         )
                         .await?;
@@ -821,15 +824,8 @@ impl Relay {
                             Err(code) => return Err(code),
                         };
                         let body = body_record(headers, body, self.max_body_bytes).await?;
-                        let prepared = prepare_grant(
-                            store,
-                            clock,
-                            self.chain.as_deref(),
-                            id,
-                            &body,
-                            session.as_deref(),
-                        )
-                        .await?;
+                        let prepared =
+                            prepare_grant(store, clock, id, &body, session.as_deref()).await?;
                         return reply(200, &prepared);
                     }
                     Some("redirect") => {

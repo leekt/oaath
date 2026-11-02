@@ -15,7 +15,12 @@ import {
   type PrepareGrantResponse,
   portalApi,
 } from "./api.js";
-import { RootSigningError, reviewedRequest, signGrantApproval } from "./root-signing.js";
+import {
+  enableNonce,
+  RootSigningError,
+  reviewedRequest,
+  signGrantApproval,
+} from "./root-signing.js";
 import { Button as SchematicAction } from "./schematic/components";
 import { type RememberedSigner, shortAddress } from "./signers.js";
 
@@ -168,11 +173,14 @@ export function GrantReview({
 
   useEffect(() => heading.current?.focus(), []);
   useEffect(() => {
-    portalApi
-      .prepareGrant(transaction.transaction_id, {
-        signer_id: signer.signer_id,
-        account_id: account.account_id,
-      })
+    enableNonce(account, detail)
+      .then((nonce) =>
+        portalApi.prepareGrant(transaction.transaction_id, {
+          signer_id: signer.signer_id,
+          account_id: account.account_id,
+          ...(nonce === undefined ? {} : { enable_nonce: nonce }),
+        }),
+      )
       .then((response) =>
         setPrepared({
           response,

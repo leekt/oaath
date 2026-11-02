@@ -18,7 +18,6 @@ use oaath_relay::error::RelayErrorCode;
 use oaath_relay::grant::approval::{V33_APPROVAL_VERSION, v33_capability_hash};
 use oaath_relay::grant::grant_packages;
 use serde_json::{Value, json};
-use support::chain::{StubAccount, stub_chain};
 use support::grant::{Root, approval, detail, link_member, root_key, sign_in};
 use support::*;
 
@@ -36,29 +35,23 @@ fn form(path: &str, pairs: &[(&str, &str)]) -> Request<Body> {
         .unwrap()
 }
 
-/// A relay whose chain shows `root`'s Kernel account at IMPORTED, the root
-/// signed in, and the account imported.
-async fn imported(root: &Root) -> (Harness, support::chain::StubChain, String, String, Value) {
-    let owner = parse_owner_credential_profile(&root.profile()).unwrap();
-    let (h, chain, signer_id, cookie, response) =
-        import_onto(root, StubAccount::kernel(&owner)).await;
-    (h, chain, signer_id, cookie, response.ok(201).clone())
+/// A relay with no chain, the root signed in, and its Kernel v4 account
+/// imported at IMPORTED.
+async fn imported(root: &Root) -> (Harness, String, String, Value) {
+    let (h, signer_id, cookie, response) = import_as(root, "0.4.0").await;
+    (h, signer_id, cookie, response.ok(201).clone())
 }
 
-/// Signs `root` in on a relay whose chain holds `stub` at IMPORTED and asks
-/// to import it.
-async fn import_onto(
-    root: &Root,
-    stub: StubAccount,
-) -> (Harness, support::chain::StubChain, String, String, Reply) {
+/// Signs `root` in on a relay with no chain and asks to import IMPORTED as a
+/// Kernel `kernel_version` account.
+async fn import_as(root: &Root, kernel_version: &str) -> (Harness, String, String, Reply) {
     let owner = parse_owner_credential_profile(&root.profile()).unwrap();
-    let chain = stub_chain(421_614, &[(IMPORTED, stub)]).await;
-    let reader = chain.reader();
-    let h = harness_with(move |options| options.chain = Some(reader));
+    let h = harness();
     let (signer_id, cookie) = sign_in(&h, root).await;
     let fingerprint = format!("0x{}", "22".repeat(32));
     let digest = import_digest(&AccountImport {
         account: IMPORTED.parse::<Address>().unwrap(),
+        kernelVersion: kernel_version.to_owned(),
         ownerProfileHash: owner.hash(),
         inventoryFingerprint: fingerprint.parse::<B256>().unwrap(),
         issuedAt: CLOCK_SECONDS,
@@ -72,6 +65,7 @@ async fn import_onto(
             Some(json!({
                 "root_signer_id": signer_id,
                 "address": IMPORTED,
+                "kernel_version": kernel_version,
                 "inventory_fingerprint": fingerprint,
                 "issued_at": CLOCK_SECONDS,
                 "nonce": "import-1",
@@ -79,7 +73,7 @@ async fn import_onto(
             })),
         ))
         .await;
-    (h, chain, signer_id, cookie, account)
+    (h, signer_id, cookie, account)
 }
 
 fn assert_existing_install(prepared: &Value, root: &Root) {
@@ -98,17 +92,8 @@ fn assert_existing_install(prepared: &Value, root: &Root) {
     );
 }
 
-/// A dapp's PAR for `detail()`, prepared and decided by the account's root
-/// with `approve`, and exchanged for tokens.
-async fn dapp_grant(
-    h: &Harness,
-    signer_id: &str,
-    cookie: &str,
-    account: &Value,
-    root: &Root,
-    approve: impl Fn(&Value) -> Value,
-) -> (Value, Value) {
-    let cookie = Some(cookie);
+/// A registered dapp's PAR for `detail()`: its client id and the request id.
+async fn pushed_par(h: &Harness) -> (String, String) {
     let client_id = text(
         h.send(post(
             "/oauth/clients",
@@ -141,7 +126,26 @@ async fn dapp_grant(
         .next()
         .unwrap()
         .to_owned();
-    let selection = json!({ "signer_id": signer_id, "account_id": account["account_id"] });
+    (client_id, id)
+}
+
+/// A dapp's PAR for `detail()`, prepared and decided by the account's root
+/// with `approve`, and exchanged for tokens.
+async fn dapp_grant(
+    h: &Harness,
+    signer_id: &str,
+    cookie: &str,
+    account: &Value,
+    root: &Root,
+    enable_nonce: Option<&str>,
+    approve: impl Fn(&Value) -> Value,
+) -> (Value, Value) {
+    let cookie = Some(cookie);
+    let (client_id, id) = pushed_par(h).await;
+    let mut selection = json!({ "signer_id": signer_id, "account_id": account["account_id"] });
+    if let Some(nonce) = enable_nonce {
+        selection["enable_nonce"] = json!(nonce);
+    }
     let prepared = h
         .send(portal_call(
             "POST",
@@ -200,24 +204,22 @@ async fn a_dapp_grant_on_an_imported_account_prepares_verifies_and_releases() {
             b"root-credential".to_vec(),
         ),
     ] {
-        let (h, chain, signer_id, cookie, account) = imported(&root).await;
-        let reads = chain.calls();
-        let (prepared, tokens) = dapp_grant(&h, &signer_id, &cookie, &account, &root, |prepared| {
-            approval(prepared, &root)
-        })
-        .await;
+        let (h, signer_id, cookie, account) = imported(&root).await;
+        let (prepared, tokens) =
+            dapp_grant(&h, &signer_id, &cookie, &account, &root, None, |prepared| {
+                approval(prepared, &root)
+            })
+            .await;
         let grant = &tokens["authorization_details"][0];
         assert_eq!(grant["enable"]["account"], IMPORTED);
         assert_eq!(grant["permission_request"], prepared["permission_request"]);
-        // Preparing and verifying the grant read no chain: the import proved it.
-        assert_eq!(chain.calls(), reads);
     }
 }
 
 #[tokio::test]
 async fn a_template_on_a_link_and_a_later_assignment_approve_on_an_imported_account() {
     let root = Root::Ecdsa(root_key());
-    let (h, _chain, _signer_id, cookie, account) = imported(&root).await;
+    let (h, _signer_id, cookie, account) = imported(&root).await;
     let account_id = text(&account, "account_id").to_owned();
     let template_id = text(
         h.send(portal_call(
@@ -380,25 +382,27 @@ fn v33_approval(prepared: &Value, root: &Root) -> Value {
 #[tokio::test]
 async fn a_dapp_grant_on_an_imported_kernel_v33_account_prepares_verifies_and_releases() {
     let root = Root::Ecdsa(root_key());
-    let owner = parse_owner_credential_profile(&root.profile()).unwrap();
-    let (h, chain, signer_id, cookie, imported) =
-        import_onto(&root, StubAccount::kernel_v33(&owner)).await;
+    let (h, signer_id, cookie, imported) = import_as(&root, "0.3.3").await;
     let account = imported.ok(201).clone();
     assert_eq!(account["profile"]["kernelVersion"], "0.3.3");
     assert_eq!(account["profile"]["entryPoint"]["version"], "0.7");
-    let reads = chain.calls();
-    let (prepared, tokens) = dapp_grant(&h, &signer_id, &cookie, &account, &root, |prepared| {
-        v33_approval(prepared, &root)
-    })
+    // The portal read Kernel's enable nonce and sends it with the prepare.
+    let (prepared, tokens) = dapp_grant(
+        &h,
+        &signer_id,
+        &cookie,
+        &account,
+        &root,
+        Some("7"),
+        |prepared| v33_approval(prepared, &root),
+    )
     .await;
     let typed = &prepared["signing_request"]["typedData"];
     assert_eq!(typed["primaryType"], "Enable");
     assert_eq!(typed["domain"]["version"], "0.3.3");
     assert_eq!(typed["domain"]["chainId"], "0");
-    // Kernel's effective nonce: currentNonce() 1, no validation holding it.
-    assert_eq!(prepared["signing_request"]["replay"]["nonce"], "1");
-    // Preparing read Kernel's nonce once (chain, block, two calls); deciding read nothing.
-    assert_eq!(chain.calls(), reads + 4);
+    assert_eq!(typed["message"]["nonce"], "7");
+    assert_eq!(prepared["signing_request"]["replay"]["nonce"], "7");
     let grant = &tokens["authorization_details"][0];
     assert_eq!(grant["enable"]["version"], V33_APPROVAL_VERSION);
     assert_eq!(grant["enable"]["account"], IMPORTED);
@@ -406,27 +410,43 @@ async fn a_dapp_grant_on_an_imported_kernel_v33_account_prepares_verifies_and_re
 }
 
 #[tokio::test]
-async fn an_unreviewed_or_foreign_kernel_v33_account_is_not_imported() {
-    let root = Root::Ecdsa(root_key());
-    let owner = parse_owner_credential_profile(&root.profile()).unwrap();
-    let mut other_id = StubAccount::kernel_v33(&owner);
-    other_id.account_id = Some("kernel.advanced.v0.3.1".to_owned());
-    let other = Root::Ecdsa(k256::ecdsa::SigningKey::from_slice(&[0x55; 32]).unwrap());
-    let other_owner =
-        StubAccount::kernel_v33(&parse_owner_credential_profile(&other.profile()).unwrap());
-    for stub in [other_id, other_owner] {
-        import_onto(&root, stub)
-            .await
-            .4
-            .failure(RelayErrorCode::Forbidden);
-    }
+async fn a_kernel_v33_import_needs_an_ecdsa_root_and_its_prepare_an_enable_nonce() {
     // A v3.3 account's root is its ECDSA validator: a passkey signer is no root.
     let passkey = Root::WebAuthn(
         p256::ecdsa::SigningKey::from_slice(&[0x33; 32]).unwrap(),
         b"root-credential".to_vec(),
     );
-    import_onto(&passkey, StubAccount::kernel_v33(&owner))
+    import_as(&passkey, "0.3.3")
         .await
-        .4
+        .3
         .failure(RelayErrorCode::Forbidden);
+
+    let root = Root::Ecdsa(root_key());
+    let (h, signer_id, cookie, reply) = import_as(&root, "0.3.3").await;
+    let account = reply.ok(201).clone();
+    let v4 = imported(&root).await;
+    for (harness, signer, cookie, account, nonce) in [
+        // A v3.3 prepare without, or with a noncanonical, enable nonce.
+        (&h, &signer_id, &cookie, &account, None),
+        (&h, &signer_id, &cookie, &account, Some(json!("07"))),
+        (&h, &signer_id, &cookie, &account, Some(json!("0"))),
+        (&h, &signer_id, &cookie, &account, Some(json!(7))),
+        // A Kernel 0.4.0 prepare with one.
+        (&v4.0, &v4.1, &v4.2, &v4.3, Some(json!("7"))),
+    ] {
+        let (_, id) = pushed_par(harness).await;
+        let mut selection = json!({ "signer_id": signer, "account_id": account["account_id"] });
+        if let Some(nonce) = nonce {
+            selection["enable_nonce"] = nonce;
+        }
+        harness
+            .send(portal_call(
+                "POST",
+                &format!("/portal/transactions/{id}/prepare"),
+                Some(cookie),
+                Some(selection),
+            ))
+            .await
+            .failure(RelayErrorCode::RequestInvalid);
+    }
 }
