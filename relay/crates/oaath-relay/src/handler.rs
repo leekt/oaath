@@ -353,7 +353,11 @@ impl Relay {
             parse_form(&text)
         };
         match segments.as_slice() {
-            [".well-known", "openid-configuration"] => {
+            // OpenID discovery, and the same metadata at RFC 8414's path.
+            [
+                ".well-known",
+                "openid-configuration" | "oauth-authorization-server",
+            ] => {
                 require_method(method, &Method::GET)?;
                 Ok(reply(200, &discovery(&oauth.issuer))?)
             }
