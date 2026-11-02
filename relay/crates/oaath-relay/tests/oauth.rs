@@ -184,6 +184,7 @@ async fn logs_in_and_issues_a_verifiable_id_token() {
             "client_name": "Example dapp",
             "redirect_origin": "https://app.example",
             "authorization_details": [],
+            "scopes": [],
             "expires_at": CLOCK_SECONDS + 300,
             "bound": null,
         })
@@ -737,5 +738,151 @@ async fn a_suspended_member_cannot_log_in_until_restored_and_the_claim_lists_act
             .unwrap()
             .len(),
         3
+    );
+}
+
+const MCP: &str = "https://kernel.zerodev.app/mcp";
+
+/// PAR with `scope` and `extra` pairs; the reply.
+async fn push_scoped(h: &Harness, client_id: &str, scope: &str, extra: &[(&str, &str)]) -> Reply {
+    let challenge = code_challenge();
+    let mut pairs: Vec<(&str, &str)> = par_pairs(client_id, &challenge)
+        .into_iter()
+        .filter(|(key, _)| *key != "scope")
+        .collect();
+    pairs.push(("scope", scope));
+    pairs.extend_from_slice(extra);
+    h.send(form("/oauth/par", &pairs)).await
+}
+
+#[tokio::test]
+async fn issues_a_resource_servers_jwt_access_token_for_a_login() {
+    let h = harness();
+    let client_id = register_client(&h).await;
+    let pushed = push_scoped(
+        &h,
+        &client_id,
+        "orchestra:read orchestra:register",
+        &[("resource", MCP)],
+    )
+    .await;
+    let id = text(pushed.ok(201), "request_uri")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_owned();
+    // The consent screen shows the resource server's scopes.
+    let transaction = h
+        .send(get(&format!("/portal/transactions/{id}"), None))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(
+        transaction["scopes"],
+        json!(["orchestra:read", "orchestra:register"])
+    );
+    let (signer_id, account, cookie) = signer_and_account(&h, 0x11).await;
+    let reply = decide(
+        &h,
+        &id,
+        json!({ "outcome": "approved", "signer_id": signer_id, "account_id": account["account_id"] }),
+        Some(&cookie),
+    )
+    .await;
+    let code = query(text(reply.ok(200), "redirect"))
+        .into_iter()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1;
+    let exchange = |resource: &'static str| {
+        let (client_id, code) = (client_id.clone(), code.clone());
+        async move {
+            form(
+                "/oauth/token",
+                &[
+                    ("grant_type", "authorization_code"),
+                    ("client_id", client_id.as_str()),
+                    ("code", code.as_str()),
+                    ("code_verifier", CODE_VERIFIER),
+                    ("redirect_uri", REDIRECT_URI),
+                    ("resource", resource),
+                ],
+            )
+        }
+    };
+    // A malformed resource is refused before the code is spent.
+    oauth_error(
+        &h.send(exchange("https://kernel.zerodev.app/mcp#x").await)
+            .await,
+        400,
+        "invalid_target",
+        E::RequestInvalid,
+    );
+    let response = h.send(exchange(MCP).await).await.ok(200).clone();
+    assert_eq!(response["expires_in"], json!(600));
+    assert_eq!(
+        response["scope"],
+        json!("orchestra:read orchestra:register")
+    );
+
+    let jwks: JwkSet =
+        serde_json::from_value(h.send(get("/oauth/jwks", None)).await.ok(200).clone()).unwrap();
+    let token = text(&response, "access_token");
+    let header = jsonwebtoken::decode_header(token).unwrap();
+    assert_eq!(header.alg, Algorithm::ES256);
+    assert_eq!(header.typ.as_deref(), Some("at+jwt"));
+    assert_eq!(header.kid.as_deref(), Some(ID_TOKEN_KID));
+    let key = DecodingKey::from_jwk(jwks.find(ID_TOKEN_KID).unwrap()).unwrap();
+    let mut validation = Validation::new(Algorithm::ES256);
+    validation.set_audience(&[MCP]);
+    validation.set_issuer(&[ISSUER]);
+    validation.validate_exp = false;
+    let claims = decode::<Value>(token, &key, &validation).unwrap().claims;
+    assert_eq!(claims["sub"], account["address"]);
+    assert_eq!(claims["client_id"], json!(client_id));
+    assert_eq!(claims["scope"], json!("orchestra:read orchestra:register"));
+    assert_eq!(
+        claims["signer"],
+        json!({ "id": signer_id, "kind": "ecdsa" })
+    );
+    assert_eq!(claims["iat"], json!(CLOCK_SECONDS));
+    assert_eq!(claims["exp"], json!(CLOCK_SECONDS + 600));
+    assert_eq!(text(&claims, "jti").len(), 43);
+    // An id_token is never an access token for the resource.
+    let id_header = jsonwebtoken::decode_header(text(&response, "id_token")).unwrap();
+    assert_ne!(id_header.typ.as_deref(), Some("at+jwt"));
+}
+
+#[tokio::test]
+async fn refuses_malformed_resource_scopes_and_resource_scopes_on_a_grant() {
+    let h = harness();
+    let client_id = register_client(&h).await;
+    for (scope, extra) in [
+        ("openid Orchestra:Read", vec![]),
+        ("openid orchestra", vec![]),
+        ("account", vec![]),
+        (
+            "openid orchestra:read",
+            vec![("authorization_details", "[]")],
+        ),
+    ] {
+        oauth_error(
+            &push_scoped(&h, &client_id, scope, &extra).await,
+            400,
+            "invalid_scope",
+            E::RequestInvalid,
+        );
+    }
+    oauth_error(
+        &push_scoped(
+            &h,
+            &client_id,
+            "openid",
+            &[("resource", "ftp://kernel.zerodev.app/mcp")],
+        )
+        .await,
+        400,
+        "invalid_target",
+        E::RequestInvalid,
     );
 }

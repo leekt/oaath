@@ -288,6 +288,17 @@ function Authorize({ transactionId }: { transactionId: string }) {
             )}
           </ol>
         )}
+        {transaction.scopes.length > 0 && (
+          <p className="quiet small">
+            Also asks for access to:{" "}
+            {transaction.scopes.map((scope, index) => (
+              <span key={scope}>
+                {index > 0 && ", "}
+                <span className="mono">{scope}</span>
+              </span>
+            ))}
+          </p>
+        )}
         <details className="connection-details">
           <summary>Connection details</summary>
           <p className="quiet small">
