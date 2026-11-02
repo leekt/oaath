@@ -1,5 +1,23 @@
 # @oaath/sdk
 
+## 0.3.6
+
+### Patch Changes
+
+- 4ca33aa: Run each automation occurrence on its own Kernel nonce lane, so a due slot no longer waits for the previous slot's finality. At most `AUTOMATION_MAX_OPEN_SLOTS` (default 4) occurrences of one plan are open at once. The automation schema is now `oaath.automation-postgres-schema/v2`; drop and recreate the automation database. An explicit SDK operation lane may now start once the Grant's installing operation is included, rather than finalized, and runs in standard mode.
+- 4187af9: Depend on Cetane 0.0.6. Cetane chain ports quote fees with Cetane's default policy instead of their own base-fee multiplier, and `ecdsaKey` accepts accounts whose `address` is a getter, as Cetane 0.0.6's `privateKeyToAccount` returns.
+- 05148ef: Depend on Cetane 0.0.7. A chain port with `relayPaysGas` now takes its zero fees from Cetane's relay-paid fee policy (`chain.fees.relayPaysGas`) instead of its own override; quotes are unchanged and still make no fee reads.
+- 4a3ad72: Cetane chain ports quote `maxFeePerGas` with 2x base-fee headroom (Cetane's default) instead of 1.2x, so bundlers that require at least their own gas-price quote (e.g. Pimlico) accept the operation.
+- 0dce3ad: Accept ERC-7677 final paymaster data that echoes the paymaster gas limits (as paymaster-rs does), only when they equal the limits the request sent.
+- 8aacee9: Accept a bundler's `paymasterPostOpGasLimit` estimate in ERC-7677 sponsorship (validated, never replacing the paymaster's own post-op limit), and make the automation client refuse redirects with `redirect: "manual"` so it works inside Cloudflare Workers.
+- e0a4255: After `loginWithOAAth`, `requestPermission` and `requestOwnerOperationApproval` send the login's id_token as the OIDC `id_token_hint`, so the issuer's portal opens straight on the signature for the signer and account the user already chose. The hint stays in page memory and is sent for at most an hour after the login; without a login, requests are unchanged.
+- ee46925: Add `relayPaysGas` to Cetane chain ports: a relay-paid bundler (such as bundle_rs in fast mode) receives zero-fee operations that need no account funds and no paymaster. It is refused together with `paymasterUrl`.
+- Add `requestPermissionApproval`: the account root approves one permission for a caller-held session credential (for example an operator passkey) in the issuer's portal popup, with no realm, custody or journal, and the verified request, decision and `installApproval` are returned. It accepts a popup opened in the caller's gesture (`openAuthorizationPopup`, now exported) and fails a pending member request with source `oauth_permission_pending`. `grantPermissionPackages` on `@oaath/sdk/kernel` derives the permission ID and packages the OAAth relay derives.
+- ddae33b: Add optional per-chain `bundlerHeaders` to Cetane chain ports, sent only to the bundler (for endpoints that accept an `x-api-key` header). Header values that are not strings or contain CR/LF are refused.
+- f946694: A well-formed JSON-RPC error answer to `eth_sendUserOperation` now concludes the attempt as rejected: the Operation is abandoned with reason `submission_rejected`, its lane is released, and the caller receives `OaathClientError` code `oaath_client_submission_rejected` with the bundler's numeric `rpcCode`. Timeouts, transport failures and malformed answers remain uncertain and observation-only. Nothing is resubmitted.
+- Updated dependencies [f946694]
+  - @oaath/protocol@0.3.6
+
 ## 0.3.5
 
 ### Patch Changes

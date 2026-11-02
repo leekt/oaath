@@ -1,0 +1,29 @@
+# @oaath/automation-server
+
+## 0.3.6
+
+### Patch Changes
+
+- ddae33b: Add optional `AUTOMATION_BUNDLER_API_KEY_<chainId>`: when set, the executor sends it to that chain's bundler only, as the JSON-RPC `apiKey` field (bundle_rs client authentication).
+- 1abef87: The service sends its plan's user and account as the issuer's `login_hint` (`<signer_id>@<account>`), so the OAAth portal opens on the review with no signer or account picker. A session's `userId` is the user's OAAth signer id.
+- 16851cd: Add optional `AUTOMATION_PAYMASTER_API_KEY_<chainId>`: when set, the executor sends `{ apiKey }` as the ERC-7677 paymaster context (as paymaster-rs accepts it) instead of `{}`.
+- ee46925: Add optional `AUTOMATION_RELAY_PAYS_GAS_<chainId>=true`: the chain's bundler pays gas (bundle_rs fast mode), so operations carry zero fees and use no paymaster. It is refused together with a paymaster URL.
+- 70d17bd: Activate an automation plan once its setup operation is included and successful, rather than finalized, so occurrences are no longer held for L1 finality. With a setup, occurrence slot N now runs on nonce lane N + 1, leaving lane 0 to the setup while it awaits finality. An authorized plan waits for its setup until its Grant ends and then expires with `setup_not_included`; a setup that fails, reverts or drops fails the plan even after activation; slots opening after the approved Grant's end are skipped as `grant_expired`. The schema is unchanged.
+- 4ca33aa: Run each automation occurrence on its own Kernel nonce lane, so a due slot no longer waits for the previous slot's finality. At most `AUTOMATION_MAX_OPEN_SLOTS` (default 4) occurrences of one plan are open at once. The automation schema is now `oaath.automation-postgres-schema/v2`; drop and recreate the automation database. An explicit SDK operation lane may now start once the Grant's installing operation is included, rather than finalized, and runs in standard mode.
+- 1899cf5: Add declarative automations. `@oaath/automation` owns the definition schema, plan terms, the derived Grant policy and the service client; `@oaath/automation-server` is a self-hostable service (HTTP API, scheduler and executor over PostgreSQL) that obtains Grants as an OAuth client of an OAAth issuer and executes each occurrence at most once.
+- Updated dependencies [1abef87]
+- Updated dependencies [4ca33aa]
+- Updated dependencies [4187af9]
+- Updated dependencies [05148ef]
+- Updated dependencies [1899cf5]
+- Updated dependencies [4a3ad72]
+- Updated dependencies [0dce3ad]
+- Updated dependencies [8aacee9]
+- Updated dependencies [e0a4255]
+- Updated dependencies [ee46925]
+- Updated dependencies
+- Updated dependencies [ddae33b]
+- Updated dependencies [f946694]
+  - @oaath/automation@0.3.6
+  - @oaath/sdk@0.3.6
+  - @oaath/protocol@0.3.6
