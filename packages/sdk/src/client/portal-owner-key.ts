@@ -95,7 +95,11 @@ export async function portalOwnerSignature(
   prepared: Readonly<PreparedUserOperation>,
   calls: readonly Readonly<{ target: `0x${string}`; value: string; data: `0x${string}` }>[],
 ): Promise<`0x${string}`> {
-  if (prepared.userOperation.sender !== address)
+  // The key's existing account, the realm's account and the sender are one.
+  if (
+    prepared.userOperation.sender !== address ||
+    ("address" in owner.account && owner.account.address.toLowerCase() !== address)
+  )
     return clientFail("oaath_client_state_conflict", "the operation is for another account");
   let request: ReturnType<typeof parseOwnerOperationRequest>;
   try {
