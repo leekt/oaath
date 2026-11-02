@@ -17,6 +17,7 @@ import {
 } from "./api.js";
 import {
   enableNonce,
+  grantReads,
   RootSigningError,
   reviewedRequest,
   signGrantApproval,
@@ -173,7 +174,7 @@ export function GrantReview({
 
   useEffect(() => heading.current?.focus(), []);
   useEffect(() => {
-    enableNonce(account, detail)
+    enableNonce(account, detail, grantReads(transaction.transaction_id, detail))
       .then((nonce) =>
         portalApi.prepareGrant(transaction.transaction_id, {
           signer_id: signer.signer_id,
@@ -202,6 +203,7 @@ export function GrantReview({
           chainId: detail.chains[0],
           signer,
           account,
+          reads: grantReads(transaction.transaction_id, detail),
         }),
       );
     } catch (cause) {
