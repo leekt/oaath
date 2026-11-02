@@ -228,6 +228,6 @@ describe("grantPermissionPackages", () => {
       );
       checked += 1;
     }
-    expect(checked).toBe(11);
+    expect(checked).toBe(13);
   });
 });

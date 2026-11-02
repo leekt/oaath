@@ -311,6 +311,11 @@ grants.push({
     perChainOperationLimit: { count: 25, intervalSeconds: 86_400 },
   })),
 });
+// A sudo grant (no calls) installs only the validity policy and the signer.
+grants.push({
+  name: "sudo policy",
+  ...(await grant(ecdsaOwner, "ecdsa", { ...POLICY, calls: [], perChainOperationLimit: null })),
+});
 // An imported Kernel 0.3.3 account: prepareKernelPermissionApproval (the
 // portal's own path) over reads that show a v3.3 account rooted in the ECDSA
 // owner, at validation nonce V33_NONCE.
@@ -346,8 +351,8 @@ function v33Reads(owner) {
   };
 }
 
-async function v33Grant(operatorKind) {
-  const value = request(ecdsaOwner, OPERATORS[operatorKind]);
+async function v33Grant(operatorKind, policy = POLICY) {
+  const value = request(ecdsaOwner, OPERATORS[operatorKind], policy);
   value.logicalAccount = {
     version: "oaath.kernel-existing-account-profile/v1",
     kind: "kernel",
@@ -384,6 +389,10 @@ for (const operatorKind of ["ecdsa", "webauthn"]) {
     ...(await v33Grant(operatorKind)),
   });
 }
+grants.push({
+  name: "kernel 0.3.3 sudo policy",
+  ...(await v33Grant("ecdsa", { ...POLICY, calls: [], perChainOperationLimit: null })),
+});
 grants.push({
   name: "argument constraint",
   ...(await refused(ecdsaOwner, {

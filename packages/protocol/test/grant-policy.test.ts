@@ -7,9 +7,11 @@ import {
   type GrantPolicyCoverageInput,
   hashGrantPolicy,
   isGrantPolicyAttenuation,
+  isSudoGrantPolicy,
   OAATH_GRANT_POLICY_HASH_DOMAIN,
   OAATH_GRANT_POLICY_USAGE_VERSION,
   OAATH_GRANT_POLICY_VERSION,
+  OAATH_SUDO_GRANT_MAX_SECONDS,
   OaathGrantPolicyError,
   parseGrantPolicy,
 } from "../src/index.js";
@@ -173,6 +175,42 @@ describe("canonical Grant policy", () => {
     expect(isGrantPolicyAttenuation(unlimited, policy)).toBe(true);
     expect(isGrantPolicyAttenuation(unlimited, unlimited)).toBe(true);
     expect(isGrantPolicyAttenuation(policy, unlimited)).toBe(false);
+  });
+
+  it("accepts a sudo policy only with an expiry of at most 600 inclusive seconds and no limit", () => {
+    const sudo = {
+      ...clone(policy),
+      calls: [],
+      validUntil: policy.validAfter + OAATH_SUDO_GRANT_MAX_SECONDS - 1,
+      perChainOperationLimit: null,
+    };
+    expect(isSudoGrantPolicy(parseGrantPolicy(sudo))).toBe(true);
+    expect(isSudoGrantPolicy(parseGrantPolicy(policy))).toBe(false);
+    expect(hashGrantPolicy(sudo)).toMatch(/^0x[0-9a-f]{64}$/u);
+    for (const refused of [
+      { ...sudo, validUntil: null },
+      { ...sudo, validUntil: sudo.validUntil + 1 },
+      { ...sudo, perChainOperationLimit: { count: 1, intervalSeconds: null } },
+    ]) {
+      expectPolicyError(() => parseGrantPolicy(refused), "grant_policy_invalid");
+    }
+    // Every call is covered; only a sudo request may be approved as sudo.
+    expect(
+      evaluateGrantPolicyCoverage(
+        coverageInput({
+          policy: parseGrantPolicy(sudo),
+          calls: [{ target: `0x${"99".repeat(20)}`, data: "0xdeadbeef", value: "1" }],
+        }),
+      ).status,
+    ).toBe("covered");
+    expect(isGrantPolicyAttenuation(sudo, sudo)).toBe(true);
+    expect(isGrantPolicyAttenuation(sudo, { ...clone(policy), validUntil: 200 })).toBe(true);
+    expect(
+      isGrantPolicyAttenuation(
+        { ...clone(policy), validUntil: sudo.validUntil, perChainOperationLimit: null },
+        sudo,
+      ),
+    ).toBe(false);
   });
 
   it("accepts a zero selector, the first calldata bytes of a target without dispatch", () => {

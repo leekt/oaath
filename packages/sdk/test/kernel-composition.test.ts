@@ -1586,7 +1586,7 @@ describe("Kernel permission policy compilation", () => {
     // reverts CallViolatesValueRule above the ceiling, so zero is the closed
     // default rather than an unlimited sentinel.
     const policy = compileKernelPermissionPolicy([{ kind: "call", permissions: [permissions[0]] }]);
-    expect(policy.permissions.map((one) => one.valueLimit)).toEqual(["0"]);
+    expect(policy.permissions?.map((one) => one.valueLimit)).toEqual(["0"]);
     const only = policy.packages[0];
     if (!only) throw new Error("no call policy package");
     expect(

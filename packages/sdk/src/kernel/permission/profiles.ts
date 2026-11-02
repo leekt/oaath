@@ -28,12 +28,12 @@ export function deriveSessionPolicyProfiles(
       valueLimit: call.valueLimit,
     });
   });
-  if (permissions.length === 0)
-    runtimeFail("kernel_runtime_policy_unavailable", "policy has no calls");
   const limit = policy.perChainOperationLimit;
-  const profiles: KernelPolicyProfile[] = [
-    Object.freeze({ kind: "call" as const, permissions: Object.freeze(permissions) }),
-  ];
+  // A sudo policy (no calls) installs no CallPolicy: only its validity window.
+  const profiles: KernelPolicyProfile[] =
+    permissions.length === 0
+      ? []
+      : [Object.freeze({ kind: "call" as const, permissions: Object.freeze(permissions) })];
   // An unbounded grant installs no expiry profile.
   if (policy.validUntil !== null)
     profiles.push(

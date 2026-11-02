@@ -1264,6 +1264,95 @@ async function createHarness() {
     expect(await client.getBalance({ address: ownerTarget })).toBe(55n);
   }, 90_000);
 
+  it("executes any call through a sudo session that installs only the validity policy", async () => {
+    const harness = await createHarness();
+    const { fixture, client, wallet, submitter, reads, deployModule, deployValidator, send } =
+      harness;
+    await deployKernelStack(harness);
+    for (const module of [fixture.validityPolicy, fixture.ecdsaSigner]) await deployModule(module);
+    const ownerRuntime = createKernelRuntime({
+      deployment,
+      operator: ownerOperator({
+        key: kernelKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: await deployValidator(),
+        }),
+      }),
+      reads,
+    });
+    const counterfactual = await ownerRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    const account = counterfactual.account;
+    await client.waitForTransactionReceipt({
+      hash: await wallet.sendTransaction({
+        account: submitter,
+        chain: null,
+        to: account,
+        value: parseEther("1"),
+      }),
+    });
+    const now = Number((await client.getBlock({ blockTag: "latest" })).timestamp);
+    const sudoRuntime = createKernelRuntime({
+      deployment,
+      operator: sessionOperator({
+        key: kernelKey({
+          account: privateKeyToAccount(generatePrivateKey()),
+          validator: await deployValidator(),
+        }),
+        policies: [{ kind: "expiry", validAfter: String(now), validUntil: String(now + 599) }],
+      }),
+      reads,
+    });
+    expect(sudoRuntime.packages.map((entry) => entry.module)).toEqual([
+      fixture.validityPolicy.expectedAddress,
+      fixture.ecdsaSigner.expectedAddress,
+    ]);
+    // The owner deploys the account and installs the sudo permission in one operation.
+    expect(
+      await send(
+        ownerRuntime,
+        ownerRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-sudo-install",
+          account: counterfactual,
+          nonceKey: "0",
+          sequence: "0",
+          calls: [
+            {
+              target: account,
+              value: "0",
+              data: encodeKernelV4InstallModules(sudoRuntime.packages),
+            },
+          ],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    const deployed = await sudoRuntime.bindAccount({
+      accountIndex: "0",
+      initialPackages: ownerRuntime.packages,
+    });
+    // A target and calldata no policy ever named.
+    const anyTarget = lower(privateKeyToAccount(generatePrivateKey()).address);
+    expect(
+      await send(
+        sudoRuntime,
+        sudoRuntime.prepareOperation({
+          kind: "execution",
+          grantId: "kernel-composition-sudo-any-call",
+          account: deployed,
+          nonceKey: "0",
+          sequence: "0",
+          calls: [{ target: anyTarget, value: "7", data: "0xdeadbeef" }],
+          gas,
+        }),
+      ),
+    ).toBe("success");
+    expect(await client.getBalance({ address: anyTarget })).toBe(7n);
+  }, 90_000);
+
   it("enforces a multi-package session, requested validity, and its operation count", async () => {
     const harness = await createHarness();
     const { fixture, client, wallet, submitter, reads, deployModule, deployValidator, send } =

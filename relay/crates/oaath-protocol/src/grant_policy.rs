@@ -19,6 +19,11 @@ pub const GRANT_POLICY_CALLS_HASH_DOMAIN: &str = "@oaath/protocol:grant-policy-c
 
 const MAX_ARGUMENT_INDEX: u64 = MAX_SAFE_INTEGER_U64 / 32;
 
+/// `OAATH_SUDO_GRANT_MAX_SECONDS`: a sudo policy (`calls: []`) permits any
+/// call, so it must expire within this many inclusive seconds
+/// (`validUntil - validAfter + 1 <= 600`) and carry no operation limit.
+pub const SUDO_GRANT_MAX_SECONDS: u64 = 600;
+
 /// Equality on one zero-based 32-byte ABI word after the selector.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrantPolicyArgumentEquality {
@@ -119,7 +124,6 @@ fn call_key(call: &GrantPolicyCall) -> String {
 
 fn capture_calls(value: &Value, code: ErrorCode) -> ProtocolResult<Vec<GrantPolicyCall>> {
     let entries = capture_dense_array(value).or_fail(code)?;
-    ensure(!entries.is_empty(), code)?;
     let calls = entries
         .iter()
         .map(|entry| capture_call(entry, code))
@@ -161,6 +165,12 @@ pub(crate) fn capture_policy(value: &Value, code: ErrorCode) -> ProtocolResult<G
             })
         }
     };
+    ensure(
+        !calls.is_empty()
+            || (valid_until.is_some_and(|until| until - valid_after < SUDO_GRANT_MAX_SECONDS)
+                && per_chain_operation_limit.is_none()),
+        code,
+    )?;
     Ok(GrantPolicy {
         calls,
         valid_after,
@@ -194,6 +204,11 @@ fn encode_calls(calls: &[GrantPolicyCall]) -> Vec<EncodedCall> {
 }
 
 impl GrantPolicy {
+    /// `isSudoGrantPolicy`: no call list, so every call is permitted.
+    pub fn is_sudo(&self) -> bool {
+        self.calls.is_empty()
+    }
+
     /// `hashGrantPolicy` over this captured policy.
     pub fn hash(&self) -> B256 {
         keccak256(
@@ -255,10 +270,9 @@ pub fn hash_grant_policy(value: &Value) -> ProtocolResult<String> {
 /// Digest of one exact call set in canonical policy order, independent of the
 /// policy's time window and rate limit.
 pub fn hash_grant_policy_calls(value: &Value) -> ProtocolResult<String> {
-    Ok(hash_captured_calls(&capture_calls(
-        value,
-        ErrorCode::GrantPolicyInvalid,
-    )?))
+    let calls = capture_calls(value, ErrorCode::GrantPolicyInvalid)?;
+    ensure(!calls.is_empty(), ErrorCode::GrantPolicyInvalid)?;
+    Ok(hash_captured_calls(&calls))
 }
 
 /// `hashGrantPolicyCalls` over calls already captured in canonical order.
@@ -317,6 +331,14 @@ pub fn is_captured_policy_attenuation(requested: &GrantPolicy, approved: &GrantP
         || !limit_attenuates
     {
         return false;
+    }
+    // A sudo approval permits every call, so only a sudo request covers it; a
+    // sudo request is covered by any call list.
+    if approved.is_sudo() {
+        return requested.is_sudo();
+    }
+    if requested.is_sudo() {
+        return true;
     }
     let requested_calls: HashMap<String, &GrantPolicyCall> = requested
         .calls
