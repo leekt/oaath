@@ -5,6 +5,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import { deriveKernelV33Account } from "../src/kernel/deployment/v33.js";
 import { credentialKey } from "../src/kernel/key/credential.js";
 import { ownerOperator } from "../src/kernel/operator/owner.js";
 import { kernelV33PermissionRevocationCalls } from "../src/kernel/permission/v33-revocation.js";
@@ -100,6 +101,54 @@ describe("owner operations", () => {
         },
       }),
     ).toThrow(expect.objectContaining({ code: "kernel_runtime_input_invalid" }));
+  });
+
+  it("deploys a counterfactual Kernel 0.3.3 account at its index, and only there", async () => {
+    const root = portalRoot("ecdsa");
+    const owner = (root.credential as { address: `0x${string}` }).address;
+    const derived = deriveKernelV33Account({ owner, accountIndex: "3" });
+    const account = {
+      version: "oaath.kernel-existing-account-profile/v1",
+      kind: "kernel",
+      kernelVersion: "0.3.3",
+      address: derived.address,
+      entryPoint: { version: "0.7" },
+      ownerCredential: root.credential,
+    } as const;
+    const input = {
+      account: account as never,
+      chainId: 8453,
+      deployed: false,
+      // The activation call: a self no-op.
+      calls: [{ target: derived.address, value: "0", data: "0x" as const }],
+      nonce: { lane: "0", sequence: "0" },
+      gas: {
+        callGasLimit: "100000",
+        verificationGasLimit: "500000",
+        preVerificationGas: "60000",
+        maxFeePerGas: "2000000",
+        maxPriorityFeePerGas: "1000000",
+      },
+    };
+    const prepared = prepareOwnerOperation({ ...input, accountIndex: "3" });
+    expect(prepared.request.userOperation.factory).toEqual({
+      address: derived.factory,
+      data: derived.factoryData,
+    });
+    const verified = await verifyOwnerOperation(await prepared.sign(root.key));
+    expect(verified.userOperation).toMatchObject({
+      sender: derived.address,
+      factory: derived.factory,
+      factoryData: derived.factoryData,
+    });
+    // Another index derives another address: refused before anything is signed.
+    expect(() => prepareOwnerOperation({ ...input, accountIndex: "4" })).toThrow(
+      expect.objectContaining({ code: "kernel_runtime_binding_mismatch" }),
+    );
+    // A deployed account takes no index.
+    expect(() => prepareOwnerOperation({ ...input, deployed: true, accountIndex: "3" })).toThrow(
+      expect.objectContaining({ code: "kernel_runtime_input_invalid" }),
+    );
   });
 
   it("derives every factory-derived root account offline", async () => {

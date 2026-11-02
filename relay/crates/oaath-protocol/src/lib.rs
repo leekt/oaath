@@ -18,6 +18,7 @@ pub mod ids;
 pub mod kernel_account;
 pub mod kernel_install;
 pub mod kernel_revocation;
+pub mod kernel_v33_account;
 pub mod owner_operation;
 pub mod owner_transaction;
 pub mod permission;

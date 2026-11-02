@@ -286,9 +286,16 @@ function captureRequest(value: unknown, context: WeakSet<object>): Readonly<Owne
   const entryPoint = address(record.entryPoint, "owner operation EntryPoint");
   const calls = captureCalls(record.calls, context);
   const userOperation = captureUserOperation(record.userOperation, context);
-  // An existing account is already deployed: nothing may deploy it.
-  if (existing && userOperation.factory !== null)
-    return fail("an existing account's owner operation carries no factory");
+  // An existing Kernel 0.4.0 account is deployed: nothing may deploy it. An
+  // existing Kernel 0.3.3 account may be counterfactual; its factory is bound
+  // to its address and root by the deployment owner (SDK `verifyOwnerOperation`,
+  // Rust `verify_owner_operation_binding`).
+  if (
+    existing &&
+    userOperation.factory !== null &&
+    ownerOperationEntryPointVersion(account) !== "0.7"
+  )
+    return fail("an existing Kernel 0.4.0 account's owner operation carries no factory");
   // Standard-mode root validation: the 192-bit key is only the uint16 lane.
   if (BigInt(userOperation.nonce) >> 80n !== 0n)
     return fail("owner operation nonce must use root validation");

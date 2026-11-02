@@ -27,6 +27,7 @@ use crate::identity::{
     capture_kernel_account, hex_hash,
 };
 use crate::kernel_account::{derive_kernel_v4_account_address, root_package};
+use crate::kernel_v33_account::is_kernel_v33_deployment;
 
 pub const OWNER_OPERATION_REQUEST_VERSION: &str = "oaath.owner-operation-request/v1";
 pub const SIGNED_OWNER_OPERATION_VERSION: &str = "oaath.signed-owner-operation/v1";
@@ -377,8 +378,13 @@ fn capture_request(value: &Value) -> ProtocolResult<OwnerOperationRequest> {
     let entry_point = address(field(record, "entryPoint"), false)?;
     let calls = capture_calls(field(record, "calls"))?;
     let user_operation = capture_user_operation(field(record, "userOperation"))?;
-    // An existing account is already deployed: nothing may deploy it.
-    ensure(!existing || user_operation.factory.is_none(), CODE)?;
+    // An existing Kernel 0.4.0 account is deployed: nothing may deploy it. An
+    // existing Kernel 0.3.3 account may be counterfactual: its factory is
+    // bound to its address and root in `verify_owner_operation_binding`.
+    ensure(
+        !existing || user_operation.factory.is_none() || is_v33(&account),
+        CODE,
+    )?;
     // Standard-mode root validation: the 192-bit key is only the uint16 lane.
     ensure(u256(&user_operation.nonce) >> 80 == U256::ZERO, CODE)?;
     ensure(user_operation.call_data == kernel_execution(&calls), CODE)?;
@@ -495,9 +501,25 @@ pub fn verify_owner_operation_binding(
     )?;
     let profile = match &request.account {
         KernelAccountProfile::Existing(profile) => {
+            let deploys = match &request.user_operation.factory {
+                None => true,
+                // A counterfactual Kernel 0.3.3 account: exactly its root's
+                // MetaFactory deployment at its own address.
+                Some(factory) => {
+                    is_v33(&request.account)
+                        && match &profile.owner_credential {
+                            OwnerCredentialProfile::Ecdsa { address } => is_kernel_v33_deployment(
+                                address,
+                                &profile.address,
+                                &factory.address,
+                                &factory.data,
+                            ),
+                            _ => false,
+                        }
+                }
+            };
             return ensure(
-                request.user_operation.sender == profile.address
-                    && request.user_operation.factory.is_none(),
+                request.user_operation.sender == profile.address && deploys,
                 BINDING,
             );
         }
