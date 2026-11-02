@@ -254,6 +254,9 @@ pub struct RegisteredClient {
     pub client_name: String,
     pub redirect_uris: Vec<String>,
     pub token_endpoint_auth_method: &'static str,
+    /// What is actually registered (RFC 7591 §3.2.1): the code grant only.
+    pub grant_types: [&'static str; 1],
+    pub response_types: [&'static str; 1],
     pub revocation_delivery: RevocationDelivery,
 }
 
@@ -263,7 +266,7 @@ pub async fn register_client(
     clock: &dyn RelayClock,
     body: &Map<String, Value>,
 ) -> OAuthResult<RegisteredClient> {
-    let record = capture_client(body, relay_now(clock)?)?;
+    let record = capture_client(body, relay_now(clock)?, true)?;
     let mut transaction = store.begin().await?;
     let result = transaction
         .insert_oauth_client(&record)
@@ -280,6 +283,8 @@ impl From<OAuthClientRecord> for RegisteredClient {
             client_name: record.client_name,
             redirect_uris: record.redirect_uris,
             token_endpoint_auth_method: "none",
+            grant_types: ["authorization_code"],
+            response_types: ["code"],
             revocation_delivery: record.revocation_delivery,
         }
     }
@@ -289,15 +294,47 @@ impl From<OAuthClientRecord> for RegisteredClient {
 pub(crate) fn capture_client(
     body: &Map<String, Value>,
     created_at: u64,
+    open: bool,
 ) -> OAuthResult<OAuthClientRecord> {
     let metadata = |code| OAuthFailure::new(400, "invalid_client_metadata", code);
-    let allowed = [
+    // The developer console's authenticated management takes exactly its own
+    // fields: an injected owner or client id is refused, not ignored.
+    let managed = [
         "client_name",
         "redirect_uris",
         "token_endpoint_auth_method",
         "revocation_delivery",
     ];
-    if body.keys().any(|key| !allowed.contains(&key.as_str())) {
+    if !open && body.keys().any(|key| !managed.contains(&key.as_str())) {
+        return Err(metadata(INVALID));
+    }
+    // RFC 7591 §2: metadata the server does not understand (client_uri,
+    // software_*, scope, contacts, logo_uri, …) is ignored. What it does
+    // understand must be something it supports.
+    let strings = |key: &str| -> OAuthResult<Option<Vec<&str>>> {
+        match body.get(key) {
+            None => Ok(None),
+            Some(Value::Array(values)) => values
+                .iter()
+                .map(|value| value.as_str().ok_or_else(|| metadata(INVALID)))
+                .collect::<OAuthResult<Vec<_>>>()
+                .map(Some),
+            Some(_) => Err(metadata(INVALID)),
+        }
+    };
+    // The code grant is the only one issued; a refresh_token request is
+    // answered with the grants actually registered.
+    if let Some(grants) = strings("grant_types")?
+        && (!grants.contains(&"authorization_code")
+            || grants
+                .iter()
+                .any(|grant| !matches!(*grant, "authorization_code" | "refresh_token")))
+    {
+        return Err(metadata(INVALID));
+    }
+    if let Some(types) = strings("response_types")?
+        && types.iter().any(|kind| *kind != "code")
+    {
         return Err(metadata(INVALID));
     }
     match body.get("token_endpoint_auth_method") {

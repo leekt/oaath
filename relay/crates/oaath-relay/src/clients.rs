@@ -31,7 +31,8 @@ pub async fn save(
     id: Option<&str>,
     body: &Map<String, Value>,
 ) -> RelayResult<RegisteredClient> {
-    let mut proposed = capture_client(body, relay_now(clock)?).map_err(|error| error.code)?;
+    let mut proposed =
+        capture_client(body, relay_now(clock)?, false).map_err(|error| error.code)?;
     let mut tx = store.begin().await?;
     let result = async {
         if let Some(id) = id {
