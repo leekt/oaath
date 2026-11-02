@@ -1,5 +1,14 @@
 # @oaath/cli
 
+## 0.3.7
+
+### Patch Changes
+
+- Updated dependencies [6fdac81]
+- Updated dependencies [d6c76fc]
+- Updated dependencies [7df2252]
+  - @oaath/sdk@0.3.7
+
 ## 0.3.6
 
 ### Patch Changes
