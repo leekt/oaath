@@ -129,7 +129,20 @@ export interface Eip1193Provider {
     args:
       | { method: "eth_requestAccounts" }
       | { method: "personal_sign"; params: [`0x${string}`, `0x${string}`] }
-      | { method: "eth_signTypedData_v4"; params: [`0x${string}`, string] },
+      | { method: "eth_signTypedData_v4"; params: [`0x${string}`, string] }
+      | { method: "wallet_switchEthereumChain"; params: [{ chainId: `0x${string}` }] }
+      | {
+          method: "eth_sendTransaction";
+          params: [
+            {
+              from: `0x${string}`;
+              to?: `0x${string}`;
+              value: `0x${string}`;
+              data: `0x${string}`;
+              chainId: `0x${string}`;
+            },
+          ];
+        },
   ): Promise<unknown>;
 }
 

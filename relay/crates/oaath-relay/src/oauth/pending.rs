@@ -185,7 +185,10 @@ pub async fn request_root_approval(
             .lock_par(transaction_id)
             .await?
             .ok_or(RelayErrorCode::NotFound)?;
-        if par.authorization_details.is_none() || super::operation::par_operation(&par)?.is_some() {
+        if par.authorization_details.is_none()
+            || super::operation::par_operation(&par)?.is_some()
+            || super::transaction::par_transaction(&par)?.is_some()
+        {
             return Err(INVALID);
         }
         if transaction

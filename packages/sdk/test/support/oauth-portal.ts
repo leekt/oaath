@@ -33,6 +33,8 @@ export interface OAuthPortalOptions {
   readonly root?: Readonly<{ credential: object; key: Readonly<KeyProfile> }>;
   /** The root's signed owner operation for a PAR's `oaath_operation` request. */
   readonly signOperation?: (request: unknown) => Promise<unknown>;
+  /** The signer wallet's answer for a PAR's `oaath_transaction`: the released detail. */
+  readonly sendTransaction?: (request: unknown) => Promise<Record<string, unknown>>;
   /** The issuer's answer to an off-chain invalidation; `"down"` never answers. */
   readonly invalidation?: number | "down";
   /** The id_token `oaath_accounts` claim; defaults to the account, as root. */
@@ -120,6 +122,16 @@ export async function installOAuthPortal(options: OAuthPortalOptions = {}) {
       return { code: "code-1", state: par.get("state")!, iss: ISSUER };
     }
     const [detail] = JSON.parse(details);
+    if (detail.type === "oaath_transaction") {
+      const released = (await options.sendTransaction?.(detail.request)) ?? {};
+      token = {
+        id_token: await signIn(par.get("nonce")),
+        token_type: "Bearer",
+        scope: "openid",
+        authorization_details: [{ type: "oaath_transaction", ...released }],
+      };
+      return { code: "code-1", state: par.get("state")!, iss: ISSUER };
+    }
     if (detail.type === "oaath_operation") {
       const signed = await options.signOperation?.(detail.request);
       token = {

@@ -90,6 +90,12 @@ export type {
   OaathOwnerStores,
 } from "./client/owner-realm.js";
 export type {
+  OaathOwnerTransactionOptions,
+  OaathPortalWalletOptions,
+  OaathSentOwnerTransaction,
+} from "./client/owner-transaction.js";
+export { portalWallet, requestOwnerTransaction } from "./client/owner-transaction.js";
+export type {
   OaathApprovedPermission,
   OaathPermissionApprovalOptions,
 } from "./client/permission-approval.js";
