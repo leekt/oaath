@@ -149,18 +149,18 @@ pub fn kernel_v4_replayable_install_typed_data(
 /// no hook, and every package as `0x0002 ‖ module ‖ config` (policies run for
 /// operations only). `packages` are a validated session permission whose
 /// first install carries the permission ID.
-pub fn kernel_v33_enable_typed_data(account: &str, nonce: u32, packages: &[KernelInstall]) -> Value {
+pub fn kernel_v33_enable_typed_data(
+    account: &str,
+    nonce: u32,
+    packages: &[KernelInstall],
+) -> Value {
     use alloy_primitives::Bytes;
     use alloy_sol_types::SolValue;
     let permission_id = &packages[0].internal_data[2..10];
     let configs: Vec<Bytes> = packages
         .iter()
         .map(|install| {
-            let text = format!(
-                "0002{}{}",
-                &install.module[2..],
-                &install.module_data[66..]
-            );
+            let text = format!("0002{}{}", &install.module[2..], &install.module_data[66..]);
             Bytes::from(hex::decode(text).expect("captured install"))
         })
         .collect();
