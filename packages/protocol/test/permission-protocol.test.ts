@@ -392,9 +392,12 @@ describe("PermissionRequest current codec", () => {
     }
   });
 
-  it("requires finite policy authority to end before the exclusive Grant expiry", () => {
+  it("allows an unbounded policy, and a set expiry only inside the Grant lifetime", () => {
+    const unbounded = { ...clone(policy), validUntil: null, perChainOperationLimit: null };
+    expect(parsePermissionRequest({ ...clone(request), policy: unbounded })).toMatchObject({
+      policy: { validUntil: null, perChainOperationLimit: null },
+    });
     for (const changed of [
-      { ...clone(policy), validUntil: null },
       { ...clone(policy), validUntil: 99 },
       { ...clone(policy), validUntil: 200 },
       { ...clone(policy), validUntil: 201 },

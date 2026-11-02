@@ -176,10 +176,12 @@ pub(crate) fn capture_request(value: &Value, code: ErrorCode) -> ProtocolResult<
     let requested_at = uint48(field(record, "requestedAt"), code)?;
     let expires_at = uint48(field(record, "expiresAt"), code)?;
     ensure(expires_at > requested_at, code)?;
+    // No expiry is allowed (an unbounded grant); a set expiry stays inside the
+    // Grant lifetime.
     ensure(
         policy
             .valid_until
-            .is_some_and(|until| until >= requested_at && until < expires_at),
+            .is_none_or(|until| until >= requested_at && until < expires_at),
         code,
     )?;
     Ok(PermissionRequest {

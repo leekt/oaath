@@ -147,8 +147,8 @@ export async function signMemberGrant(input: {
       ) &&
       JSON.stringify(calls) ===
         JSON.stringify(template.policy.calls.map((call) => ({ ...call, argumentEquals: 0 }))) &&
-      policy.perChainOperationLimit.count === template.policy.perChainOperationLimit.count &&
-      policy.perChainOperationLimit.intervalSeconds ===
+      policy.perChainOperationLimit?.count === template.policy.perChainOperationLimit.count &&
+      policy.perChainOperationLimit?.intervalSeconds ===
         template.policy.perChainOperationLimit.intervalSeconds &&
       policy.validUntil !== null &&
       policy.validUntil - policy.validAfter === template.lifetime_seconds &&

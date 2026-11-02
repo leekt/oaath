@@ -254,15 +254,13 @@ function captureRequest(
   if (expiresAt <= requestedAt) {
     return invalid(code, "permission request expiresAt must follow requestedAt");
   }
+  // No expiry is allowed (an unbounded grant); a set expiry stays inside the
+  // Grant lifetime.
   if (
-    policy.validUntil === null ||
-    policy.validUntil < requestedAt ||
-    policy.validUntil >= expiresAt
+    policy.validUntil !== null &&
+    (policy.validUntil < requestedAt || policy.validUntil >= expiresAt)
   ) {
-    return invalid(
-      code,
-      "permission policy must have a finite inclusive expiry within the Grant lifetime",
-    );
+    return invalid(code, "permission policy expiry must fall within the Grant lifetime");
   }
   const grant = createGrant({
     identity: {

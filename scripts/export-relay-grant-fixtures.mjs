@@ -294,6 +294,23 @@ grants.push({
     perChainOperationLimit: { count: 3, intervalSeconds: 3600 },
   })),
 });
+// Unbounded grants install only what is set: the call policy always.
+grants.push({
+  name: "unbounded policy",
+  ...(await grant(ecdsaOwner, "webauthn", {
+    ...POLICY,
+    validUntil: null,
+    perChainOperationLimit: null,
+  })),
+});
+grants.push({
+  name: "rate-limited policy without expiry",
+  ...(await grant(ecdsaOwner, "webauthn", {
+    ...POLICY,
+    validUntil: null,
+    perChainOperationLimit: { count: 25, intervalSeconds: 86_400 },
+  })),
+});
 // An imported Kernel 0.3.3 account: prepareKernelPermissionApproval (the
 // portal's own path) over reads that show a v3.3 account rooted in the ECDSA
 // owner, at validation nonce V33_NONCE.

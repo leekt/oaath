@@ -68,7 +68,7 @@ fn derives_the_sdk_signing_request_for_every_root_and_signer_kind() {
         assert_eq!(Value::Array(packages), expected["packages"], "{name}");
         accepted += 1;
     }
-    assert_eq!(accepted, 9);
+    assert_eq!(accepted, 11);
 }
 
 #[test]

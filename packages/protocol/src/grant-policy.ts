@@ -73,8 +73,11 @@ export interface GrantPolicy {
   readonly validAfter: number;
   /** Inclusive Unix timestamp, or null as the only indefinite representation. */
   readonly validUntil: number | null;
-  /** Each covered UserOperation consumes one use on its concrete chain. */
-  readonly perChainOperationLimit: Readonly<GrantPolicyOperationLimit>;
+  /**
+   * Each covered UserOperation consumes one use on its concrete chain. Null
+   * installs no operation limit: the grant is unlimited per chain.
+   */
+  readonly perChainOperationLimit: Readonly<GrantPolicyOperationLimit> | null;
 }
 
 export interface GrantPolicyUsageCheckpoint {
@@ -144,7 +147,8 @@ export type GrantPolicyCoverageResult =
       status: "covered";
       policyHash: `0x${string}`;
       chainId: number;
-      finalizedOperationCount: string;
+      /** Null for an unlimited policy, whose usage is never counted. */
+      finalizedOperationCount: string | null;
       uses: 1;
     }>
   | Readonly<{
@@ -350,7 +354,10 @@ function capturePolicy(
     calls: Object.freeze(calls),
     validAfter,
     validUntil,
-    perChainOperationLimit: captureOperationLimit(record.perChainOperationLimit, code, context),
+    perChainOperationLimit:
+      record.perChainOperationLimit === null
+        ? null
+        : captureOperationLimit(record.perChainOperationLimit, code, context),
   });
 }
 
@@ -418,6 +425,7 @@ function encodeCapturedGrantPolicy(policy: GrantPolicy): Hex {
       { type: "uint48", name: "validAfter" },
       { type: "bool", name: "hasValidUntil" },
       { type: "uint48", name: "validUntil" },
+      // Zero is unambiguous as "no limit": a present count is at least one.
       { type: "uint48", name: "perChainOperationLimit" },
       // Zero is unambiguous as "no window": a present interval is at least one second.
       { type: "uint48", name: "perChainOperationIntervalSeconds" },
@@ -437,8 +445,8 @@ function encodeCapturedGrantPolicy(policy: GrantPolicy): Hex {
       policy.validAfter,
       policy.validUntil !== null,
       policy.validUntil ?? 0,
-      policy.perChainOperationLimit.count,
-      policy.perChainOperationLimit.intervalSeconds ?? 0,
+      policy.perChainOperationLimit?.count ?? 0,
+      policy.perChainOperationLimit?.intervalSeconds ?? 0,
     ],
   );
 }
@@ -532,6 +540,24 @@ function callAttenuates(requested: GrantPolicyCall, approved: GrantPolicyCall): 
   );
 }
 
+/**
+ * An unlimited request may be approved unlimited or with any limit; a limited
+ * one only with its exact window and at most its count. A shorter window
+ * refills sooner and is broader; a longer one, or a lifetime cap for a
+ * windowed request, is narrower but is not the shape the application asked for.
+ */
+function isLimitAttenuation(
+  requested: Readonly<GrantPolicyOperationLimit> | null,
+  approved: Readonly<GrantPolicyOperationLimit> | null,
+): boolean {
+  if (requested === null) return true;
+  return (
+    approved !== null &&
+    approved.count <= requested.count &&
+    approved.intervalSeconds === requested.intervalSeconds
+  );
+}
+
 export function isGrantPolicyAttenuation(requested: unknown, approved: unknown): boolean {
   return captureFailure("grant_policy_attenuation_input_invalid", () => {
     const requestedPolicy = capturePolicy(
@@ -549,12 +575,10 @@ export function isGrantPolicyAttenuation(requested: unknown, approved: unknown):
       (requestedPolicy.validUntil !== null &&
         (approvedPolicy.validUntil === null ||
           approvedPolicy.validUntil > requestedPolicy.validUntil)) ||
-      approvedPolicy.perChainOperationLimit.count > requestedPolicy.perChainOperationLimit.count ||
-      // The window is kept exactly. A shorter window refills sooner and is broader. A longer
-      // window, or a lifetime cap for a windowed request, is narrower in rate but is still
-      // rejected: approval may only lower the count of the shape the application requested.
-      approvedPolicy.perChainOperationLimit.intervalSeconds !==
-        requestedPolicy.perChainOperationLimit.intervalSeconds
+      !isLimitAttenuation(
+        requestedPolicy.perChainOperationLimit,
+        approvedPolicy.perChainOperationLimit,
+      )
     ) {
       return false;
     }
@@ -758,6 +782,15 @@ export function evaluateGrantPolicyCoverage(value: unknown): GrantPolicyCoverage
       const reason = callDenialReason(permitted, candidate);
       if (reason) return denied(policyHash, input.chainId, reason, index);
     }
+    // An unlimited policy has no count to exhaust: usage cannot change the answer.
+    if (input.policy.perChainOperationLimit === null)
+      return Object.freeze({
+        status: "covered",
+        policyHash,
+        chainId: input.chainId,
+        finalizedOperationCount: null,
+        uses: 1,
+      });
     if (input.usage === null) {
       return Object.freeze({
         status: "inconclusive",
@@ -782,10 +815,8 @@ export function evaluateGrantPolicyCoverage(value: unknown): GrantPolicyCoverage
         reason: "usage_identity_mismatch",
       });
     }
-    if (
-      BigInt(input.usage.finalizedOperationCount) >=
-      BigInt(input.policy.perChainOperationLimit.count)
-    ) {
+    const limit = input.policy.perChainOperationLimit;
+    if (limit !== null && BigInt(input.usage.finalizedOperationCount) >= BigInt(limit.count)) {
       return denied(policyHash, input.chainId, "operation_limit_exhausted");
     }
     return Object.freeze({
