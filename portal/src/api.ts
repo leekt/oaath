@@ -143,6 +143,8 @@ export interface CreateAccountResponse {
 export interface PrepareGrantRequest {
   readonly signer_id: string;
   readonly account_id: string;
+  /** A Kernel 0.3.3 account's enable nonce, as the portal read it (`enableNonce`). */
+  readonly enable_nonce?: string;
 }
 export interface PrepareGrantResponse {
   /** The composed request the decision must approve, byte for byte. */
@@ -337,6 +339,8 @@ export interface RevocationView {
 export interface ImportAccountRequest {
   readonly root_signer_id: string;
   readonly address: `0x${string}`;
+  /** The Kernel version the root signed for the account. */
+  readonly kernel_version: "0.4.0" | "0.3.3";
   /** The inventory fingerprint the root acknowledged. */
   readonly inventory_fingerprint: `0x${string}`;
   /** Unix seconds, as signed. */
@@ -504,10 +508,10 @@ export const portalApi = {
       `/portal/accounts/${segment(accountId)}/requests`,
     ),
   pendingRequest: (id: string) => call<PendingRequest>(`/portal/requests/${segment(id)}`),
-  preparePending: (id: string) =>
+  preparePending: (id: string, enableNonce: string | undefined) =>
     call<PrepareGrantResponse>(`/portal/requests/${segment(id)}/prepare`, {
       method: "POST",
-      body: {},
+      body: enableNonce === undefined ? {} : { enable_nonce: enableNonce },
     }),
   approvePending: (id: string, artifact: string) =>
     call<PendingRequest>(`/portal/requests/${segment(id)}/approve`, {

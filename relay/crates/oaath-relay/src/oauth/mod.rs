@@ -46,6 +46,7 @@ use self::id_token::IdTokenKey;
 use self::records::{
     MAX_CLIENT_NAME, MAX_REDIRECT_URIS, MAX_STATE, OAUTH_CLIENT_RECORD_VERSION,
     OAUTH_PAR_RECORD_VERSION, OAuthClientRecord, ParRecord, redirect_uri_allowed,
+    redirect_uri_registered,
 };
 use crate::authentication::{RelayCaller, RelayCallerRole};
 use crate::authority::stored_permission_request;
@@ -54,11 +55,10 @@ use crate::authorization::challenge::{
     is_code_challenge_s256, random_identifier, sha256_base64url,
 };
 use crate::authorization::code::{ConsumeAuthorizationCode, consume_authorization_code};
-use crate::chain::ChainReader;
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::details::{Composition, compose, parse_grant_details};
-use crate::grant::prepare_signing_request;
+use crate::grant::{enable_nonce, grant_signing_request};
 use crate::kms::{RelayKms, open_artifact, seal_artifact};
 use crate::portal::SignerAccount;
 use crate::records::{
@@ -584,8 +584,8 @@ async fn push(transaction: &mut dyn RelayTransaction, record: &ParRecord) -> OAu
         .lock_oauth_client(&record.client_id)
         .await?
         .ok_or_else(|| OAuthFailure::new(401, "invalid_client", RelayErrorCode::NotFound))?;
-    // Exact match against the URIs fixed at registration.
-    if !client.redirect_uris.contains(&record.redirect_uri) {
+    // The URIs fixed at registration; a loopback one on any port.
+    if !redirect_uri_registered(&client.redirect_uris, &record.redirect_uri) {
         return Err(OAuthFailure::new(
             400,
             "invalid_request",
@@ -1223,7 +1223,7 @@ pub struct PreparedGrant {
 pub fn prepare_selection(
     body: &Map<String, Value>,
 ) -> RelayResult<(String, String, Option<GrantPolicy>)> {
-    let allowed = ["signer_id", "account_id", "approved_policy"];
+    let allowed = ["signer_id", "account_id", "approved_policy", "enable_nonce"];
     if body.keys().any(|key| !allowed.contains(&key.as_str())) {
         return Err(INVALID);
     }
@@ -1309,7 +1309,6 @@ pub(crate) fn compose_par_grant(
 pub async fn prepare_grant(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
-    chain: Option<&ChainReader>,
     transaction_id: &str,
     body: &Map<String, Value>,
     session: Option<&str>,
@@ -1340,7 +1339,8 @@ pub async fn prepare_grant(
         Some(policy) if is_captured_policy_attenuation(&request.policy, &policy) => policy,
         Some(_) => return Err(INVALID),
     };
-    let signing = prepare_signing_request(chain, &request, &policy, &account.address).await?;
+    let nonce = enable_nonce(body.get("enable_nonce"))?;
+    let signing = grant_signing_request(&request, &policy, &account.address, nonce)?;
     Ok(PreparedGrant {
         permission_request: request.to_json(),
         request_hash: format!("{:#x}", request.hash()),

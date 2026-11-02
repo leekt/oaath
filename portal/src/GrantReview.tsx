@@ -16,6 +16,7 @@ import {
   portalApi,
 } from "./api.js";
 import {
+  enableNonce,
   grantReads,
   RootSigningError,
   reviewedRequest,
@@ -173,11 +174,14 @@ export function GrantReview({
 
   useEffect(() => heading.current?.focus(), []);
   useEffect(() => {
-    portalApi
-      .prepareGrant(transaction.transaction_id, {
-        signer_id: signer.signer_id,
-        account_id: account.account_id,
-      })
+    enableNonce(account, detail, grantReads(transaction.transaction_id, detail))
+      .then((nonce) =>
+        portalApi.prepareGrant(transaction.transaction_id, {
+          signer_id: signer.signer_id,
+          account_id: account.account_id,
+          ...(nonce === undefined ? {} : { enable_nonce: nonce }),
+        }),
+      )
       .then((response) =>
         setPrepared({
           response,

@@ -15,6 +15,7 @@ import {
   hashPermissionRequest,
   isKernelExistingAccountProfile,
   type PermissionRequest,
+  parseGrantPolicy,
   parseKernelAccountProfile,
   parseOperatorCredentialProfile,
   parseOwnerCredentialProfile,
@@ -25,6 +26,7 @@ import {
 } from "@oaath/protocol";
 import {
   ECDSA_VALIDATOR,
+  grantPermissionPackages,
   type KernelPermissionDecision,
   kernelKey,
   prepareDerivedAccountPermissionApproval,
@@ -156,6 +158,36 @@ export function grantReads(
   if (transactionId !== null && chainId !== undefined)
     return { chainId, rpcUrl: `${location.origin}/rpc/tx/${transactionId}/${chainId}` };
   return { chainId: 421_614, rpcUrl: `${location.origin}/rpc/421614` };
+}
+
+/**
+ * A Kernel 0.3.3 account's enable nonce for `signer` under `policy`, read
+ * on the approval's chain (`grantReads`), for the relay's prepare (which reads no
+ * chain). Undefined for any other account. The SDK re-reads it when it
+ * prepares the approval, so a moved nonce refuses as `digest-mismatch`.
+ */
+export async function enableNonce(
+  account: Pick<PortalAccount, "address" | "profile">,
+  detail: Pick<GrantDetail, "signer" | "policy">,
+  reads: GrantReads,
+): Promise<string | undefined> {
+  if (account.profile.kernelVersion !== "0.3.3") return undefined;
+  const { importChainReads } = await import("./account-import.js");
+  try {
+    const { permissionId } = grantPermissionPackages({
+      signer: parseOperatorCredentialProfile(detail.signer),
+      policy: parseGrantPolicy(detail.policy),
+    });
+    const nonce = await importChainReads(reads.rpcUrl, reads.chainId).read({
+      type: "kernel_v33_permission_nonce",
+      chainId: reads.chainId,
+      account: account.address,
+      permissionId,
+    });
+    return String(nonce);
+  } catch {
+    return refuse("account-unreadable");
+  }
 }
 
 /** The SDK's reads-backed preparation for an imported (existing) account. */

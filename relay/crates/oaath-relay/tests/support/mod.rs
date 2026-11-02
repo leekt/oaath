@@ -2,7 +2,6 @@
 //! request/response helpers.
 #![allow(dead_code)]
 
-pub mod chain;
 pub mod grant;
 pub mod revocation;
 

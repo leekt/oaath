@@ -20,7 +20,7 @@ import {
   portalApi,
 } from "./api.js";
 import { GrantTerms, grantFailure, when } from "./GrantReview.js";
-import { grantReads, reviewedRequest, signGrantApproval } from "./root-signing.js";
+import { enableNonce, grantReads, reviewedRequest, signGrantApproval } from "./root-signing.js";
 import { Button as SchematicAction } from "./schematic/components";
 import { CancelButton, Frame, message, Notice, QrCode, SignerStep } from "./shared.js";
 import { type RememberedSigner, shortAddress, signerDetail } from "./signers.js";
@@ -53,7 +53,19 @@ async function approveRequest(
   signer: RememberedSigner,
   account: PortalAccount,
 ): Promise<PendingRequest> {
-  const prepared = await portalApi.preparePending(view.request_id);
+  // A request awaiting the root carries no app RPC: the portal's own reads.
+  const reads = grantReads(null, view);
+  const prepared = await portalApi.preparePending(
+    view.request_id,
+    await enableNonce(
+      account,
+      {
+        signer: view.permission_request.operatorCredential,
+        policy: view.permission_request.policy,
+      },
+      reads,
+    ),
+  );
   const request = reviewedRequest({
     prepared,
     detail: {
@@ -69,8 +81,7 @@ async function approveRequest(
     chainId: view.chains[0],
     signer,
     account,
-    // A request awaiting the root carries no app RPC: the portal's own reads.
-    reads: grantReads(null, view),
+    reads,
   });
   return portalApi.approvePending(view.request_id, artifact);
 }

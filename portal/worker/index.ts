@@ -224,7 +224,9 @@ export default {
       const site = request.headers.get("sec-fetch-site");
       if ((site !== null && site !== "same-origin") || request.headers.get("origin") !== ORIGIN)
         return failure(403, "Cross-site request refused");
-      const upstream = await appRpcUrl(env, appRpc[1] as string, appRpc[2] as string);
+      const id = appRpc[1] as string;
+      // Never a dot segment: the relay path must stay this transaction's.
+      const upstream = /^\.+$/u.test(id) ? null : await appRpcUrl(env, id, appRpc[2] as string);
       if (!upstream) return failure(404, "This request names no RPC for that chain");
       return secured(await proxyRpc(request, env, upstream), {});
     }

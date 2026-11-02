@@ -40,7 +40,6 @@ use oaath_protocol::signing_request::{
 };
 use serde_json::{Value, json};
 
-use crate::chain::{ChainReader, kernel_v33_enable_nonce};
 use crate::error::{RelayErrorCode, RelayResult};
 
 const CALL_POLICY: &str = "0x9a52283276a0ec8740df50bf01b28a80d880eaf2";
@@ -200,29 +199,20 @@ pub fn install_nonce(request_hash: B256) -> String {
     ((hash >> 64usize) << 64usize).to_string()
 }
 
-/// `grant_signing_request` for a portal prepare: a Kernel 0.3.3 account's
-/// enable nonce is read from the configured chain first. Without a chain, or
-/// with unreadable evidence, a v3.3 grant is not prepared.
-pub async fn prepare_signing_request(
-    chain: Option<&ChainReader>,
-    request: &PermissionRequest,
-    policy: &GrantPolicy,
-    account: &str,
-) -> RelayResult<GrantSigningRequest> {
-    let nonce = if is_kernel_v33(request) {
-        let packages = grant_packages(&request.operator_credential, policy)?;
-        let permission_id: [u8; 4] = hex_bytes(&packages[0].internal_data)
-            .try_into()
-            .map_err(|_| RelayErrorCode::Internal)?;
-        let reader = chain.ok_or(RelayErrorCode::ChainUnavailable)?;
-        let address = account
-            .parse()
-            .map_err(|_| RelayErrorCode::RecordUnreadable)?;
-        Some(kernel_v33_enable_nonce(reader, address, permission_id).await?)
-    } else {
-        None
+/// The `enable_nonce` a portal prepare carries for a Kernel 0.3.3 account:
+/// Kernel's effective validation nonce as the portal read it, a canonical
+/// positive decimal uint32. The relay reads no chain: a wrong nonce yields an
+/// enable Kernel refuses on chain, never authority the root did not sign.
+pub fn enable_nonce(value: Option<&Value>) -> RelayResult<Option<u32>> {
+    let Some(value) = value else {
+        return Ok(None);
     };
-    grant_signing_request(request, policy, account, nonce)
+    let text = value.as_str().ok_or(UNSUPPORTED)?;
+    let nonce = text.parse::<u32>().map_err(|_| UNSUPPORTED)?;
+    if nonce == 0 || nonce.to_string() != text {
+        return Err(UNSUPPORTED);
+    }
+    Ok(Some(nonce))
 }
 
 /// An imported Kernel 0.3.3 account: its enable nonce is Kernel's onchain
@@ -263,7 +253,8 @@ impl GrantSigningRequest {
 /// attenuation of it) installed into `account`. A Kernel 0.4.0 account signs a
 /// replayable install whose nonce derives from the request; a Kernel 0.3.3
 /// account signs `Enable` at `v33_nonce`, Kernel's effective validation nonce
-/// (`chain::kernel_v33_enable_nonce`). Without one a v3.3 grant is refused.
+/// (`enable_nonce`). Without one a v3.3 grant is refused, and a Kernel 0.4.0
+/// grant refuses one.
 pub fn grant_signing_request(
     request: &PermissionRequest,
     policy: &GrantPolicy,
@@ -271,6 +262,9 @@ pub fn grant_signing_request(
     v33_nonce: Option<u32>,
 ) -> RelayResult<GrantSigningRequest> {
     let packages = grant_packages(&request.operator_credential, policy)?;
+    if !is_kernel_v33(request) && v33_nonce.is_some() {
+        return Err(UNSUPPORTED);
+    }
     let (nonce, typed_data) = if is_kernel_v33(request) {
         let nonce = v33_nonce.filter(|nonce| *nonce > 0).ok_or(UNSUPPORTED)?;
         (
