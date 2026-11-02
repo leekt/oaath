@@ -245,6 +245,15 @@ async fn records_a_member_grant_from_a_template_at_the_maximum_lifetime() {
     .ok(200)
     .clone();
     assert_eq!(approved["status"], "approved");
+    // The stored grant reads back: its expiry in milliseconds is a safe integer.
+    h.send(portal_call(
+        "GET",
+        &format!("/portal/grants/{link_id}"),
+        Some(&member_cookie),
+        None,
+    ))
+    .await
+    .ok(200);
 }
 
 #[tokio::test]
