@@ -12,7 +12,7 @@
  *
  * @author taek <leekt216@gmail.com>
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   type PolicyTemplate,
   type PortalAccount,
@@ -760,14 +760,20 @@ function RevocationList({
   );
 }
 
+// Chain reads and module discovery load only when an import is opened.
+const ImportAccount = lazy(() =>
+  import("./ImportAccount.js").then((module) => ({ default: module.ImportAccount })),
+);
+
 /** `/accounts`: the owner's accounts and their members. */
 export function ManageAccounts() {
   const [signer, setSigner] = useState<RememberedSigner | null>(null);
   const [accounts, setAccounts] = useState<readonly PortalAccount[] | null>(null);
   const [chosen, setChosen] = useState<PortalAccount | null>(null);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!signer) return;
     portalApi.signerAccounts(signer.signer_id).then(
       (response) => {
@@ -779,6 +785,7 @@ export function ManageAccounts() {
       (failure: unknown) => setError(linkMessage(failure)),
     );
   }, [signer]);
+  useEffect(load, [load]);
 
   return (
     <Frame variant={signer ? "workspace" : "auth"}>
@@ -815,6 +822,27 @@ export function ManageAccounts() {
                 </li>
               ))}
             </ul>
+          )}
+          <SchematicAction
+            type="button"
+            variant="secondary"
+            className="secondary"
+            aria-expanded={importing}
+            aria-controls="import-account"
+            onClick={() => setImporting(!importing)}
+          >
+            Import an existing account
+          </SchematicAction>
+          {importing && (
+            <Suspense fallback={<p className="quiet">Loading…</p>}>
+              <ImportAccount
+                signer={signer}
+                onImported={() => {
+                  setImporting(false);
+                  load();
+                }}
+              />
+            </Suspense>
           )}
         </section>
       )}
