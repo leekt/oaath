@@ -161,6 +161,13 @@ async fn logs_in_and_issues_a_verifiable_id_token() {
         .clone();
     assert_eq!(discovery["issuer"], json!(ISSUER));
     assert_eq!(discovery["jwks_uri"], json!(format!("{ISSUER}/oauth/jwks")));
+    // RFC 8414 clients (MCP) find the same metadata.
+    assert_eq!(
+        h.send(get("/.well-known/oauth-authorization-server", None))
+            .await
+            .ok(200),
+        &discovery
+    );
 
     let (client_id, id) = push(&h).await;
     let (signer_id, account, cookie) = signer_and_account(&h, 0x11).await;
