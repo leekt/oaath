@@ -52,6 +52,40 @@ import {
   openAuthorizationPopup,
 } from "./oauth-login.js";
 
+/**
+ * The app's own read-only JSON-RPC URL per chain, sent with a grant request
+ * as `rpc_urls`: the portal reads that chain through it (via its own proxy)
+ * to prepare the root's approval. Every key must be one of the request's
+ * chains and every URL https. The portal user can see them, so they must not
+ * embed a secret.
+ */
+export function grantRpcUrls(
+  value: unknown,
+  chains: readonly number[],
+): Readonly<Record<string, string>> | undefined {
+  if (value === undefined) return undefined;
+  const fail = (): never =>
+    clientFail("oaath_client_input_invalid", "rpcUrls must map requested chain IDs to https URLs");
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return fail();
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return fail();
+  const urls: Record<string, string> = {};
+  for (const [key, url] of entries) {
+    const chain = Number(key);
+    if (!chains.includes(chain) || String(chain) !== key || typeof url !== "string") return fail();
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return fail();
+    }
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash)
+      return fail();
+    urls[key] = url;
+  }
+  return Object.freeze(urls);
+}
+
 export interface OaathPermissionApprovalOptions extends OaathLoginOptions {
   /** The session credential the permission installs; the caller holds its key. */
   readonly signer: Readonly<OperatorCredentialProfile>;
@@ -63,6 +97,8 @@ export interface OaathPermissionApprovalOptions extends OaathLoginOptions {
   readonly expiresAt: number;
   /** The caller's stable identifier for the device holding the session key. */
   readonly deviceId: string;
+  /** The app's own JSON-RPC per chain ID for the portal's reads (`grantRpcUrls`). */
+  readonly rpcUrls?: Readonly<Record<number, string>>;
   /**
    * A popup the caller opened synchronously in the user's gesture (with
    * `openAuthorizationPopup`), for a caller that must await before asking.
@@ -106,6 +142,7 @@ export async function requestPermissionApproval(
     chains,
     expiresAt,
     deviceId,
+    rpcUrls: rpcUrlsValue,
     popup: given,
     launch,
     ...options
@@ -134,6 +171,7 @@ export async function requestPermissionApproval(
       deviceId === ""
     )
       return clientFail("oaath_client_input_invalid", "chains, expiresAt or deviceId is invalid");
+    const rpcUrls = grantRpcUrls(rpcUrlsValue, chains);
     const detail = {
       type: "oaath_grant",
       signer,
@@ -141,6 +179,7 @@ export async function requestPermissionApproval(
       chains,
       expires_at: expiresAt,
       device_id: deviceId,
+      ...(rpcUrls === undefined ? {} : { rpc_urls: rpcUrls }),
     };
     const extra = { authorization_details: JSON.stringify([detail]) };
     const { released } = popup

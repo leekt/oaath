@@ -178,6 +178,22 @@ describe("requestPermissionApproval", () => {
     expect(window.open).toHaveBeenCalledTimes(1);
   });
 
+  it("sends the app's own RPC per chain and refuses one for another chain or over http", async () => {
+    const { login, pars } = await portal({ accountProfile: V33_ACCOUNT, decide: decideV33() });
+    await ask(login, { rpcUrls: { 421614: "https://arb-sepolia.example/rpc" } });
+    const [detail] = JSON.parse([...pars.values()][0]!.get("authorization_details")!);
+    expect(detail.rpc_urls).toEqual({ "421614": "https://arb-sepolia.example/rpc" });
+    for (const rpcUrls of [
+      { 1: "https://eth.example" },
+      { 421614: "http://arb-sepolia.example/rpc" },
+      { 421614: "https://key:secret@arb-sepolia.example/rpc" },
+      {},
+    ])
+      await expect(ask(login, { rpcUrls })).rejects.toMatchObject({
+        code: "oaath_client_input_invalid",
+      });
+  });
+
   it("fails typed when a member's request awaits the root", async () => {
     const { login } = await portal({ behaviour: "pending" });
     await expect(ask(login)).rejects.toMatchObject({
