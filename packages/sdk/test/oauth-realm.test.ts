@@ -71,6 +71,43 @@ describe("OAuth-approved Grants", () => {
         approvals: { ...input.approvals, rpcUrls: { 1: "https://eth.example" } },
       }),
     ).toThrow(expect.objectContaining({ code: "oaath_client_input_invalid" }));
+  it("orders requested calls canonically and refuses a repeated call", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    const { input, pars } = await browser();
+    const realm = createOAAth(input);
+    const connection = await realm.connect();
+    const [high, low] = [`0x${"bb".repeat(20)}`, `0x${"aa".repeat(20)}`];
+    const grant = await connection.requestPermission(
+      permissionInput({
+        permissions: [
+          { calls: [{ target: high, selectors: ["0x22222222", "0x11111111"], valueLimit: "0" }] },
+          { calls: [{ target: low, selectors: ["0x33333333"], valueLimit: "0" }] },
+        ],
+      }),
+    );
+    expect(grant.state).toBe("active");
+    const [detail] = JSON.parse([...pars.values()][0]!.get("authorization_details")!);
+    expect(
+      detail.policy.calls.map((call: { target: string; selector: string }) => [
+        call.target,
+        call.selector,
+      ]),
+    ).toEqual([
+      [low, "0x33333333"],
+      [high, "0x11111111"],
+      [high, "0x22222222"],
+    ]);
+    await expect(
+      connection.requestPermission(
+        permissionInput({
+          permissions: [
+            { calls: [{ target: low, selectors: ["0x33333333"], valueLimit: "0" }] },
+            { calls: [{ target: low, selectors: ["0x33333333"], valueLimit: "0" }] },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "oaath_client_input_invalid" });
+    await realm.close();
   });
 
   it("refuses a returned request with someone else's signer before storing anything", async () => {
