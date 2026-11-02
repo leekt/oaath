@@ -132,6 +132,18 @@ export interface Eip1193Provider {
       | { method: "eth_signTypedData_v4"; params: [`0x${string}`, string] }
       | { method: "wallet_switchEthereumChain"; params: [{ chainId: `0x${string}` }] }
       | {
+          method: "wallet_addEthereumChain";
+          params: [
+            {
+              chainId: `0x${string}`;
+              chainName: string;
+              nativeCurrency: { name: string; symbol: string; decimals: number };
+              rpcUrls: readonly string[];
+              blockExplorerUrls?: readonly string[];
+            },
+          ];
+        }
+      | {
           method: "eth_sendTransaction";
           params: [
             {

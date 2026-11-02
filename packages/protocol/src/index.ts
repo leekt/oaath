@@ -242,7 +242,7 @@ export {
   parseOwnerOperationRequest,
   parseSignedOwnerOperation,
 } from "./owner-operation.js";
-export type { OwnerTransactionRequest } from "./owner-transaction.js";
+export type { OwnerTransactionChain, OwnerTransactionRequest } from "./owner-transaction.js";
 export {
   hashOwnerTransactionRequest,
   OAATH_OWNER_TRANSACTION_REQUEST_VERSION,

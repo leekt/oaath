@@ -41,6 +41,25 @@ describe("requestOwnerTransaction", () => {
     expect(detail).toEqual({ type: "oaath_transaction", request });
   });
 
+  it("carries chain metadata for a wallet that does not know the chain", async () => {
+    const { login, pars } = await portal(async (sent) => ({
+      request: sent,
+      transaction_hash: HASH,
+    }));
+    const withChain = {
+      ...request,
+      chain: {
+        name: "Example Chain",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: ["https://rpc.example.org/"],
+      },
+    } as const;
+    const sent = await requestOwnerTransaction({ ...login, request: withChain });
+    expect(sent.requestHash).toBe(hashOwnerTransactionRequest(withChain));
+    const [detail] = JSON.parse([...pars.values()][0]!.get("authorization_details")!);
+    expect(detail).toEqual({ type: "oaath_transaction", request: withChain });
+  });
+
   it("refuses a hash released for another request", async () => {
     const { login } = await portal(async (sent) => ({
       request: { ...(sent as object), value: "1" },
