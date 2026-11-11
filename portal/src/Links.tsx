@@ -55,7 +55,7 @@ function linkMessage(error: unknown): string {
     case "digest-mismatch":
       return "OAAth sent a request that doesn't match what you were shown. Nothing was signed.";
     case "account-unreadable":
-      return "The account could not be read on Arbitrum Sepolia, so nothing was signed. Try again.";
+      return "The account could not be read on any available chain, so nothing was signed. Try again.";
     case "passkey-cancelled":
       return "The passkey prompt was dismissed.";
     case "root-unsupported":

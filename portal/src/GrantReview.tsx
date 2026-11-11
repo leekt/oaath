@@ -22,7 +22,9 @@ import {
 } from "./api.js";
 import {
   enableNonce,
+  type GrantReads,
   grantReads,
+  readableGrantReads,
   RootSigningError,
   reviewedRequest,
   signGrantApproval,
@@ -100,7 +102,7 @@ export function grantFailure(error: unknown): string {
     case "digest-mismatch":
       return "This request does not match what the app asked for, so OAAth will not sign it.";
     case "account-unreadable":
-      return "The account could not be read on Arbitrum Sepolia, so nothing was signed. Try again.";
+      return "The account could not be read on any chain the app named, so nothing was signed. The app must pass rpcUrls for a chain where this account is deployed.";
     case "wallet-unavailable":
       return "Your wallet is not available in this browser. Open it and try again.";
     case "wallet-account-mismatch":
@@ -195,10 +197,16 @@ export function GrantReview({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  // The chain the nonce was read on is the one the approval reads.
+  const readsRef = useRef<GrantReads | null>(null);
 
   useEffect(() => heading.current?.focus(), []);
   useEffect(() => {
-    enableNonce(account, detail, grantReads(transaction.transaction_id, detail))
+    readableGrantReads(transaction.transaction_id, detail, account)
+      .then(async (reads) => {
+        readsRef.current = reads;
+        return enableNonce(account, detail, reads);
+      })
       .then((nonce) =>
         portalApi.prepareGrant(transaction.transaction_id, {
           signer_id: signer.signer_id,
@@ -227,7 +235,7 @@ export function GrantReview({
           chainId: detail.chains[0],
           signer,
           account,
-          reads: grantReads(transaction.transaction_id, detail),
+          reads: readsRef.current ?? grantReads(transaction.transaction_id, detail),
         }),
       );
     } catch (cause) {

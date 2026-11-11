@@ -20,7 +20,12 @@ import {
   portalApi,
 } from "./api.js";
 import { GrantTerms, grantFailure, when } from "./GrantReview.js";
-import { enableNonce, grantReads, reviewedRequest, signGrantApproval } from "./root-signing.js";
+import {
+  enableNonce,
+  readableGrantReads,
+  reviewedRequest,
+  signGrantApproval,
+} from "./root-signing.js";
 import { Button as SchematicAction } from "./schematic/components";
 import { CancelButton, Frame, message, Notice, QrCode, SignerStep } from "./shared.js";
 import { type RememberedSigner, shortAddress, signerDetail } from "./signers.js";
@@ -54,7 +59,7 @@ async function approveRequest(
   account: PortalAccount,
 ): Promise<PendingRequest> {
   // A request awaiting the root carries no app RPC: the portal's own reads.
-  const reads = grantReads(null, view);
+  const reads = await readableGrantReads(null, view, account);
   const prepared = await portalApi.preparePending(
     view.request_id,
     await enableNonce(
