@@ -35,7 +35,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::{RelayErrorCode, RelayResult};
-use crate::records::{canonical_identifier, exact_record, timestamp};
+use crate::records::{canonical_identifier, exact_record, text, timestamp};
 use crate::store::RelayTransaction;
 
 pub const SIGNER_RECORD_VERSION: &str = "oaath.signer-record/v1";
@@ -79,10 +79,6 @@ fn version(value: Option<&Value>, expected: &str) -> RelayResult<()> {
 
 fn identifier(value: Option<&Value>) -> RelayResult<String> {
     canonical_identifier(value, UNREADABLE).map(str::to_owned)
-}
-
-fn text(value: Option<&Value>) -> RelayResult<&str> {
-    value.and_then(Value::as_str).ok_or(UNREADABLE)
 }
 
 /// The lowercase `0x` hex form of a 32-byte hash.
@@ -131,8 +127,8 @@ impl SignerRecord {
         let record = Self {
             version: SIGNER_RECORD_VERSION,
             signer_id: identifier(r.get("signerId"))?,
-            profile_hash: text(r.get("profileHash"))?.to_owned(),
-            profile: text(r.get("profile"))?.to_owned(),
+            profile_hash: text(r.get("profileHash"), UNREADABLE)?.to_owned(),
+            profile: text(r.get("profile"), UNREADABLE)?.to_owned(),
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
         };
         // The stored profile must be the canonical form behind the stored hash.
@@ -195,7 +191,7 @@ impl AccountRecord {
         let record = Self {
             version: ACCOUNT_RECORD_VERSION,
             account_id: identifier(r.get("accountId"))?,
-            address: text(r.get("address"))?.to_owned(),
+            address: text(r.get("address"), UNREADABLE)?.to_owned(),
             root_signer_id: identifier(r.get("rootSignerId"))?,
             account_index: match r.get("accountIndex") {
                 Some(Value::Null) => None,
@@ -207,9 +203,9 @@ impl AccountRecord {
             },
             owner_validator: match r.get("ownerValidator") {
                 Some(Value::Null) => None,
-                other => Some(text(other)?.to_owned()),
+                other => Some(text(other, UNREADABLE)?.to_owned()),
             },
-            profile: text(r.get("profile"))?.to_owned(),
+            profile: text(r.get("profile"), UNREADABLE)?.to_owned(),
             created_at: timestamp(r.get("createdAt"), UNREADABLE)?,
         };
         // A canonical factory-derived profile at the stored index and its
