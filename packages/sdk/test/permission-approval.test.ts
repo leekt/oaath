@@ -8,7 +8,11 @@
 
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openAuthorizationPopup, requestPermissionApproval } from "../src/index.js";
+import {
+  OAATH_MAX_GRANT_CHAINS,
+  openAuthorizationPopup,
+  requestPermissionApproval,
+} from "../src/index.js";
 import { KERNEL_ENTRY_POINT_V07 } from "../src/kernel/deployment/v33.js";
 import * as M from "../src/kernel/modules.js";
 import {
@@ -192,6 +196,35 @@ describe("requestPermissionApproval", () => {
       await expect(ask(login, { rpcUrls })).rejects.toMatchObject({
         code: "oaath_client_input_invalid",
       });
+  });
+
+  it("refuses more than OAATH_MAX_GRANT_CHAINS and shows the issuer's reason", async () => {
+    const { login } = await portal({ accountProfile: V33_ACCOUNT, decide: decideV33() });
+    const chains = Array.from({ length: OAATH_MAX_GRANT_CHAINS + 1 }, (_, index) => index + 1);
+    await expect(
+      requestPermissionApproval({
+        ...(login as { issuer: string; clientId: string; redirectUri: string }),
+        signer: SIGNER,
+        policy: POLICY,
+        chains,
+        expiresAt: EXPIRES_AT,
+        deviceId: "operator-device",
+      }),
+    ).rejects.toMatchObject({ code: "oaath_client_input_invalid" });
+    vi.stubGlobal("fetch", async () =>
+      Response.json(
+        {
+          error: "invalid_authorization_details",
+          error_description: "chains: at most 256 chain IDs",
+        },
+        { status: 400 },
+      ),
+    );
+    await expect(ask(login)).rejects.toMatchObject({
+      code: "oaath_client_issuer_rejected",
+      source: "invalid_authorization_details",
+      message: "issuer refused the request: chains: at most 256 chain IDs",
+    });
   });
 
   it("fails typed when a member's request awaits the root", async () => {

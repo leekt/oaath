@@ -165,7 +165,14 @@ async function postForm(url: string, form: Record<string, string>): Promise<unkn
   const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (!response.ok) {
     const error = typeof body?.error === "string" ? body.error : null;
-    return clientFail("oaath_client_issuer_rejected", "issuer refused the request", error);
+    // The issuer's own reason, bounded: it is shown to the app, never trusted.
+    const description =
+      typeof body?.error_description === "string" ? body.error_description.slice(0, 200) : "";
+    return clientFail(
+      "oaath_client_issuer_rejected",
+      description ? `issuer refused the request: ${description}` : "issuer refused the request",
+      error,
+    );
   }
   return body;
 }

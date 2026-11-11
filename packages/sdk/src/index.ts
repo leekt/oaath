@@ -99,7 +99,10 @@ export type {
   OaathApprovedPermission,
   OaathPermissionApprovalOptions,
 } from "./client/permission-approval.js";
-export { requestPermissionApproval } from "./client/permission-approval.js";
+export {
+  OAATH_MAX_GRANT_CHAINS,
+  requestPermissionApproval,
+} from "./client/permission-approval.js";
 export type { OaathPortalOwnerKeyOptions } from "./client/portal-owner-key.js";
 export { portalOwnerKey } from "./client/portal-owner-key.js";
 export type { OaathSession, OaathSessionCustody } from "./client/session-credential.js";

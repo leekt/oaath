@@ -150,6 +150,30 @@ async fn refuses_details_it_cannot_compose_or_enforce() {
 }
 
 #[tokio::test]
+async fn accepts_up_to_256_chains_and_names_the_limit_beyond() {
+    let h = harness();
+    let client_id = client(&h).await;
+    let chains = |count: u64| {
+        let mut detail = detail();
+        detail["chains"] = json!((1..=count).collect::<Vec<_>>());
+        json!([detail])
+    };
+    par(&h, &client_id, Some(&chains(256))).await.ok(201);
+    let reply = par(&h, &client_id, Some(&chains(257))).await;
+    assert_eq!(reply.status, 400);
+    assert_eq!(reply.body["error"], json!("invalid_authorization_details"));
+    assert_eq!(
+        reply.body["error_description"],
+        json!("chains: at most 256 chain IDs")
+    );
+    // Any other invalid detail keeps no description.
+    let mut detail = detail();
+    detail["chains"] = json!([]);
+    let reply = par(&h, &client_id, Some(&json!([detail]))).await;
+    assert_eq!(reply.body.get("error_description"), None);
+}
+
+#[tokio::test]
 async fn prepares_what_the_root_signs_and_admits_its_signature() {
     let h = harness();
     let client_id = client(&h).await;

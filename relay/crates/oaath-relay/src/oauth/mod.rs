@@ -62,7 +62,9 @@ use crate::authorization::challenge::{
 use crate::authorization::code::{ConsumeAuthorizationCode, consume_authorization_code};
 use crate::clock::{RelayClock, relay_now};
 use crate::error::{RelayErrorCode, RelayResult};
-use crate::grant::details::{Composition, compose, parse_grant_details};
+use crate::grant::details::{
+    Composition, MAX_CHAINS, TOO_MANY_CHAINS, compose, parse_grant_details,
+};
 use crate::grant::{enable_nonce, grant_signing_request};
 use crate::kms::{RelayKms, open_artifact, seal_artifact};
 use crate::portal::SignerAccount;
@@ -482,8 +484,12 @@ pub async fn push_authorization_request(
             owner_transaction.as_ref().map(transaction::stored_details)
         }
         (Some(details), None) => Some(
-            grant_details(details, &par_id, client_id, redirect_uri, created_at)
-                .map_err(|_| invalid_details())?,
+            grant_details(details, &par_id, client_id, redirect_uri, created_at).map_err(|_| {
+                OAuthFailure {
+                    description: too_many_chains(details).then_some(TOO_MANY_CHAINS),
+                    ..invalid_details()
+                }
+            })?,
         ),
     };
     let record = ParRecord {
@@ -631,6 +637,15 @@ pub fn redirect_origin(redirect_uri: &str) -> RelayResult<String> {
 /// Captures one `oaath_grant` detail and proves it composes into a protocol
 /// request (with a stand-in account; the real one is chosen in the portal).
 /// Answers its canonical stored form.
+/// Whether an `oaath_grant` detail fails only for naming too many chains.
+fn too_many_chains(text: &str) -> bool {
+    parse_json(text).is_ok_and(|details| {
+        details[0]["chains"]
+            .as_array()
+            .is_some_and(|chains| chains.len() > MAX_CHAINS)
+    })
+}
+
 fn grant_details(
     text: &str,
     par_id: &str,
