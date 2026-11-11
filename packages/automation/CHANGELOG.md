@@ -1,5 +1,11 @@
 # @oaath/automation
 
+## 0.3.12
+
+### Patch Changes
+
+- @oaath/protocol@0.3.12
+
 ## 0.3.11
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # @oaath/automation-server
 
+## 0.3.12
+
+### Patch Changes
+
+- Updated dependencies [8c16a9d]
+  - @oaath/sdk@0.3.12
+  - @oaath/protocol@0.3.12
+  - @oaath/automation@0.3.12
+
 ## 0.3.11
 
 ### Patch Changes
