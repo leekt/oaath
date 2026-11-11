@@ -24,8 +24,9 @@ import {
   enableNonce,
   type GrantReads,
   grantReads,
-  readableGrantReads,
+  needsChainRead,
   RootSigningError,
+  readableGrantReads,
   reviewedRequest,
   signGrantApproval,
 } from "./root-signing.js";
@@ -202,7 +203,11 @@ export function GrantReview({
 
   useEffect(() => heading.current?.focus(), []);
   useEffect(() => {
-    readableGrantReads(transaction.transaction_id, detail, account)
+    // Nothing is read when the approval needs no chain read.
+    (needsChainRead(account.profile.kernelVersion, detail.enable_nonce)
+      ? readableGrantReads(transaction.transaction_id, detail, account)
+      : Promise.resolve(grantReads(transaction.transaction_id, detail))
+    )
       .then(async (reads) => {
         readsRef.current = reads;
         return enableNonce(account, detail, reads);
@@ -236,6 +241,7 @@ export function GrantReview({
           signer,
           account,
           reads: readsRef.current ?? grantReads(transaction.transaction_id, detail),
+          ...(detail.enable_nonce === undefined ? {} : { enableNonce: detail.enable_nonce }),
         }),
       );
     } catch (cause) {

@@ -61,6 +61,7 @@ import {
 import { kernelPermissionInstallNonce } from "./install-nonce.js";
 import { approveKernelPermissionAllChain } from "./materialize.js";
 import { deriveSessionPolicyProfiles } from "./profiles.js";
+import { approveKernelV33PermissionScope, kernelV33PermissionEnableTypedData } from "./v33.js";
 
 export interface PrepareKernelPermissionApprovalInput {
   readonly request: Readonly<PermissionRequest>;
@@ -397,6 +398,70 @@ export async function prepareKernelPermissionApproval(
       account: approval.account,
       nonce: approval.nonce,
     }),
+  );
+}
+
+export interface PrepareExistingAccountPermissionApprovalOfflineInput {
+  readonly request: Readonly<PermissionRequest>;
+  /** Selects the deployment the permission packages derive from; the approval covers every chain. */
+  readonly chainId: number;
+  /**
+   * A Kernel `0.3.3` account's effective enable nonce, decimal, as the app
+   * read it; ignored (and may be omitted) for Kernel `0.4.0`, whose nonce
+   * derives from the request. A wrong nonce installs nothing.
+   */
+  readonly enableNonce?: string;
+}
+
+/**
+ * The approval for an existing (imported) account with no chain reads: the
+ * account's version and address come from the request, a Kernel `0.3.3`
+ * nonce from the caller. Nothing is read, bound, or proven onchain here.
+ */
+export function prepareExistingAccountPermissionApprovalOffline(
+  value: PrepareExistingAccountPermissionApprovalOfflineInput,
+): Readonly<PreparedKernelPermissionApproval> {
+  const input = exactInput(
+    value,
+    ["request", "chainId", ...(Object.hasOwn(value ?? {}, "enableNonce") ? ["enableNonce"] : [])],
+    "Kernel existing-account offline approval",
+    new WeakSet(),
+  );
+  const request = parsePermissionRequest(input.request);
+  const account = request.logicalAccount;
+  if (!isKernelExistingAccountProfile(account))
+    return runtimeFail("kernel_runtime_unsupported", "the request names no existing account");
+  if (typeof input.chainId !== "number") return inputInvalid("approval chain is invalid");
+  if (account.kernelVersion === "0.4.0")
+    return derivedApproval(request, input.chainId, account.address);
+  if (typeof input.enableNonce !== "string")
+    return inputInvalid("a Kernel 0.3.3 approval needs the account's enable nonce");
+  const { ownerKey, sessionKey } = requestKeys(request);
+  const runtime = createKernelRuntime({
+    deployment: kernelDeployment({ chainId: input.chainId, kernelVersion: "0.3.3" }),
+    operator: sessionOperator({
+      key: sessionKey,
+      policies: deriveSessionPolicyProfiles(request.policy),
+    }),
+    reads: NO_READS,
+  });
+  if (runtime.validation.kind !== "permission")
+    return runtimeFail("kernel_runtime_binding_mismatch", "session runtime has no permission");
+  const scope = Object.freeze({
+    chainScope: "all" as const,
+    account: account.address,
+    nonce: input.enableNonce,
+    permissionId: runtime.validation.permissionId,
+    packages: runtime.packages,
+  });
+  const typedData = kernelV33PermissionEnableTypedData(scope);
+  const approval = {
+    nonce: input.enableNonce,
+    typedData,
+    digest: hashTypedData(typedData as Parameters<typeof hashTypedData>[0]),
+  } as unknown as Readonly<ExistingAccountApproval>;
+  return preparedApproval(request, ownerKey, existingSigningRequest(account, approval), (owner) =>
+    approveKernelV33PermissionScope(owner, scope),
   );
 }
 

@@ -22,6 +22,8 @@ import {
 import { GrantTerms, grantFailure, when } from "./GrantReview.js";
 import {
   enableNonce,
+  grantReads,
+  needsChainRead,
   readableGrantReads,
   reviewedRequest,
   signGrantApproval,
@@ -59,7 +61,9 @@ async function approveRequest(
   account: PortalAccount,
 ): Promise<PendingRequest> {
   // A request awaiting the root carries no app RPC: the portal's own reads.
-  const reads = await readableGrantReads(null, view, account);
+  const reads = needsChainRead(account.profile.kernelVersion, undefined)
+    ? await readableGrantReads(null, view, account)
+    : grantReads(null, view);
   const prepared = await portalApi.preparePending(
     view.request_id,
     await enableNonce(

@@ -106,6 +106,12 @@ export interface OaathPermissionApprovalOptions extends OaathLoginOptions {
   readonly expiresAt: number;
   /** The caller's stable identifier for the device holding the session key. */
   readonly deviceId: string;
+  /**
+   * A Kernel 0.3.3 account's effective enable nonce for this signer and
+   * policy (decimal uint32 > 0), as the app read it: the portal then reads no
+   * chain. A wrong value installs nothing. Ignored for Kernel 0.4.0.
+   */
+  readonly enableNonce?: string;
   /** The app's own JSON-RPC per chain ID for the portal's reads (`grantRpcUrls`). */
   readonly rpcUrls?: Readonly<Record<number, string>>;
   /**
@@ -152,6 +158,7 @@ export async function requestPermissionApproval(
     expiresAt,
     deviceId,
     rpcUrls: rpcUrlsValue,
+    enableNonce,
     popup: given,
     launch,
     ...options
@@ -178,7 +185,11 @@ export async function requestPermissionApproval(
       !chains.every((chain) => Number.isSafeInteger(chain) && chain > 0) ||
       !Number.isSafeInteger(expiresAt) ||
       typeof deviceId !== "string" ||
-      deviceId === ""
+      deviceId === "" ||
+      (enableNonce !== undefined &&
+        (typeof enableNonce !== "string" ||
+          !/^[1-9][0-9]{0,9}$/u.test(enableNonce) ||
+          Number(enableNonce) > 0xffff_ffff))
     )
       return clientFail("oaath_client_input_invalid", "chains, expiresAt or deviceId is invalid");
     const rpcUrls = grantRpcUrls(rpcUrlsValue, chains);
@@ -190,6 +201,7 @@ export async function requestPermissionApproval(
       expires_at: expiresAt,
       device_id: deviceId,
       ...(rpcUrls === undefined ? {} : { rpc_urls: rpcUrls }),
+      ...(enableNonce === undefined ? {} : { enable_nonce: enableNonce }),
     };
     const extra = { authorization_details: JSON.stringify([detail]) };
     const { released } = popup

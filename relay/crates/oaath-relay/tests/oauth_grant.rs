@@ -101,6 +101,16 @@ async fn carries_the_apps_own_rpc_urls_for_its_chains() {
         .ok(200)
         .clone();
     assert_eq!(transaction["authorization_details"], json!([with_rpcs]));
+    // The app's enable nonce rides to the portal unchanged.
+    let mut with_nonce = detail();
+    with_nonce["enable_nonce"] = json!("7");
+    let id = transaction_id(&par(&h, &client_id, Some(&json!([with_nonce.clone()]))).await);
+    let transaction = h
+        .send(get(&format!("/portal/transactions/{id}"), None))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(transaction["authorization_details"], json!([with_nonce]));
 }
 
 #[tokio::test]
@@ -142,6 +152,10 @@ async fn refuses_details_it_cannot_compose_or_enforce() {
         with("rpc_urls", json!({ "10": "https://op.example/rpc" })),
         with("rpc_urls", json!({ "08453": "https://base.example/rpc" })),
         with("rpc_urls", json!({ "8453": 1 })),
+        with("enable_nonce", json!("0")),
+        with("enable_nonce", json!("01")),
+        with("enable_nonce", json!(1)),
+        with("enable_nonce", json!("4294967296")),
     ] {
         let reply = par(&h, &client_id, Some(&details)).await;
         assert_eq!(reply.status, 400, "{details}");

@@ -39,6 +39,8 @@ export interface GrantDetail {
   readonly device_id: string;
   /** The app's own JSON-RPC per chain id; the portal reads that chain through it. */
   readonly rpc_urls?: Readonly<Record<string, string>>;
+  /** A Kernel 0.3.3 account's enable nonce as the app read it: no chain read is needed. */
+  readonly enable_nonce?: string;
 }
 
 /** One exact owner operation the dapp asks the account's root to sign. */

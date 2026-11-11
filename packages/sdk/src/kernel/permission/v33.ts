@@ -244,6 +244,26 @@ export async function approveKernelV33Permission(
   });
 }
 
+/**
+ * Signs a scope built offline (the caller supplies the account's effective
+ * enable nonce): nothing is read or bound onchain here.
+ */
+export async function approveKernelV33PermissionScope(
+  owner: Readonly<KeyProfile>,
+  value: KernelV33PermissionScope,
+): Promise<Readonly<KernelV33PermissionApproval>> {
+  const scope = captureScope(
+    exactInput(value, SCOPE_KEYS, "Kernel v3.3 permission scope", new WeakSet()),
+  );
+  const digest = hashTypedData(typedData(scope));
+  return Object.freeze({
+    version: OAATH_KERNEL_V33_APPROVAL_VERSION,
+    ...scope,
+    digest,
+    enableSignature: await captureKeyProfile(owner).sign(digest),
+  });
+}
+
 export function parseKernelV33PermissionApproval(
   value: unknown,
 ): Readonly<KernelV33PermissionApproval> {

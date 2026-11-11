@@ -45,6 +45,10 @@ pub struct GrantDetail {
     /// root's approval. Visible to the user; it never carries a credential
     /// the app would not show.
     pub rpc_urls: BTreeMap<u64, String>,
+    /// A Kernel 0.3.3 account's effective enable nonce (decimal uint32 > 0) as
+    /// the app read it, so the portal prepares the approval without reading
+    /// any chain. A wrong value installs nothing: the signature binds it.
+    pub enable_nonce: Option<String>,
 }
 
 impl GrantDetail {
@@ -64,6 +68,9 @@ impl GrantDetail {
                     .map(|(chain, url)| (chain.to_string(), Value::String(url.clone())))
                     .collect::<serde_json::Map<_, _>>()
             );
+        }
+        if let Some(nonce) = &self.enable_nonce {
+            value["enable_nonce"] = json!(nonce);
         }
         value
     }
@@ -98,7 +105,8 @@ pub fn parse_grant_details(value: &Value) -> RelayResult<GrantDetail> {
         "expires_at",
         "device_id",
     ];
-    let optional = usize::from(record.contains_key("rpc_urls"));
+    let optional = usize::from(record.contains_key("rpc_urls"))
+        + usize::from(record.contains_key("enable_nonce"));
     if record.len() != keys.len() + optional || !keys.iter().all(|key| record.contains_key(*key)) {
         return Err(INVALID);
     }
@@ -141,6 +149,17 @@ pub fn parse_grant_details(value: &Value) -> RelayResult<GrantDetail> {
         }
     }
     let expires_at = record["expires_at"].as_u64().ok_or(INVALID)?;
+    let enable_nonce = match record.get("enable_nonce") {
+        None => None,
+        Some(nonce) => {
+            let text = nonce.as_str().ok_or(INVALID)?;
+            let parsed = text.parse::<u32>().map_err(|_| INVALID)?;
+            if parsed == 0 || parsed.to_string() != text {
+                return Err(INVALID);
+            }
+            Some(text.to_owned())
+        }
+    };
     let device_id = canonical_str(record["device_id"].as_str().ok_or(INVALID)?, INVALID)?;
     grant_packages(&signer, &policy)?;
     Ok(GrantDetail {
@@ -150,6 +169,7 @@ pub fn parse_grant_details(value: &Value) -> RelayResult<GrantDetail> {
         expires_at,
         device_id: device_id.to_owned(),
         rpc_urls,
+        enable_nonce,
     })
 }
 
