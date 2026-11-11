@@ -1,5 +1,13 @@
 # @oaath/testing
 
+## 0.3.13
+
+### Patch Changes
+
+- Updated dependencies [dfdf567]
+  - @oaath/sdk@0.3.13
+  - @oaath/protocol@0.3.13
+
 ## 0.3.12
 
 ### Patch Changes
