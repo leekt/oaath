@@ -413,8 +413,11 @@ async fn registers_an_mcp_clients_rfc_7591_metadata_and_ignores_the_rest() {
         registered["redirect_uris"],
         json!(["http://localhost:53682/callback"])
     );
-    // What is actually registered: the code grant only.
-    assert_eq!(registered["grant_types"], json!(["authorization_code"]));
+    // What is actually registered.
+    assert_eq!(
+        registered["grant_types"],
+        json!(["authorization_code", "refresh_token"])
+    );
     assert_eq!(registered["response_types"], json!(["code"]));
     assert_eq!(registered["token_endpoint_auth_method"], json!("none"));
 }
@@ -898,6 +901,130 @@ async fn issues_a_resource_servers_jwt_access_token_for_a_login() {
     // An id_token is never an access token for the resource.
     let id_header = jsonwebtoken::decode_header(text(&response, "id_token")).unwrap();
     assert_ne!(id_header.typ.as_deref(), Some("at+jwt"));
+}
+
+async fn refresh(h: &Harness, client_id: &str, token: &str, resource: Option<&str>) -> Reply {
+    let mut pairs = vec![
+        ("grant_type", "refresh_token"),
+        ("client_id", client_id),
+        ("refresh_token", token),
+    ];
+    pairs.extend(resource.map(|resource| ("resource", resource)));
+    h.send(form("/oauth/token", &pairs)).await
+}
+
+#[tokio::test]
+async fn renews_a_resource_login_with_a_single_use_refresh_token() {
+    let h = harness();
+    let client_id = register_client(&h).await;
+    let pushed = push_scoped(&h, &client_id, "orchestra:register", &[("resource", MCP)]).await;
+    let id = text(pushed.ok(201), "request_uri")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_owned();
+    let (signer_id, account, cookie) = signer_and_account(&h, 0x11).await;
+    let reply = decide(
+        &h,
+        &id,
+        json!({ "outcome": "approved", "signer_id": signer_id, "account_id": account["account_id"] }),
+        Some(&cookie),
+    )
+    .await;
+    let code = query(text(reply.ok(200), "redirect"))
+        .into_iter()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1;
+    let response = h
+        .send(form(
+            "/oauth/token",
+            &[
+                ("grant_type", "authorization_code"),
+                ("client_id", client_id.as_str()),
+                ("code", code.as_str()),
+                ("code_verifier", CODE_VERIFIER),
+                ("redirect_uri", REDIRECT_URI),
+                ("resource", MCP),
+            ],
+        ))
+        .await
+        .ok(200)
+        .clone();
+    let first = text(&response, "refresh_token").to_owned();
+    // Neither the access token nor another client or resource refreshes.
+    let other = register_client(&h).await;
+    for (client, token, resource) in [
+        (client_id.as_str(), text(&response, "access_token"), None),
+        (other.as_str(), first.as_str(), None),
+        (
+            client_id.as_str(),
+            first.as_str(),
+            Some("https://other.example/mcp"),
+        ),
+    ] {
+        let status = refresh(&h, client, token, resource).await.status;
+        assert!(status == 400, "{status}");
+    }
+
+    // Six days later the refresh still renews, with the login's scope and resource.
+    h.clock.advance(6 * 86_400_000);
+    let renewed = refresh(&h, &client_id, &first, Some(MCP))
+        .await
+        .ok(200)
+        .clone();
+    assert_eq!(renewed["scope"], json!("orchestra:register"));
+    assert_eq!(renewed["expires_in"], json!(600));
+    let jwks: JwkSet =
+        serde_json::from_value(h.send(get("/oauth/jwks", None)).await.ok(200).clone()).unwrap();
+    let key = DecodingKey::from_jwk(jwks.find(ID_TOKEN_KID).unwrap()).unwrap();
+    let mut validation = Validation::new(Algorithm::ES256);
+    validation.set_audience(&[MCP]);
+    validation.set_issuer(&[ISSUER]);
+    validation.validate_exp = false;
+    let claims = decode::<Value>(text(&renewed, "access_token"), &key, &validation)
+        .unwrap()
+        .claims;
+    assert_eq!(claims["aud"], json!(MCP));
+    assert_eq!(claims["sub"], account["address"]);
+    assert_eq!(claims["iat"], json!(CLOCK_SECONDS + 6 * 86_400));
+    // Single use: the first token is spent, and the next one works unnamed.
+    oauth_error(
+        &refresh(&h, &client_id, &first, None).await,
+        400,
+        "invalid_grant",
+        E::CodeInvalid,
+    );
+    // A refresh token is never a bearer for the relay's own endpoints.
+    let bearer = h
+        .send(
+            Request::builder()
+                .uri(format!("/oauth/grants/{id}"))
+                .header(
+                    "authorization",
+                    format!("Bearer {}", text(&renewed, "refresh_token")),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(bearer.status, 401);
+    let second = text(&renewed, "refresh_token").to_owned();
+    let third = refresh(&h, &client_id, &second, None).await.ok(200).clone();
+    // RFC 7009 revocation ends it.
+    let third = text(&third, "refresh_token").to_owned();
+    h.send(form(
+        "/oauth/revoke",
+        &[("token", third.as_str()), ("client_id", client_id.as_str())],
+    ))
+    .await
+    .ok(200);
+    oauth_error(
+        &refresh(&h, &client_id, &third, None).await,
+        400,
+        "invalid_grant",
+        E::CodeInvalid,
+    );
 }
 
 #[tokio::test]
