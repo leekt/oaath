@@ -111,6 +111,7 @@ pub fn compose_member_request(
         policy,
         chains: Vec::new(),
         rpc_urls: Default::default(),
+        enable_nonce: None,
         // The policy's last valid second is before the request's expiry.
         expires_at: grant.requested_at + lifetime + 1,
         // The member's profile hash names its device.

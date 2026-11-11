@@ -142,11 +142,13 @@ export type {
   PrepareDerivedAccountPermissionApprovalInput,
   PreparedKernelPermissionApproval,
   PrepareExistingAccountPermissionApprovalInput,
+  PrepareExistingAccountPermissionApprovalOfflineInput,
   PrepareKernelPermissionApprovalInput,
 } from "./kernel/permission/prepare-approval.js";
 export {
   prepareDerivedAccountPermissionApproval,
   prepareExistingAccountPermissionApproval,
+  prepareExistingAccountPermissionApprovalOffline,
   prepareKernelPermissionApproval,
 } from "./kernel/permission/prepare-approval.js";
 export type {

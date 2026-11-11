@@ -30,6 +30,7 @@ import {
   type KernelPermissionDecision,
   kernelKey,
   prepareDerivedAccountPermissionApproval,
+  prepareExistingAccountPermissionApprovalOffline,
   prepareKernelPermissionApproval,
 } from "@oaath/sdk/kernel";
 import type { GrantDetail, PortalAccount, PrepareGrantResponse } from "./api.js";
@@ -140,6 +141,11 @@ export async function rootKey(signer: RememberedSigner, typedData: unknown) {
   return refuse("root-unsupported");
 }
 
+/** Whether an imported account's approval must read a chain at all. */
+export function needsChainRead(kernelVersion: string, appNonce: string | undefined): boolean {
+  return kernelVersion === "0.3.3" && appNonce === undefined;
+}
+
 /** Where a grant's approval reads its chain: the app's own RPC, or the portal's. */
 export interface GrantReads {
   readonly chainId: number;
@@ -217,10 +223,11 @@ export async function readableGrantReads(
  */
 export async function enableNonce(
   account: Pick<PortalAccount, "address" | "profile">,
-  detail: Pick<GrantDetail, "signer" | "policy">,
+  detail: Pick<GrantDetail, "signer" | "policy" | "enable_nonce">,
   reads: GrantReads,
 ): Promise<string | undefined> {
   if (account.profile.kernelVersion !== "0.3.3") return undefined;
+  if (detail.enable_nonce !== undefined) return detail.enable_nonce;
   const { importChainReads } = await import("./account-import.js");
   try {
     const { permissionId } = grantPermissionPackages({
@@ -271,13 +278,22 @@ export async function signGrantApproval(input: {
   readonly account: Pick<PortalAccount, "address">;
   /** Where an imported account's approval reads its chain (`grantReads`). */
   readonly reads: GrantReads;
+  /** The app's Kernel 0.3.3 enable nonce: the approval then reads no chain. */
+  readonly enableNonce?: string;
 }): Promise<string> {
   const { request, prepared, chainId, signer, account, reads } = input;
   if (chainId === undefined) return refuse("request-mismatch");
-  // An imported account is bound on chain first: the SDK proves its root owner
+  // An imported account reads no chain when it needs nothing read: Kernel
+  // 0.4.0, or 0.3.3 with the app's nonce. Otherwise the SDK binds it on chain
   // through the portal's budgeted read proxy. A derived one needs no read.
   const approval = isKernelExistingAccountProfile(request.logicalAccount)
-    ? await prepareImportedAccountApproval(request, reads)
+    ? needsChainRead(request.logicalAccount.kernelVersion, input.enableNonce)
+      ? await prepareImportedAccountApproval(request, reads)
+      : prepareExistingAccountPermissionApprovalOffline({
+          request,
+          chainId,
+          ...(input.enableNonce === undefined ? {} : { enableNonce: input.enableNonce }),
+        })
     : prepareDerivedAccountPermissionApproval({
         request,
         chainId,

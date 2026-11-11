@@ -19,7 +19,10 @@ import {
   kernelGrantCapabilityHash,
   verifyKernelPermissionApproval,
 } from "../src/kernel/permission/approval.js";
-import { prepareKernelPermissionApproval } from "../src/kernel/permission/prepare-approval.js";
+import {
+  prepareExistingAccountPermissionApprovalOffline,
+  prepareKernelPermissionApproval,
+} from "../src/kernel/permission/prepare-approval.js";
 import { grantPermissionPackages } from "../src/kernel.js";
 import { installOAuthPortal } from "./support/oauth-portal.js";
 import { portalRoot } from "./support/portal-roots.js";
@@ -187,6 +190,13 @@ describe("requestPermissionApproval", () => {
     await ask(login, { rpcUrls: { 421614: "https://arb-sepolia.example/rpc" } });
     const [detail] = JSON.parse([...pars.values()][0]!.get("authorization_details")!);
     expect(detail.rpc_urls).toEqual({ "421614": "https://arb-sepolia.example/rpc" });
+    await ask(login, { enableNonce: "1" });
+    const sent = JSON.parse([...pars.values()][1]!.get("authorization_details")!)[0];
+    expect(sent.enable_nonce).toBe("1");
+    for (const enableNonce of ["0", "01", "4294967296", 1])
+      await expect(ask(login, { enableNonce })).rejects.toMatchObject({
+        code: "oaath_client_input_invalid",
+      });
     for (const rpcUrls of [
       { 1: "https://eth.example" },
       { 421614: "http://arb-sepolia.example/rpc" },
@@ -233,6 +243,34 @@ describe("requestPermissionApproval", () => {
       code: "oaath_client_issuer_rejected",
       source: "oauth_permission_pending",
     });
+  });
+});
+
+describe("prepareExistingAccountPermissionApprovalOffline", () => {
+  it("prepares and signs exactly what the read-backed preparation does, reading nothing", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const { parsePermissionRequest } = await import("@oaath/protocol");
+    const { portalPermissionRequest } = await import("./support/portal-roots.js");
+    const request = parsePermissionRequest({
+      ...portalPermissionRequest({ root, target: `0x${"aa".repeat(20)}`, requestedAt: now }),
+      logicalAccount: V33_ACCOUNT,
+    });
+    const online = await prepareKernelPermissionApproval({
+      request,
+      chainId: 421_614,
+      reads,
+    } as never);
+    const offline = prepareExistingAccountPermissionApprovalOffline({
+      request,
+      chainId: 8453,
+      enableNonce: "1",
+    } as never);
+    expect(offline.signingRequest).toEqual(online.signingRequest);
+    const signed = await offline.sign(root.key, now);
+    expect(signed).toEqual(await online.sign(root.key, now));
+    expect(() =>
+      prepareExistingAccountPermissionApprovalOffline({ request, chainId: 8453 } as never),
+    ).toThrow();
   });
 });
 
