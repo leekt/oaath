@@ -21,7 +21,11 @@ use crate::error::{RelayErrorCode, RelayResult};
 use crate::records::canonical_str;
 
 pub const GRANT_DETAIL_TYPE: &str = "oaath_grant";
-const MAX_CHAINS: usize = 32;
+/// Chains an `oaath_grant` detail may name. The Grant itself covers every
+/// chain; the list only tells the portal what to show and where to read.
+pub const MAX_CHAINS: usize = 256;
+/// The PAR's `error_description` when a detail names more.
+pub const TOO_MANY_CHAINS: &str = "chains: at most 256 chain IDs";
 const MAX_RPC_URL: usize = 512;
 const INVALID: RelayErrorCode = RelayErrorCode::RequestInvalid;
 

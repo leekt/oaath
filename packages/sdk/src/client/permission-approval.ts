@@ -86,14 +86,23 @@ export function grantRpcUrls(
   return Object.freeze(urls);
 }
 
+/** Chain IDs one approval request may name; the Grant still covers every chain. */
+export const OAATH_MAX_GRANT_CHAINS = 256;
+
 export interface OaathPermissionApprovalOptions extends OaathLoginOptions {
   /** The session credential the permission installs; the caller holds its key. */
   readonly signer: Readonly<OperatorCredentialProfile>;
   /** The exact policy; the root approves it unchanged. */
   readonly policy: Readonly<GrantPolicy>;
-  /** Chain IDs shown to the root; the approval itself covers every chain. */
+  /**
+   * Chain IDs shown to the root, 1 to `OAATH_MAX_GRANT_CHAINS`; the approval
+   * itself covers every chain.
+   */
   readonly chains: readonly number[];
-  /** Unix seconds after which the request can no longer be approved. */
+  /**
+   * Exclusive Grant expiry, Unix seconds: the root approves before it, and a
+   * non-null `policy.validUntil` must be earlier (pass `validUntil + 1`).
+   */
   readonly expiresAt: number;
   /** The caller's stable identifier for the device holding the session key. */
   readonly deviceId: string;
@@ -165,6 +174,7 @@ export async function requestPermissionApproval(
     if (
       !Array.isArray(chains) ||
       chains.length === 0 ||
+      chains.length > OAATH_MAX_GRANT_CHAINS ||
       !chains.every((chain) => Number.isSafeInteger(chain) && chain > 0) ||
       !Number.isSafeInteger(expiresAt) ||
       typeof deviceId !== "string" ||
