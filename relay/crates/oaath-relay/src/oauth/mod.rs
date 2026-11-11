@@ -8,13 +8,17 @@
 //!                      login_hint bound) ->
 //!                      request + decision (+ code) written together at decision
 //!                      -> code consumed once at /oauth/token
+//!                      -> a resource login's refresh token, single use: each
+//!                      refresh revokes it and inserts the next in one
+//!                      transaction
 //! persisted evidence   oauth_client_v1, oauth_par_v1, then the existing
 //!                      authorization request/decision/code records keyed by the
 //!                      PAR id
 //! resource occupied?   one decision per PAR id; a consumed code is terminal
 //! retry safe?          decide: refused once decided; the redirect endpoint
 //!                      reopens the sealed code, never minting a second one.
-//!                      token: never retried; a lost token reply restarts login
+//!                      token and refresh: never retried; a lost reply
+//!                      restarts login
 //! forbidden            decide after expiry; a second decision; a signer that is
 //!                      not a member of the account; a token with the wrong
 //!                      client, redirect, or verifier (burns the code)
@@ -45,9 +49,9 @@ use url::Url;
 
 use self::id_token::IdTokenKey;
 use self::records::{
-    MAX_CLIENT_NAME, MAX_REDIRECT_URIS, MAX_STATE, OAUTH_CLIENT_RECORD_VERSION,
-    OAUTH_PAR_RECORD_VERSION, OAuthClientRecord, ParRecord, redirect_uri_allowed,
-    redirect_uri_registered,
+    AccessTokenRecord, MAX_CLIENT_NAME, MAX_REDIRECT_URIS, MAX_STATE,
+    OAUTH_ACCESS_TOKEN_RECORD_VERSION, OAUTH_CLIENT_RECORD_VERSION, OAUTH_PAR_RECORD_VERSION,
+    OAuthClientRecord, ParRecord, redirect_uri_allowed, redirect_uri_registered,
 };
 use crate::authentication::{RelayCaller, RelayCallerRole};
 use crate::authority::stored_permission_request;
@@ -67,7 +71,7 @@ use crate::records::{
     AUTHORIZATION_REQUEST_RECORD_VERSION, AuthorizationCodeRecord, AuthorizationDecisionRecord,
     AuthorizationRequestRecord, DecisionOutcome, bounded_str, canonical_str, limits,
 };
-use crate::registry::{AccountRecord, MembershipRole, require_active_member};
+use crate::registry::{AccountRecord, MembershipRole, SignerRecord, require_active_member};
 use crate::store::{RelayStore, RelayTransaction, settle};
 use oaath_protocol::grant_policy::{
     GrantPolicy, is_captured_policy_attenuation, parse_grant_policy,
@@ -80,6 +84,10 @@ pub const LOGIN_SELECTION_SCOPE: &str = r#"{"version":"oaath.login-selection/v1"
 const CANCELLED_SUBJECT: &str = "oaath-portal-cancelled";
 const ID_TOKEN_TTL_SECONDS: u64 = 600;
 const ACCESS_TOKEN_TTL_SECONDS: u64 = 600;
+/// A refresh token lapses after a week unused.
+const REFRESH_TOKEN_TTL_MS: u64 = 7 * 24 * 3_600_000;
+/// No refresh renews a login older than this; the user signs in again.
+const REFRESH_LOGIN_MAX_AGE_MS: u64 = 30 * 24 * 3_600_000;
 /// How long after its issue an id_token still binds a PAR as `id_token_hint`.
 /// Longer than the token's own ten minutes, so a dapp's later request still
 /// skips the pickers; bounded, because the hint only preselects: the root's
@@ -227,7 +235,7 @@ pub fn discovery(issuer: &str) -> Value {
         "scopes_supported": ["openid", "account"],
         "response_types_supported": ["code"],
         "response_modes_supported": ["query"],
-        "grant_types_supported": ["authorization_code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
         "subject_types_supported": ["public"],
         "id_token_signing_alg_values_supported": ["ES256"],
         "token_endpoint_auth_methods_supported": ["none"],
@@ -254,8 +262,8 @@ pub struct RegisteredClient {
     pub client_name: String,
     pub redirect_uris: Vec<String>,
     pub token_endpoint_auth_method: &'static str,
-    /// What is actually registered (RFC 7591 §3.2.1): the code grant only.
-    pub grant_types: [&'static str; 1],
+    /// What is actually registered (RFC 7591 §3.2.1).
+    pub grant_types: [&'static str; 2],
     pub response_types: [&'static str; 1],
     pub revocation_delivery: RevocationDelivery,
 }
@@ -283,7 +291,7 @@ impl From<OAuthClientRecord> for RegisteredClient {
             client_name: record.client_name,
             redirect_uris: record.redirect_uris,
             token_endpoint_auth_method: "none",
-            grant_types: ["authorization_code"],
+            grant_types: ["authorization_code", "refresh_token"],
             response_types: ["code"],
             revocation_delivery: record.revocation_delivery,
         }
@@ -322,8 +330,7 @@ pub(crate) fn capture_client(
             Some(_) => Err(metadata(INVALID)),
         }
     };
-    // The code grant is the only one issued; a refresh_token request is
-    // answered with the grants actually registered.
+    // Every client gets the code grant, and refresh tokens for a resource login.
     if let Some(grants) = strings("grant_types")?
         && (!grants.contains(&"authorization_code")
             || grants
@@ -1073,6 +1080,9 @@ pub struct TokenResponse {
     pub token_type: &'static str,
     pub expires_in: u64,
     pub id_token: String,
+    /// A resource server's login only: renews its access token.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
     pub scope: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub authorization_details: Option<Vec<Value>>,
@@ -1112,7 +1122,8 @@ struct IdTokenClaims<'a> {
     verified: bool,
 }
 
-/// `grant_type=authorization_code` with PKCE for a public client.
+/// `grant_type=authorization_code` with PKCE for a public client, or
+/// `refresh_token` for a resource server's login.
 pub async fn exchange_code(
     store: &dyn RelayStore,
     clock: &dyn RelayClock,
@@ -1120,8 +1131,10 @@ pub async fn exchange_code(
     configuration: &OAuthConfiguration,
     form: &Map<String, Value>,
 ) -> OAuthResult<TokenResponse> {
-    if required(form, "grant_type")? != "authorization_code" {
-        return Err(OAuthFailure::new(400, "unsupported_grant_type", INVALID));
+    match required(form, "grant_type")? {
+        "authorization_code" => {}
+        "refresh_token" => return refresh_login(store, clock, configuration, form).await,
+        _ => return Err(OAuthFailure::new(400, "unsupported_grant_type", INVALID)),
     }
     let client_id = canonical_str(required(form, "client_id")?, INVALID)?;
     let code = required(form, "code")?;
@@ -1205,30 +1218,70 @@ pub async fn exchange_code(
             Some(vec![transaction::transaction_detail(&claimed.artifact)?])
         }
     };
-    let credential = signer.credential()?;
     // RFC 8707 / RFC 9068: a login for a resource server answers a JWT access
-    // token it verifies offline; anything else keeps the relay's own token.
-    let (access_token, expires_in) = match resource {
+    // token it verifies offline, and a refresh token to renew it; anything
+    // else keeps the relay's own token.
+    let (access_token, expires_in, refresh_token) = match resource {
         Some(resource) => {
-            let token = configuration.key.sign_access_token(&AccessTokenClaims {
-                iss: &configuration.issuer,
-                sub: &account.address,
-                aud: resource,
-                client_id: &par.client_id,
-                scope: &par.scope,
-                signer: json!({ "id": signer.signer_id, "kind": credential.kind() }),
-                iat,
-                exp: iat + ACCESS_TOKEN_TTL_SECONDS,
-                jti: random_identifier(),
-            })?;
-            (token, ACCESS_TOKEN_TTL_SECONDS)
+            let mut transaction = store.begin().await?;
+            let result =
+                insert_refresh_token(&mut *transaction, clock, client_id, &par.par_id, resource)
+                    .await;
+            let refresh = settle(transaction, result).await?;
+            (
+                resource_access_token(configuration, iat, &par, &account, &signer, resource)?,
+                ACCESS_TOKEN_TTL_SECONDS,
+                Some(refresh),
+            )
         }
         None => (
             grant::issue_access_token(store, clock, client_id, &par.par_id).await?,
             ID_TOKEN_TTL_SECONDS,
+            None,
         ),
     };
-    let id_token = configuration.key.sign(&IdTokenClaims {
+    Ok(TokenResponse {
+        access_token,
+        token_type: "Bearer",
+        expires_in,
+        id_token: login_id_token(configuration, iat, &par, &account, &signer, memberships)?,
+        refresh_token,
+        scope: par.scope,
+        authorization_details,
+    })
+}
+
+fn resource_access_token(
+    configuration: &OAuthConfiguration,
+    iat: u64,
+    par: &ParRecord,
+    account: &AccountRecord,
+    signer: &SignerRecord,
+    resource: &str,
+) -> RelayResult<String> {
+    configuration.key.sign_access_token(&AccessTokenClaims {
+        iss: &configuration.issuer,
+        sub: &account.address,
+        aud: resource,
+        client_id: &par.client_id,
+        scope: &par.scope,
+        signer: json!({ "id": signer.signer_id, "kind": signer.credential()?.kind() }),
+        iat,
+        exp: iat + ACCESS_TOKEN_TTL_SECONDS,
+        jti: random_identifier(),
+    })
+}
+
+fn login_id_token(
+    configuration: &OAuthConfiguration,
+    iat: u64,
+    par: &ParRecord,
+    account: &AccountRecord,
+    signer: &SignerRecord,
+    memberships: Vec<Value>,
+) -> RelayResult<String> {
+    let credential = signer.credential()?;
+    configuration.key.sign(&IdTokenClaims {
         iss: &configuration.issuer,
         sub: &account.address,
         aud: &par.client_id,
@@ -1246,14 +1299,125 @@ pub async fn exchange_code(
         // Every approved decision required this signer's portal session, and
         // the decision checked its membership in the account.
         verified: true,
-    })?;
+    })
+}
+
+/// A refresh token carries its resource in the clear (`rt.<resource>.<random>`)
+/// and is stored by the hash of the whole string, so the stored row is bound
+/// to that resource without a column of its own. It shares the opaque access
+/// token table: a single-use row whose `request_id` is the login.
+fn refresh_resource(token: &str) -> Option<String> {
+    use base64::Engine;
+    let (resource, _) = token.strip_prefix("rt.")?.split_once('.')?;
+    let resource = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(resource)
+        .ok()?;
+    String::from_utf8(resource)
+        .ok()
+        .filter(|resource| redirect_uri_allowed(resource))
+}
+
+async fn insert_refresh_token(
+    transaction: &mut dyn RelayTransaction,
+    clock: &dyn RelayClock,
+    client_id: &str,
+    request_id: &str,
+    resource: &str,
+) -> RelayResult<String> {
+    use base64::Engine;
+    let token = format!(
+        "rt.{}.{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(resource),
+        random_identifier()
+    );
+    let now = relay_now(clock)?;
+    let inserted = transaction
+        .insert_access_token(&AccessTokenRecord {
+            version: OAUTH_ACCESS_TOKEN_RECORD_VERSION,
+            token_hash: sha256_base64url(&token),
+            client_id: client_id.to_owned(),
+            request_id: request_id.to_owned(),
+            created_at: now,
+            expires_at: now + REFRESH_TOKEN_TTL_MS,
+            revoked_at: None,
+        })
+        .await?;
+    inserted.then_some(token).ok_or(RelayErrorCode::Internal)
+}
+
+/// `grant_type=refresh_token` (RFC 6749 §6) for a resource server's login.
+/// Single use: the presented token is revoked and a new one issued in the
+/// same transaction. The signer's membership is checked again, and no refresh
+/// outlives the login by more than `REFRESH_LOGIN_MAX_AGE_MS`.
+async fn refresh_login(
+    store: &dyn RelayStore,
+    clock: &dyn RelayClock,
+    configuration: &OAuthConfiguration,
+    form: &Map<String, Value>,
+) -> OAuthResult<TokenResponse> {
+    let client_id = canonical_str(required(form, "client_id")?, INVALID)?;
+    let token = required(form, "refresh_token")?;
+    let resource =
+        refresh_resource(token).ok_or(OAuthFailure::from_code(RelayErrorCode::CodeInvalid))?;
+    if param(form, "resource").is_some_and(|named| named != resource) {
+        return Err(OAuthFailure::new(400, "invalid_target", INVALID));
+    }
+    let hash = sha256_base64url(token);
+    let now = relay_now(clock)?;
+    let mut transaction = store.begin().await?;
+    let result = async {
+        let record = transaction
+            .lock_access_token(&hash)
+            .await?
+            .filter(|record| {
+                record.client_id == client_id
+                    && record.revoked_at.is_none()
+                    && now < record.expires_at
+            })
+            .ok_or(RelayErrorCode::CodeInvalid)?;
+        let login = transaction
+            .lock_authorization_request(&record.request_id)
+            .await?
+            .ok_or(RelayErrorCode::CodeInvalid)?;
+        if now >= login.created_at + REFRESH_LOGIN_MAX_AGE_MS {
+            return Err(RelayErrorCode::Expired);
+        }
+        let (par, account, signer, released, memberships) =
+            login_claims(&mut *transaction, &record.request_id)
+                .await
+                // A signer no longer a member holds a dead grant, not a bad request.
+                .map_err(|code| match code {
+                    RelayErrorCode::Forbidden => RelayErrorCode::CodeInvalid,
+                    code => code,
+                })?;
+        if !matches!(released, Released::Login)
+            || !transaction.revoke_access_token(&hash, now).await?
+        {
+            return Err(RelayErrorCode::CodeInvalid);
+        }
+        let next =
+            insert_refresh_token(&mut *transaction, clock, client_id, &par.par_id, &resource)
+                .await?;
+        Ok((par, account, signer, memberships, next))
+    }
+    .await;
+    let (par, account, signer, memberships, next) = settle(transaction, result).await?;
+    let iat = now / 1_000;
     Ok(TokenResponse {
-        access_token,
+        access_token: resource_access_token(
+            configuration,
+            iat,
+            &par,
+            &account,
+            &signer,
+            &resource,
+        )?,
         token_type: "Bearer",
-        expires_in,
-        id_token,
+        expires_in: ACCESS_TOKEN_TTL_SECONDS,
+        id_token: login_id_token(configuration, iat, &par, &account, &signer, memberships)?,
+        refresh_token: Some(next),
         scope: par.scope,
-        authorization_details,
+        authorization_details: None,
     })
 }
 

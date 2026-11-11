@@ -311,6 +311,10 @@ async fn bearer(
     now: u64,
 ) -> OAuthResult<AccessTokenRecord> {
     let token = bearer_token(headers).ok_or_else(invalid_token)?;
+    // A refresh token shares the table but is never a bearer.
+    if token.starts_with("rt.") {
+        return Err(invalid_token());
+    }
     let record = transaction
         .lock_access_token(&sha256_base64url(token))
         .await?
