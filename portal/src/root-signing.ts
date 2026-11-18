@@ -25,7 +25,7 @@ import {
 } from "@oaath/protocol";
 import {
   ECDSA_VALIDATOR,
-  KERNEL_V33_FRESH_ENABLE_NONCE,
+  KERNEL_FRESH_ENABLE_NONCE,
   type KernelPermissionDecision,
   kernelKey,
   prepareDerivedAccountPermissionApproval,
@@ -150,7 +150,7 @@ export function enableNonce(
   appNonce: string | undefined,
 ): string | undefined {
   if (account.profile.kernelVersion !== "0.3.3") return undefined;
-  return appNonce ?? KERNEL_V33_FRESH_ENABLE_NONCE;
+  return appNonce ?? KERNEL_FRESH_ENABLE_NONCE;
 }
 
 /**

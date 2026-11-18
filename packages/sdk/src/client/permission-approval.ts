@@ -109,7 +109,7 @@ export interface OaathPermissionApprovalOptions extends OaathLoginOptions {
   /**
    * A Kernel 0.3.3 account's effective enable nonce for this signer and
    * policy (decimal uint32 > 0), as the app read it. Omitted, the portal signs
-   * an undeployed account's fresh nonce (`KERNEL_V33_FRESH_ENABLE_NONCE`); it
+   * an undeployed account's fresh nonce (`KERNEL_FRESH_ENABLE_NONCE`); it
    * reads no chain either way. A wrong value installs nothing at execution.
    * Ignored for Kernel 0.4.0.
    */

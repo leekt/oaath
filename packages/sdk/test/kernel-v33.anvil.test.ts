@@ -62,7 +62,7 @@ import {
 } from "../src/kernel/permission/v33-revocation.js";
 import {
   createKernelReads,
-  KERNEL_V33_FRESH_ENABLE_NONCE,
+  KERNEL_FRESH_ENABLE_NONCE,
   prepareExistingAccountPermissionApproval,
   prepareKernelPermissionApproval,
   prepareKernelPermissionRevocation,
@@ -515,9 +515,9 @@ function passkeySession() {
     // Grant A: the fresh account's enable nonce is the canonical fresh one.
     const a = await grant(started + 600n);
     expect(await kernelV33PermissionInstallNonce({ ...a, reads })).toBe(
-      KERNEL_V33_FRESH_ENABLE_NONCE,
+      KERNEL_FRESH_ENABLE_NONCE,
     );
-    const enabledA = await enable(a, KERNEL_V33_FRESH_ENABLE_NONCE);
+    const enabledA = await enable(a, KERNEL_FRESH_ENABLE_NONCE);
     expect(await harness.sendSigned(enabledA.prepared, enabledA.signature)).toBe("success");
     const stateA = await state(a);
 
@@ -542,11 +542,11 @@ function passkeySession() {
     const b = await grant(started + 7_200n);
     expect(b.runtime.validation).not.toEqual(a.runtime.validation);
     expect(await kernelV33PermissionInstallNonce({ ...b, reads })).toBe(
-      KERNEL_V33_FRESH_ENABLE_NONCE,
+      KERNEL_FRESH_ENABLE_NONCE,
     );
     const wrong = await enable(b, "2");
     expect(await harness.rejectionOf(wrong.prepared, wrong.signature)).toMatchObject(notApproved);
-    const enabledB = await enable(b, KERNEL_V33_FRESH_ENABLE_NONCE);
+    const enabledB = await enable(b, KERNEL_FRESH_ENABLE_NONCE);
     expect(await harness.sendSigned(enabledB.prepared, enabledB.signature)).toBe("success");
     expect(await harness.client.getBalance({ address: target })).toBe(2n);
     // A's onchain authority is exactly as it was: still installed, still expired.
@@ -576,7 +576,7 @@ function passkeySession() {
     });
     const c = await grant(started + 7_201n);
     expect(await kernelV33PermissionInstallNonce({ ...c, reads })).toBe("3");
-    const stale = await enable(c, KERNEL_V33_FRESH_ENABLE_NONCE);
+    const stale = await enable(c, KERNEL_FRESH_ENABLE_NONCE);
     expect(await harness.rejectionOf(stale.prepared, stale.signature)).toMatchObject(notApproved);
     expect(await harness.client.getBalance({ address: target })).toBe(2n);
   }, 30_000);
