@@ -54,8 +54,8 @@ import {
 
 /**
  * The app's own read-only JSON-RPC URL per chain, sent with a grant request
- * as `rpc_urls`: the portal reads that chain through it (via its own proxy)
- * to prepare the root's approval. Every key must be one of the request's
+ * as `rpc_urls`. The portal's approval reads no chain, so nothing requires
+ * it: approval never depends on an RPC answering. Every key must be one of the request's
  * chains and every URL https. The portal user can see them, so they must not
  * embed a secret.
  */
@@ -108,11 +108,13 @@ export interface OaathPermissionApprovalOptions extends OaathLoginOptions {
   readonly deviceId: string;
   /**
    * A Kernel 0.3.3 account's effective enable nonce for this signer and
-   * policy (decimal uint32 > 0), as the app read it: the portal then reads no
-   * chain. A wrong value installs nothing. Ignored for Kernel 0.4.0.
+   * policy (decimal uint32 > 0), as the app read it. Omitted, the portal signs
+   * an undeployed account's fresh nonce (`KERNEL_FRESH_ENABLE_NONCE`); it
+   * reads no chain either way. A wrong value installs nothing at execution.
+   * Ignored for Kernel 0.4.0.
    */
   readonly enableNonce?: string;
-  /** The app's own JSON-RPC per chain ID for the portal's reads (`grantRpcUrls`). */
+  /** The app's own JSON-RPC per chain ID (`grantRpcUrls`); approval never reads it. */
   readonly rpcUrls?: Readonly<Record<number, string>>;
   /**
    * A popup the caller opened synchronously in the user's gesture (with

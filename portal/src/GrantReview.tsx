@@ -22,11 +22,7 @@ import {
 } from "./api.js";
 import {
   enableNonce,
-  type GrantReads,
-  grantReads,
-  needsChainRead,
   RootSigningError,
-  readableGrantReads,
   reviewedRequest,
   signGrantApproval,
 } from "./root-signing.js";
@@ -102,8 +98,6 @@ export function grantFailure(error: unknown): string {
     case "request-invalid":
     case "digest-mismatch":
       return "This request does not match what the app asked for, so OAAth will not sign it.";
-    case "account-unreadable":
-      return "The account could not be read on any chain the app named, so nothing was signed. The app must pass rpcUrls for a chain where this account is deployed.";
     case "wallet-unavailable":
       return "Your wallet is not available in this browser. Open it and try again.";
     case "wallet-account-mismatch":
@@ -198,27 +192,17 @@ export function GrantReview({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  // The chain the nonce was read on is the one the approval reads.
-  const readsRef = useRef<GrantReads | null>(null);
+  const nonce = enableNonce(account, detail.enable_nonce);
 
   useEffect(() => heading.current?.focus(), []);
   useEffect(() => {
-    // Nothing is read when the approval needs no chain read.
-    (needsChainRead(account.profile.kernelVersion, detail.enable_nonce)
-      ? readableGrantReads(transaction.transaction_id, detail, account)
-      : Promise.resolve(grantReads(transaction.transaction_id, detail))
-    )
-      .then(async (reads) => {
-        readsRef.current = reads;
-        return enableNonce(account, detail, reads);
+    // Nothing is read: the approval is built offline.
+    portalApi
+      .prepareGrant(transaction.transaction_id, {
+        signer_id: signer.signer_id,
+        account_id: account.account_id,
+        ...(nonce === undefined ? {} : { enable_nonce: nonce }),
       })
-      .then((nonce) =>
-        portalApi.prepareGrant(transaction.transaction_id, {
-          signer_id: signer.signer_id,
-          account_id: account.account_id,
-          ...(nonce === undefined ? {} : { enable_nonce: nonce }),
-        }),
-      )
       .then((response) =>
         setPrepared({
           response,
@@ -226,7 +210,7 @@ export function GrantReview({
         }),
       )
       .catch((cause: unknown) => setError(grantFailure(cause)));
-  }, [transaction.transaction_id, detail, signer, account]);
+  }, [transaction.transaction_id, detail, signer, account, nonce]);
 
   async function approve() {
     if (!prepared) return;
@@ -240,8 +224,7 @@ export function GrantReview({
           chainId: detail.chains[0],
           signer,
           account,
-          reads: readsRef.current ?? grantReads(transaction.transaction_id, detail),
-          ...(detail.enable_nonce === undefined ? {} : { enableNonce: detail.enable_nonce }),
+          ...(nonce === undefined ? {} : { enableNonce: nonce }),
         }),
       );
     } catch (cause) {

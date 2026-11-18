@@ -62,6 +62,7 @@ import {
 } from "../src/kernel/permission/v33-revocation.js";
 import {
   createKernelReads,
+  KERNEL_FRESH_ENABLE_NONCE,
   prepareExistingAccountPermissionApproval,
   prepareKernelPermissionApproval,
   prepareKernelPermissionRevocation,
@@ -442,6 +443,139 @@ function passkeySession() {
     },
     30_000,
   );
+
+  it("renews an expired grant on the same device key: a new permission at the unchanged global nonce", async () => {
+    const ownerAccount = privateKeyToAccount(generatePrivateKey());
+    const { harness, address, deployment } = await setupV33(31337, ownerAccount);
+    for (const module of [
+      harness.fixture.ecdsaSigner,
+      harness.fixture.callPolicy,
+      harness.fixture.validityPolicy,
+    ])
+      await harness.deployModule(module);
+    const reads = createKernelV33Reads(harness.client);
+    const owner = ecdsaKey({ account: ownerAccount, validator: deployment.ecdsaValidator });
+    const target = privateKeyToAccount(generatePrivateKey()).address.toLowerCase() as Hex;
+    // One device key for every grant; only the expiry differs.
+    const key = ecdsaKey({
+      account: privateKeyToAccount(generatePrivateKey()),
+      validator: deployment.ecdsaValidator,
+    });
+    const grant = async (validUntil: bigint) => {
+      const runtime = createKernelRuntime({
+        deployment,
+        reads,
+        operator: sessionOperator({
+          key,
+          policies: [
+            { kind: "call", permissions: [{ target, selector: "0x00000000", valueLimit: "1" }] },
+            { kind: "expiry", validAfter: "0", validUntil: validUntil.toString() },
+          ],
+        }),
+      });
+      return { runtime, account: await runtime.bindAccount({ address }) };
+    };
+    const gas = {
+      callGasLimit: "200000",
+      verificationGasLimit: "3000000",
+      preVerificationGas: "100000",
+      maxFeePerGas: "2000000000",
+      maxPriorityFeePerGas: "1000000000",
+    };
+    const call = (grantId: string, sequence = "0") => ({
+      grantId,
+      nonceKey: "0",
+      sequence,
+      calls: [{ target, value: "1", data: "0x" as const }],
+      gas,
+    });
+    const enable = async (session: Awaited<ReturnType<typeof grant>>, nonce: string) =>
+      materializeKernelV33Permission({
+        ...session,
+        ...call(`grant-${nonce}`),
+        approval: await approveKernelV33Permission({ ...session, owner, nonce }),
+      });
+    const state = (session: Awaited<ReturnType<typeof grant>>) =>
+      reads.read({
+        type: "kernel_v33_permission_state",
+        chainId: 31337,
+        account: address,
+        permissionId:
+          session.runtime.validation.kind === "permission"
+            ? session.runtime.validation.permissionId
+            : "0x",
+      });
+    // The root's enable signature binds the nonce: any other one installs nothing.
+    const notApproved = {
+      errorName: "FailedOpWithRevert",
+      args: [0n, "AA23 reverted", toFunctionSelector("EnableNotApproved()")],
+    };
+    const started = (await harness.client.getBlock()).timestamp;
+
+    // Grant A: the fresh account's enable nonce is the canonical fresh one.
+    const a = await grant(started + 600n);
+    expect(await kernelV33PermissionInstallNonce({ ...a, reads })).toBe(KERNEL_FRESH_ENABLE_NONCE);
+    const enabledA = await enable(a, KERNEL_FRESH_ENABLE_NONCE);
+    expect(await harness.sendSigned(enabledA.prepared, enabledA.signature)).toBe("success");
+    const stateA = await state(a);
+
+    // A expires: Kernel's validUntil is inclusive, so one second past it refuses.
+    await harness.client.request({
+      method: "evm_setNextBlockTimestamp" as "eth_chainId",
+      params: [Number(started + 601n)] as never,
+    });
+    await harness.client.request({ method: "evm_mine" as "eth_chainId", params: [] as never });
+    const expired = a.runtime.prepareOperation({
+      // Enable mode spent a different nonce key: the execution lane is unused.
+      ...call("grant-a"),
+      account: a.account,
+      kind: "execution",
+    });
+    expect(
+      await harness.rejectionOf(expired, await a.runtime.signOperation(expired)),
+    ).toMatchObject({ errorName: "FailedOp", args: [0n, "AA22 expired or not due"] });
+
+    // Grant B, a new expiry: a new permission ID whose enable nonce is still the
+    // account's global one. Enabling A did not advance it, so "prior + 1" is wrong.
+    const b = await grant(started + 7_200n);
+    expect(b.runtime.validation).not.toEqual(a.runtime.validation);
+    expect(await kernelV33PermissionInstallNonce({ ...b, reads })).toBe(KERNEL_FRESH_ENABLE_NONCE);
+    const wrong = await enable(b, "2");
+    expect(await harness.rejectionOf(wrong.prepared, wrong.signature)).toMatchObject(notApproved);
+    const enabledB = await enable(b, KERNEL_FRESH_ENABLE_NONCE);
+    expect(await harness.sendSigned(enabledB.prepared, enabledB.signature)).toBe("success");
+    expect(await harness.client.getBalance({ address: target })).toBe(2n);
+    // A's onchain authority is exactly as it was: still installed, still expired.
+    expect(await state(a)).toEqual(stateA);
+
+    // An admin change outside OAAth (the root invalidates nonces) moves the
+    // global nonce: an approval signed at the old one installs nothing.
+    await harness.client.request({
+      method: "anvil_impersonateAccount" as "eth_chainId",
+      params: [address] as never,
+    });
+    await harness.client.request({
+      method: "anvil_setBalance" as "eth_chainId",
+      params: [address, "0xde0b6b3a7640000"] as never,
+    });
+    const admin = createWalletClient({ transport: custom(harness.client) });
+    await harness.client.waitForTransactionReceipt({
+      hash: await admin.sendTransaction({
+        account: address,
+        chain: null,
+        to: address,
+        data: encodeFunctionData({
+          abi: parseAbi(["function invalidateNonce(uint32)"]),
+          args: [3],
+        }),
+      }),
+    });
+    const c = await grant(started + 7_201n);
+    expect(await kernelV33PermissionInstallNonce({ ...c, reads })).toBe("3");
+    const stale = await enable(c, KERNEL_FRESH_ENABLE_NONCE);
+    expect(await harness.rejectionOf(stale.prepared, stale.signature)).toMatchObject(notApproved);
+    expect(await harness.client.getBalance({ address: target })).toBe(2n);
+  }, 30_000);
 
   it("aligns divergent real chains for one existing-account approval and preserves a live permission", async () => {
     const ownerAccount = privateKeyToAccount(generatePrivateKey());
