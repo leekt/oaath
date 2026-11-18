@@ -56,6 +56,11 @@ pub fn bounded_str(text: &str, maximum: usize, code: RelayErrorCode) -> RelayRes
     Ok(text)
 }
 
+/// Any JSON string, unbounded; `code` when absent or not a string.
+pub fn text(value: Option<&Value>, code: RelayErrorCode) -> RelayResult<&str> {
+    value.and_then(Value::as_str).ok_or(code)
+}
+
 /// A bounded URL-safe identifier: `^[A-Za-z0-9._~-]+$`, at most 256 units.
 pub fn canonical_identifier(value: Option<&Value>, code: RelayErrorCode) -> RelayResult<&str> {
     match value {

@@ -64,7 +64,7 @@ use crate::error::{RelayErrorCode, RelayResult};
 use crate::grant::signature::{RelyingParty, verify_root_signature};
 use crate::kms::RelayKms;
 use crate::oauth::grant::{read_grant, relying_party};
-use crate::records::{canonical_identifier, exact_record, timestamp};
+use crate::records::{canonical_identifier, exact_record, text, timestamp};
 use crate::store::{RelayStore, RelayTransaction, settle};
 
 pub const REVOCATION_RECORD_VERSION: &str = "oaath.revocation-record/v1";
@@ -161,8 +161,8 @@ fn nullable<T>(
     }
 }
 
-fn text(value: &Value) -> RelayResult<String> {
-    value.as_str().map(str::to_owned).ok_or(UNREADABLE)
+fn owned_text(value: &Value) -> RelayResult<String> {
+    text(Some(value), UNREADABLE).map(str::to_owned)
 }
 
 impl RevocationRecord {
@@ -207,8 +207,8 @@ impl RevocationRecord {
                 Some("invalidate") => RevocationAction::Invalidate,
                 _ => return Err(UNREADABLE),
             },
-            request: nullable(r.get("request"), text)?,
-            signature: nullable(r.get("signature"), text)?,
+            request: nullable(r.get("request"), owned_text)?,
+            signature: nullable(r.get("signature"), owned_text)?,
             signed_at: nullable(r.get("signedAt"), |v| timestamp(Some(v), UNREADABLE))?,
             relay_submits: r
                 .get("relaySubmits")
@@ -216,7 +216,7 @@ impl RevocationRecord {
                 .ok_or(UNREADABLE)?,
             submitted_at: nullable(r.get("submittedAt"), |v| timestamp(Some(v), UNREADABLE))?,
             outcome,
-            transaction_hash: nullable(r.get("transactionHash"), text)?,
+            transaction_hash: nullable(r.get("transactionHash"), owned_text)?,
             block_number: nullable(r.get("blockNumber"), |v| timestamp(Some(v), UNREADABLE))?,
             bundler_requests: timestamp(r.get("bundlerRequests"), UNREADABLE)?,
             revision: timestamp(r.get("revision"), UNREADABLE)?,
