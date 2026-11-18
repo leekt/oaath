@@ -178,7 +178,7 @@ export interface OaathOAuthApprovals {
   readonly timeoutMs?: number;
   /**
    * The app's own read-only JSON-RPC per chain ID, sent with each grant
-   * request so the portal reads that chain through it. Keys must be among
+   * request; approval never reads it. Keys must be among
    * `chains`; https only; visible to the user, so never a secret URL.
    */
   readonly rpcUrls?: Readonly<Record<number, string>>;

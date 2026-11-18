@@ -268,9 +268,14 @@ describe("prepareExistingAccountPermissionApprovalOffline", () => {
     expect(offline.signingRequest).toEqual(online.signingRequest);
     const signed = await offline.sign(root.key, now);
     expect(signed).toEqual(await online.sign(root.key, now));
-    expect(() =>
-      prepareExistingAccountPermissionApprovalOffline({ request, chainId: 8453 } as never),
-    ).toThrow();
+    // An undeployed account's nonce is the fresh one: omitted, the same approval.
+    expect(
+      prepareExistingAccountPermissionApprovalOffline({ request, chainId: 8453 }).signingRequest,
+    ).toEqual(online.signingRequest);
+    for (const enableNonce of ["0", "01", "4294967296", "x"])
+      expect(() =>
+        prepareExistingAccountPermissionApprovalOffline({ request, chainId: 8453, enableNonce }),
+      ).toThrow();
   });
 });
 

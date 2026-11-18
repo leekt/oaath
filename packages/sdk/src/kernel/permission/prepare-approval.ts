@@ -407,11 +407,19 @@ export interface PrepareExistingAccountPermissionApprovalOfflineInput {
   readonly chainId: number;
   /**
    * A Kernel `0.3.3` account's effective enable nonce, decimal, as the app
-   * read it; ignored (and may be omitted) for Kernel `0.4.0`, whose nonce
-   * derives from the request. A wrong nonce installs nothing.
+   * read it. Omitted, it is `KERNEL_V33_FRESH_ENABLE_NONCE`: an undeployed
+   * account's. Ignored for Kernel `0.4.0`, whose nonce derives from the
+   * request. A wrong nonce installs nothing: it fails at execution, never here.
    */
   readonly enableNonce?: string;
 }
+
+/**
+ * The effective enable nonce of a Kernel `0.3.3` account with no validation
+ * installed since `initialize`, which sets `currentNonce` to 1: every
+ * undeployed (counterfactual) account's.
+ */
+export const KERNEL_V33_FRESH_ENABLE_NONCE = "1";
 
 /**
  * The approval for an existing (imported) account with no chain reads: the
@@ -434,8 +442,9 @@ export function prepareExistingAccountPermissionApprovalOffline(
   if (typeof input.chainId !== "number") return inputInvalid("approval chain is invalid");
   if (account.kernelVersion === "0.4.0")
     return derivedApproval(request, input.chainId, account.address);
-  if (typeof input.enableNonce !== "string")
-    return inputInvalid("a Kernel 0.3.3 approval needs the account's enable nonce");
+  const nonce = input.enableNonce ?? KERNEL_V33_FRESH_ENABLE_NONCE;
+  if (typeof nonce !== "string" || !/^[1-9][0-9]{0,9}$/u.test(nonce) || Number(nonce) > 0xffff_ffff)
+    return inputInvalid("Kernel 0.3.3 enable nonce is invalid");
   const { ownerKey, sessionKey } = requestKeys(request);
   const runtime = createKernelRuntime({
     deployment: kernelDeployment({ chainId: input.chainId, kernelVersion: "0.3.3" }),
@@ -450,13 +459,13 @@ export function prepareExistingAccountPermissionApprovalOffline(
   const scope = Object.freeze({
     chainScope: "all" as const,
     account: account.address,
-    nonce: input.enableNonce,
+    nonce,
     permissionId: runtime.validation.permissionId,
     packages: runtime.packages,
   });
   const typedData = kernelV33PermissionEnableTypedData(scope);
   const approval = {
-    nonce: input.enableNonce,
+    nonce,
     typedData,
     digest: hashTypedData(typedData as Parameters<typeof hashTypedData>[0]),
   } as unknown as Readonly<ExistingAccountApproval>;

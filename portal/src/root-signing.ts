@@ -15,7 +15,6 @@ import {
   hashPermissionRequest,
   isKernelExistingAccountProfile,
   type PermissionRequest,
-  parseGrantPolicy,
   parseKernelAccountProfile,
   parseOperatorCredentialProfile,
   parseOwnerCredentialProfile,
@@ -26,12 +25,11 @@ import {
 } from "@oaath/protocol";
 import {
   ECDSA_VALIDATOR,
-  grantPermissionPackages,
+  KERNEL_V33_FRESH_ENABLE_NONCE,
   type KernelPermissionDecision,
   kernelKey,
   prepareDerivedAccountPermissionApproval,
   prepareExistingAccountPermissionApprovalOffline,
-  prepareKernelPermissionApproval,
 } from "@oaath/sdk/kernel";
 import type { GrantDetail, PortalAccount, PrepareGrantResponse } from "./api.js";
 import { assertionFields, bytesFromBase64Url, findWallet } from "./session.js";
@@ -141,127 +139,18 @@ export async function rootKey(signer: RememberedSigner, typedData: unknown) {
   return refuse("root-unsupported");
 }
 
-/** Whether an imported account's approval must read a chain at all. */
-export function needsChainRead(kernelVersion: string, appNonce: string | undefined): boolean {
-  return kernelVersion === "0.3.3" && appNonce === undefined;
-}
-
-/** Where a grant's approval reads its chain: the app's own RPC, or the portal's. */
-export interface GrantReads {
-  readonly chainId: number;
-  readonly rpcUrl: string;
-}
-
 /**
- * Where to read: every chain the app named an RPC for, through the portal's
- * per-request proxy, then the portal's own Arbitrum Sepolia.
+ * A Kernel 0.3.3 account's enable nonce for the relay's prepare: the app's,
+ * else an undeployed account's fresh one. Undefined for any other account.
+ * Nothing is read: a nonce that has moved installs nothing at execution,
+ * where the install fails safely; it never blocks the approval.
  */
-function readCandidates(
-  transactionId: string | null,
-  detail: Pick<GrantDetail, "chains" | "rpc_urls">,
-): GrantReads[] {
-  const named =
-    transactionId === null
-      ? []
-      : detail.chains
-          .filter((chain) => detail.rpc_urls?.[String(chain)] !== undefined)
-          .map((chainId) => ({
-            chainId,
-            rpcUrl: `${location.origin}/rpc/tx/${transactionId}/${chainId}`,
-          }));
-  return [...named, { chainId: 421_614, rpcUrl: `${location.origin}/rpc/421614` }];
-}
-
-/** The first candidate, unread: for an account that needs no chain read. */
-export function grantReads(
-  transactionId: string | null,
-  detail: Pick<GrantDetail, "chains" | "rpc_urls">,
-): GrantReads {
-  return readCandidates(transactionId, detail)[0]!;
-}
-
-async function hasCode(reads: GrantReads, address: string): Promise<boolean> {
-  try {
-    const response = await fetch(reads.rpcUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_getCode",
-        params: [address, "latest"],
-      }),
-      signal: AbortSignal.timeout(8_000),
-    });
-    const body = (await response.json()) as { result?: unknown };
-    return typeof body.result === "string" && body.result !== "0x";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The first candidate chain where the account is deployed: the Grant covers
- * every chain, so one readable chain is enough and an unreadable one is
- * skipped. Without any, the first candidate, whose read then fails typed.
- */
-export async function readableGrantReads(
-  transactionId: string | null,
-  detail: Pick<GrantDetail, "chains" | "rpc_urls">,
-  account: Pick<PortalAccount, "address">,
-): Promise<GrantReads> {
-  const candidates = readCandidates(transactionId, detail);
-  for (const reads of candidates) if (await hasCode(reads, account.address)) return reads;
-  return candidates[0]!;
-}
-
-/**
- * A Kernel 0.3.3 account's enable nonce for `signer` under `policy`, read
- * on the approval's chain (`grantReads`), for the relay's prepare (which reads no
- * chain). Undefined for any other account. The SDK re-reads it when it
- * prepares the approval, so a moved nonce refuses as `digest-mismatch`.
- */
-export async function enableNonce(
-  account: Pick<PortalAccount, "address" | "profile">,
-  detail: Pick<GrantDetail, "signer" | "policy" | "enable_nonce">,
-  reads: GrantReads,
-): Promise<string | undefined> {
+export function enableNonce(
+  account: Pick<PortalAccount, "profile">,
+  appNonce: string | undefined,
+): string | undefined {
   if (account.profile.kernelVersion !== "0.3.3") return undefined;
-  if (detail.enable_nonce !== undefined) return detail.enable_nonce;
-  const { importChainReads } = await import("./account-import.js");
-  try {
-    const { permissionId } = grantPermissionPackages({
-      signer: parseOperatorCredentialProfile(detail.signer),
-      policy: parseGrantPolicy(detail.policy),
-    });
-    const nonce = await importChainReads(reads.rpcUrl, reads.chainId).read({
-      type: "kernel_v33_permission_nonce",
-      chainId: reads.chainId,
-      account: account.address,
-      permissionId,
-    });
-    return String(nonce);
-  } catch {
-    return refuse("account-unreadable");
-  }
-}
-
-/** The SDK's reads-backed preparation for an imported (existing) account. */
-async function prepareImportedAccountApproval(
-  request: Readonly<PermissionRequest>,
-  reads: GrantReads,
-) {
-  // Module discovery and chain reads load only when an imported account signs.
-  const { importChainReads } = await import("./account-import.js");
-  try {
-    return await prepareKernelPermissionApproval({
-      request,
-      chainId: reads.chainId,
-      reads: importChainReads(reads.rpcUrl, reads.chainId),
-    });
-  } catch {
-    return refuse("account-unreadable");
-  }
+  return appNonce ?? KERNEL_V33_FRESH_ENABLE_NONCE;
 }
 
 /**
@@ -272,28 +161,23 @@ async function prepareImportedAccountApproval(
 export async function signGrantApproval(input: {
   readonly request: Readonly<PermissionRequest>;
   readonly prepared: PrepareGrantResponse;
-  /** Where the SDK reads the pinned deployment; the approval itself is all-chain. */
+  /** Selects the pinned deployment the packages derive from; the approval is all-chain. */
   readonly chainId: number | undefined;
   readonly signer: RememberedSigner;
   readonly account: Pick<PortalAccount, "address">;
-  /** Where an imported account's approval reads its chain (`grantReads`). */
-  readonly reads: GrantReads;
-  /** The app's Kernel 0.3.3 enable nonce: the approval then reads no chain. */
+  /** A Kernel 0.3.3 account's enable nonce, exactly as sent to the relay's prepare. */
   readonly enableNonce?: string;
 }): Promise<string> {
-  const { request, prepared, chainId, signer, account, reads } = input;
+  const { request, prepared, chainId, signer, account } = input;
   if (chainId === undefined) return refuse("request-mismatch");
-  // An imported account reads no chain when it needs nothing read: Kernel
-  // 0.4.0, or 0.3.3 with the app's nonce. Otherwise the SDK binds it on chain
-  // through the portal's budgeted read proxy. A derived one needs no read.
+  // The approval reads no chain: an imported account's comes from the request
+  // (and a 0.3.3 nonce from the caller), a derived one's from its address.
   const approval = isKernelExistingAccountProfile(request.logicalAccount)
-    ? needsChainRead(request.logicalAccount.kernelVersion, input.enableNonce)
-      ? await prepareImportedAccountApproval(request, reads)
-      : prepareExistingAccountPermissionApprovalOffline({
-          request,
-          chainId,
-          ...(input.enableNonce === undefined ? {} : { enableNonce: input.enableNonce }),
-        })
+    ? prepareExistingAccountPermissionApprovalOffline({
+        request,
+        chainId,
+        ...(input.enableNonce === undefined ? {} : { enableNonce: input.enableNonce }),
+      })
     : prepareDerivedAccountPermissionApproval({
         request,
         chainId,

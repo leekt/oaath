@@ -12,7 +12,7 @@ import { createOAAth } from "@oaath/sdk";
 import { createCetaneChainPorts } from "@oaath/sdk/cetane";
 
 const config = await (await fetch("/config.json")).json();
-const { issuer, chainId, target, selector } = config;
+const { issuer, chainId, target, selector, expiresIn } = config;
 const redirectUri = `${location.origin}/callback`;
 const operationKey = `oaath-grant-demo-operation:${issuer}:${chainId}`;
 const $ = (id) => document.querySelector(`#${id}`);
@@ -117,6 +117,8 @@ async function observe(operation) {
     window.oaathDemo = { ...window.oaathDemo, operation: operation.id, outcome };
     if (["finalized", "dropped", "superseded", "abandoned"].includes(outcome.status)) {
       show(outcome.status, `operation ${outcome.status}`);
+      // Concluded: another click is a new operation, never a resend of this one.
+      $("send").disabled = false;
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, config.pollIntervalMs));
@@ -168,7 +170,7 @@ $("grant").addEventListener("click", async () => {
       await connection.requestPermission({
         chainScope: "all",
         permissions: [{ calls: [{ target, selectors: [selector], valueLimit: "0" }] }],
-        expiresIn: 3_600,
+        expiresIn,
         perChainOperationLimit: 2,
       }),
     );

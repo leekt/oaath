@@ -391,19 +391,33 @@ async function openDapp(
 ) {
   const page = await context.newPage();
   // The dapp's PAR waits until the popup is instrumented; it is delayed, never altered.
+  // `startLogin` re-arms the gate for each later popup.
   let release = () => {};
-  const instrumented = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  let instrumented: Promise<void> | null = null;
+  const arm = () => {
+    instrumented = new Promise<void>((resolve) => {
+      release = () => {
+        instrumented = null;
+        resolve();
+      };
+    });
+  };
+  arm();
   await page.setRequestInterception(true);
   page.on("request", (request) => {
-    if (new URL(request.url()).pathname === "/oauth/par")
+    if (new URL(request.url()).pathname === "/oauth/par" && instrumented)
       void instrumented.then(() => request.continue());
     else void request.continue();
   });
   await page.goto(`${url}/`);
   await page.waitForSelector(ready);
-  return { page, release };
+  return {
+    page,
+    release: () => release(),
+    arm: () => {
+      if (!instrumented) arm();
+    },
+  };
 }
 
 /**
@@ -416,6 +430,7 @@ async function startLogin(
   rewrite?: (callback: URL) => URL,
   button = "#login",
 ) {
+  dappPage.arm();
   const opened = browser.waitForTarget((target) => target.opener() === dappPage.page.target());
   await click(dappPage.page, button);
   const popup = await (await opened).page();
@@ -1152,6 +1167,150 @@ describe("the live Grant demo, rehearsed on a local Arbitrum Sepolia", () => {
   });
 });
 
+/** A Grant as the relay released it to the dapp: the token response's one detail. */
+interface ReleasedGrant {
+  readonly accessToken: string;
+  readonly grant: { readonly grant_id: string };
+}
+
+/** `GET /oauth/grants/{id}`: what the relay holds for one Grant. */
+interface StoredGrant {
+  readonly grant_id: string;
+  readonly status: string;
+  readonly permission_request: {
+    readonly operatorCredential: unknown;
+    readonly application: { readonly deviceId: string };
+    readonly expiresAt: number;
+  };
+  readonly decision: unknown;
+  readonly enable: { readonly digest: string; readonly enableSignature: string };
+}
+
+/** Every token response the dapp page receives, in order, and every PAR it sends. */
+function watchIssuer(page: Page) {
+  const released: ReleasedGrant[] = [];
+  const pars: string[] = [];
+  const tokens: number[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() !== "POST") return;
+    if (path === "/oauth/par") pars.push(request.url());
+    if (path === "/oauth/token") tokens.push(Date.now());
+  });
+  page.on("response", async (response) => {
+    if (new URL(response.url()).pathname !== "/oauth/token" || response.status() !== 200) return;
+    const body = (await response.json()) as {
+      access_token: string;
+      authorization_details?: ReleasedGrant["grant"][];
+    };
+    const [grant] = body.authorization_details ?? [];
+    if (grant) released.push({ accessToken: body.access_token, grant });
+  });
+  return { released, pars, tokens };
+}
+
+/** The relay's stored view of one Grant, read with that Grant's own bearer token. */
+async function storedGrant(released: ReleasedGrant) {
+  const response = await fetch(`${relayBase}/oauth/grants/${released.grant.grant_id}`, {
+    headers: { authorization: `Bearer ${released.accessToken}` },
+  });
+  expect(response.status).toBe(200);
+  return response.text();
+}
+
+describe("renewing an expired Grant through the portal and the real relay", () => {
+  it("grant A expires; an explicit new request with the same device key gets fresh root consent; grant B executes; A is unchanged", async () => {
+    await createWalletAccount();
+    const local = await startLocalArbitrumSepolia();
+    const { startGrantDemo } = (await import(GRANT_DEMO)) as { startGrantDemo: StartGrantDemo };
+    const demo = await startGrantDemo({
+      issuer: portal,
+      chainId: 421_614,
+      rpcUrl: local.chain.url,
+      bundlerUrl: local.bundlerUrl,
+      maxRequests: 800,
+      timeCapMs: 170_000,
+      pollIntervalMs: 500,
+      target: "0x000000000000000000000000000000000000dead",
+      selector: "0x12345678",
+      // Long enough to approve and use A, short enough to outlive in the test.
+      expiresIn: 30,
+      host: "127.0.0.1",
+      log: () => undefined,
+    });
+    closers.push(demo.close);
+    const dappPage = await openDapp(demo.url, "#grant:not([disabled])");
+    const issuer = watchIssuer(dappPage.page);
+
+    // Grant A: the root's one signature, then a covered call deploys, enables and executes.
+    const popupA = await startLogin(dappPage, undefined, "#grant");
+    await signInWithRememberedWallet(popupA);
+    await popupA.waitForSelector("::-p-text(Approve and sign):not([disabled])");
+    await click(popupA, "::-p-text(Approve and sign)");
+    expect(await outcome(dappPage.page)).toBe("granted");
+    expect(walletSignatures).toBe(1);
+    await dappPage.page.waitForSelector("#amount:not(:empty)");
+    const account = await dappPage.page.$eval("#account", (node) => node.textContent ?? "");
+    await local.chain.rpc("anvil_setBalance", [account, toHex(10n ** 18n)]);
+    await click(dappPage.page, "#send");
+    await dappPage.page.waitForSelector("#result[data-outcome=finalized]", { timeout: 30_000 });
+    expect(local.sent).toHaveLength(1);
+    expect(local.sent[0]?.factory).toBeTruthy();
+    expect(issuer.released).toHaveLength(1);
+    const a = issuer.released[0] as ReleasedGrant;
+    const storedA = await storedGrant(a);
+    const viewA = JSON.parse(storedA) as StoredGrant;
+    expect(viewA.status).toBe("approved");
+
+    // A expires. The SDK refuses it before signing or sending anything.
+    const expiresAt = viewA.permission_request.expiresAt;
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, expiresAt * 1000 - Date.now() + 1_000)),
+    );
+    await click(dappPage.page, "#send");
+    await dappPage.page.waitForSelector("#result[data-outcome=oaath_client_grant_inactive]");
+    expect(local.sent).toHaveLength(1);
+    expect(issuer.pars).toHaveLength(1);
+
+    // Renewal is explicit: one new PAR, a fresh popup, and the root's fresh consent.
+    const popupB = await startLogin(dappPage, undefined, "#grant");
+    await signInWithRememberedWallet(popupB);
+    await popupB.waitForSelector("::-p-text(Approve and sign):not([disabled])");
+    await click(popupB, "::-p-text(Approve and sign)");
+    await dappPage.page.waitForSelector("#result[data-outcome=granted]");
+    expect(walletSignatures).toBe(2);
+    expect(issuer.pars).toHaveLength(2);
+    expect(issuer.released).toHaveLength(2);
+    const viewB = JSON.parse(await storedGrant(issuer.released[1] as ReleasedGrant)) as StoredGrant;
+    // The same device and session key; a new Grant, expiry and enable signature.
+    expect(viewB.permission_request.application.deviceId).toBe(
+      viewA.permission_request.application.deviceId,
+    );
+    expect(viewB.permission_request.operatorCredential).toEqual(
+      viewA.permission_request.operatorCredential,
+    );
+    expect(viewB.grant_id).not.toBe(viewA.grant_id);
+    expect(viewB.permission_request.expiresAt).toBeGreaterThan(expiresAt);
+    expect(viewB.enable.digest).not.toBe(viewA.enable.digest);
+    expect(viewB.enable.enableSignature).not.toBe(viewA.enable.enableSignature);
+
+    // B is usable: one new operation enables B on the deployed account and executes.
+    await dappPage.page.waitForSelector("#send:not([disabled])");
+    await click(dappPage.page, "#send");
+    await dappPage.page.waitForSelector("#result[data-outcome=finalized]", { timeout: 30_000 });
+    expect(local.sent).toHaveLength(2);
+    expect(local.sent[1]?.factory).toBeFalsy();
+    expect(BigInt(local.sent[1]?.nonce ?? 0) >> 248n).toBe(
+      BigInt(local.sent[0]?.nonce ?? 0) >> 248n,
+    );
+    expect(walletSignatures).toBe(2);
+
+    // A's request, decision and enable signature are exactly what the relay stored before.
+    expect(await storedGrant(a)).toBe(storedA);
+    await dappPage.page.close();
+  }, 180_000);
+});
+
 /** A CDP virtual authenticator in `page`: user present and verified. */
 async function addAuthenticator(page: Page) {
   const session = await page.createCDPSession();
@@ -1513,6 +1672,106 @@ describe("a member's grant request waits for the account root", () => {
   });
 });
 
+/**
+ * The wallet root's account, a member passkey linked to it on another device,
+ * and the member's SDK Grant request sent to the root: the dapp reports pending.
+ */
+async function memberAsksRoot(demo: GrantDemo) {
+  const root = await deviceContext.newPage();
+  await root.setViewport({ width: 390, height: 844 });
+  await installWallet(root);
+  await root.goto(`${portal}/accounts`);
+  await click(root, "#wallet-method");
+  await click(root, "::-p-text(E2E Wallet)");
+  const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
+  const address = /0x[0-9a-f]{40}/u.exec(
+    (await owned?.evaluate((node) => node.getAttribute("aria-label"))) ?? "",
+  )?.[0];
+  if (!address) throw new Error("no root account");
+
+  // A member device: the SDK's popup, a new passkey linked to the root's account.
+  const device = await browser.createBrowserContext();
+  const dappPage = await openDapp(demo.url, "#grant:not([disabled])", device);
+  const popup = await startLogin(dappPage, undefined, "#grant");
+  await addAuthenticator(popup);
+  await click(popup, "::-p-text(Add signer)");
+  await click(popup, "::-p-text(New passkey)");
+  await popup.waitForSelector("::-p-text(This signer has no account yet.)");
+  await click(popup, "::-p-text(Link to an existing account)");
+  await popup.type("#link-account", address);
+  await click(popup, "::-p-text(Request access)");
+  const shared = await popup.waitForSelector("#link-url");
+  await root.goto((await shared?.evaluate((node) => node.textContent)) ?? "");
+  await click(root, "#wallet-method");
+  await click(root, "::-p-text(E2E Wallet)");
+  await click(root, "::-p-text(Approve and sign)");
+  await root.waitForSelector("::-p-text(Signer added)");
+
+  // The member sends the request: the SDK journals the code and reports pending.
+  await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
+  await popup.waitForSelector("#ask-heading");
+  await click(popup, "::-p-text(Send request to the owner)");
+  expect(await outcome(dappPage.page)).toBe("pending");
+  expect(await dappPage.page.$eval("#account", (node) => node.textContent)).toBe("");
+  return { root, address, device, dappPage };
+}
+
+describe("a member's Grant request the root rejects is never resubmitted", () => {
+  it("redeems the rejection once, then reloads send nothing until the app asks again explicitly", async () => {
+    await createWalletAccount();
+    const { startGrantDemo } = (await import(GRANT_DEMO)) as { startGrantDemo: StartGrantDemo };
+    // Nothing here reaches a chain: both endpoints are closed ports.
+    const demo = await startGrantDemo({
+      issuer: portal,
+      chainId: 421_614,
+      rpcUrl: "http://127.0.0.1:9/",
+      bundlerUrl: "http://127.0.0.1:9/",
+      maxRequests: 50,
+      timeCapMs: 120_000,
+      target: "0x000000000000000000000000000000000000dead",
+      selector: "0x12345678",
+      host: "127.0.0.1",
+      log: () => undefined,
+    });
+    closers.push(demo.close);
+    const { root, address, device, dappPage } = await memberAsksRoot(demo);
+    const issuer = watchIssuer(dappPage.page);
+
+    // The root rejects from its members view; rejecting signs nothing.
+    await root.goto(`${portal}/accounts`);
+    await click(root, "#wallet-method");
+    await click(root, "::-p-text(E2E Wallet)");
+    await click(root, `button[aria-label='Smart account ${address}']`);
+    await root.waitForSelector("#requests-heading");
+    const signatures = walletSignatures;
+    await click(root, "button[aria-label='Reject OAAth Grant demo']");
+    await root.waitForSelector("#requests-heading", { hidden: true });
+    expect(walletSignatures).toBe(signatures);
+    await root.close();
+
+    // A reload redeems the journaled code once and learns the rejection.
+    await dappPage.page.reload();
+    await dappPage.page.waitForSelector("#result[data-outcome=oaath_client_permission_rejected]");
+    expect(issuer.tokens).toHaveLength(1);
+    expect(issuer.pars).toHaveLength(0);
+
+    // The journal is gone: another reload asks the issuer nothing and pushes nothing.
+    await dappPage.page.reload();
+    await dappPage.page.waitForSelector("#grant:not([disabled])");
+    await dappPage.page.waitForNetworkIdle({ idleTime: 500 });
+    expect(issuer.tokens).toHaveLength(1);
+    expect(issuer.pars).toHaveLength(0);
+    expect(await dappPage.page.$eval("#result", (node) => node.textContent)).toBe("");
+
+    // Only an explicit request pushes a new PAR, and exactly one.
+    const popup = await startLogin(dappPage, undefined, "#grant");
+    expect(issuer.pars).toHaveLength(1);
+    expect(issuer.tokens).toHaveLength(1);
+    await popup.close();
+    await device.close();
+  });
+});
+
 describe("a member's Grant requested with the SDK waits for the root, then installs on chain", () => {
   it("returns pending, the root approves in /accounts, redeemPending after a reload yields the Grant, and the first operation enables it", async () => {
     await createWalletAccount();
@@ -1534,42 +1793,7 @@ describe("a member's Grant requested with the SDK waits for the root, then insta
     });
     closers.push(demo.close);
 
-    const root = await deviceContext.newPage();
-    await root.setViewport({ width: 390, height: 844 });
-    await installWallet(root);
-    await root.goto(`${portal}/accounts`);
-    await click(root, "#wallet-method");
-    await click(root, "::-p-text(E2E Wallet)");
-    const owned = await root.waitForSelector("button[aria-label^='Smart account 0x']");
-    const address = /0x[0-9a-f]{40}/u.exec(
-      (await owned?.evaluate((node) => node.getAttribute("aria-label"))) ?? "",
-    )?.[0];
-    if (!address) throw new Error("no root account");
-
-    // A member device: the SDK's popup, a new passkey linked to the root's account.
-    const device = await browser.createBrowserContext();
-    const dappPage = await openDapp(demo.url, "#grant:not([disabled])", device);
-    const popup = await startLogin(dappPage, undefined, "#grant");
-    await addAuthenticator(popup);
-    await click(popup, "::-p-text(Add signer)");
-    await click(popup, "::-p-text(New passkey)");
-    await popup.waitForSelector("::-p-text(This signer has no account yet.)");
-    await click(popup, "::-p-text(Link to an existing account)");
-    await popup.type("#link-account", address);
-    await click(popup, "::-p-text(Request access)");
-    const shared = await popup.waitForSelector("#link-url");
-    await root.goto((await shared?.evaluate((node) => node.textContent)) ?? "");
-    await click(root, "#wallet-method");
-    await click(root, "::-p-text(E2E Wallet)");
-    await click(root, "::-p-text(Approve and sign)");
-    await root.waitForSelector("::-p-text(Signer added)");
-
-    // The member sends the request: the SDK journals the code and reports pending.
-    await click(popup, `button[aria-label='Smart account ${address}, Signer']`);
-    await popup.waitForSelector("#ask-heading");
-    await click(popup, "::-p-text(Send request to the owner)");
-    expect(await outcome(dappPage.page)).toBe("pending");
-    expect(await dappPage.page.$eval("#account", (node) => node.textContent)).toBe("");
+    const { root, address, device, dappPage } = await memberAsksRoot(demo);
 
     // The root approves from its members view with one signature.
     await root.goto(`${portal}/accounts`);

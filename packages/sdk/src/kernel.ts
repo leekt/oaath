@@ -146,6 +146,7 @@ export type {
   PrepareKernelPermissionApprovalInput,
 } from "./kernel/permission/prepare-approval.js";
 export {
+  KERNEL_V33_FRESH_ENABLE_NONCE,
   prepareDerivedAccountPermissionApproval,
   prepareExistingAccountPermissionApproval,
   prepareExistingAccountPermissionApprovalOffline,

@@ -20,14 +20,7 @@ import {
   portalApi,
 } from "./api.js";
 import { GrantTerms, grantFailure, when } from "./GrantReview.js";
-import {
-  enableNonce,
-  grantReads,
-  needsChainRead,
-  readableGrantReads,
-  reviewedRequest,
-  signGrantApproval,
-} from "./root-signing.js";
+import { enableNonce, reviewedRequest, signGrantApproval } from "./root-signing.js";
 import { Button as SchematicAction } from "./schematic/components";
 import { CancelButton, Frame, message, Notice, QrCode, SignerStep } from "./shared.js";
 import { type RememberedSigner, shortAddress, signerDetail } from "./signers.js";
@@ -60,21 +53,9 @@ async function approveRequest(
   signer: RememberedSigner,
   account: PortalAccount,
 ): Promise<PendingRequest> {
-  // A request awaiting the root carries no app RPC: the portal's own reads.
-  const reads = needsChainRead(account.profile.kernelVersion, undefined)
-    ? await readableGrantReads(null, view, account)
-    : grantReads(null, view);
-  const prepared = await portalApi.preparePending(
-    view.request_id,
-    await enableNonce(
-      account,
-      {
-        signer: view.permission_request.operatorCredential,
-        policy: view.permission_request.policy,
-      },
-      reads,
-    ),
-  );
+  // Nothing is read: a request awaiting the root carries no app nonce.
+  const nonce = enableNonce(account, undefined);
+  const prepared = await portalApi.preparePending(view.request_id, nonce);
   const request = reviewedRequest({
     prepared,
     detail: {
@@ -90,7 +71,7 @@ async function approveRequest(
     chainId: view.chains[0],
     signer,
     account,
-    reads,
+    ...(nonce === undefined ? {} : { enableNonce: nonce }),
   });
   return portalApi.approvePending(view.request_id, artifact);
 }
