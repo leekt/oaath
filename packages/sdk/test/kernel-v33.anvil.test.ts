@@ -514,9 +514,7 @@ function passkeySession() {
 
     // Grant A: the fresh account's enable nonce is the canonical fresh one.
     const a = await grant(started + 600n);
-    expect(await kernelV33PermissionInstallNonce({ ...a, reads })).toBe(
-      KERNEL_FRESH_ENABLE_NONCE,
-    );
+    expect(await kernelV33PermissionInstallNonce({ ...a, reads })).toBe(KERNEL_FRESH_ENABLE_NONCE);
     const enabledA = await enable(a, KERNEL_FRESH_ENABLE_NONCE);
     expect(await harness.sendSigned(enabledA.prepared, enabledA.signature)).toBe("success");
     const stateA = await state(a);
@@ -541,9 +539,7 @@ function passkeySession() {
     // account's global one. Enabling A did not advance it, so "prior + 1" is wrong.
     const b = await grant(started + 7_200n);
     expect(b.runtime.validation).not.toEqual(a.runtime.validation);
-    expect(await kernelV33PermissionInstallNonce({ ...b, reads })).toBe(
-      KERNEL_FRESH_ENABLE_NONCE,
-    );
+    expect(await kernelV33PermissionInstallNonce({ ...b, reads })).toBe(KERNEL_FRESH_ENABLE_NONCE);
     const wrong = await enable(b, "2");
     expect(await harness.rejectionOf(wrong.prepared, wrong.signature)).toMatchObject(notApproved);
     const enabledB = await enable(b, KERNEL_FRESH_ENABLE_NONCE);
