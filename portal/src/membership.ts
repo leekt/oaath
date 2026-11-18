@@ -32,7 +32,7 @@ import type {
   PortalLink,
   PrepareGrantResponse,
 } from "./api.js";
-import { grantReads, RootSigningError, rootKey, signGrantApproval } from "./root-signing.js";
+import { RootSigningError, rootKey, signGrantApproval } from "./root-signing.js";
 import type { RememberedSigner } from "./signers.js";
 
 const TYPES = {
@@ -171,6 +171,5 @@ export async function signMemberGrant(input: {
     chainId: PORTAL_CHAIN_ID,
     signer,
     account,
-    reads: grantReads(null, { chains: [PORTAL_CHAIN_ID] }),
   });
 }

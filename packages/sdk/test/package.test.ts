@@ -18,6 +18,7 @@ describe("package boundary", () => {
   it("exposes only the adopter workflow on the root entry", () => {
     expect(Object.keys(root).sort()).toEqual([
       "OAATH_CALLS_REVIEW_VERSION",
+      "OAATH_MAX_GRANT_CHAINS",
       "OaathClientError",
       "completeOAAthLogin",
       "createOAAth",
@@ -50,6 +51,7 @@ describe("package boundary", () => {
   it("exposes the version-agnostic Kernel primitives on /kernel", () => {
     expect(Object.keys(kernel).sort()).toEqual([
       "ECDSA_VALIDATOR",
+      "KERNEL_FRESH_ENABLE_NONCE",
       "NONCE_ALIGNMENT_PERMISSION_ID",
       "OAATH_KERNEL_ALL_CHAIN_APPROVAL_VERSION",
       "OAATH_KERNEL_PERMISSION_ENABLE_APPROVAL_VERSION",
@@ -88,6 +90,7 @@ describe("package boundary", () => {
       "pinnedSignerModule",
       "prepareDerivedAccountPermissionApproval",
       "prepareExistingAccountPermissionApproval",
+      "prepareExistingAccountPermissionApprovalOffline",
       "prepareKernelPermissionApproval",
       "prepareKernelPermissionRevocation",
       "prepareKernelUserOperation",

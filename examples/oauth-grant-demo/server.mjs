@@ -73,6 +73,8 @@ export async function startGrantDemo({
   /** The harmless covered call: a zero-value call with this selector to this target. */
   target,
   selector,
+  /** Each requested Grant's lifetime in seconds. */
+  expiresIn = 3_600,
   port = 0,
   host = "localhost",
   log = (line) => console.log(line),
@@ -112,6 +114,7 @@ export async function startGrantDemo({
     maxRequests,
     target,
     selector,
+    expiresIn,
     pollIntervalMs,
     maxPolls: Math.max(1, Math.floor(timeCapMs / pollIntervalMs)),
   };

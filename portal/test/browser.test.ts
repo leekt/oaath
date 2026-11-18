@@ -13,9 +13,13 @@ import {
   hashPermissionRequest,
   parsePermissionRequest,
 } from "@oaath/protocol";
-import { prepareDerivedAccountPermissionApproval } from "@oaath/sdk/kernel";
+import {
+  prepareDerivedAccountPermissionApproval,
+  prepareExistingAccountPermissionApprovalOffline,
+} from "@oaath/sdk/kernel";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { hashTypedData, keccak256 } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
   ChallengeResponse,
@@ -126,6 +130,34 @@ const ROOT_ACCOUNT: PortalAccount = {
   },
 };
 const GRANT_SIGNER: RememberedSigner = { ...WALLET_SIGNER, signer_id: "signer-grant" };
+/** A wallet with a real key, the root of an imported, undeployed Kernel 0.3.3 account. */
+const OFFLINE_KEY = privateKeyToAccount(generatePrivateKey());
+const OFFLINE_SIGNER: RememberedSigner = {
+  ...WALLET_SIGNER,
+  signer_id: "signer-offline",
+  profile: {
+    version: "oaath.owner-credential-profile/v1",
+    kind: "ecdsa",
+    address: OFFLINE_KEY.address.toLowerCase() as `0x${string}`,
+  },
+};
+const OFFLINE_ACCOUNT: PortalAccount = {
+  account_id: "account-offline",
+  address: `0x${"31".repeat(20)}`,
+  role: "root",
+  status: "active",
+  profile: {
+    version: "oaath.kernel-existing-account-profile/v1",
+    kind: "kernel",
+    kernelVersion: "0.3.3",
+    address: `0x${"31".repeat(20)}`,
+    entryPoint: { version: "0.7" },
+    ownerCredential: OFFLINE_SIGNER.profile,
+  },
+} as PortalAccount;
+/** Every chain read the portal attempts while the chain is down. */
+let rpcDown = false;
+let rpcHits = 0;
 const NONCE = "ab".repeat(32);
 const SIWE_MESSAGE = "oaath sign-in message";
 
@@ -157,11 +189,14 @@ function grantPreparation(account: PortalAccount): PrepareGrantResponse {
     permission_request: request,
     request_hash: hashPermissionRequest(request),
     approved_policy: request.policy,
-    signing_request: prepareDerivedAccountPermissionApproval({
-      request,
-      chainId: 8453,
-      account: account.address,
-    }).signingRequest,
+    signing_request: (account.profile.version === "oaath.kernel-existing-account-profile/v1"
+      ? prepareExistingAccountPermissionApprovalOffline({ request, chainId: 8453 })
+      : prepareDerivedAccountPermissionApproval({
+          request,
+          chainId: 8453,
+          account: account.address,
+        })
+    ).signingRequest,
   };
 }
 
@@ -171,15 +206,23 @@ function grantTransaction(id: string): PortalTransaction {
     client_id: "client-1",
     client_name: "Example Dapp",
     redirect_origin: origin,
-    authorization_details: [GRANT_DETAIL],
+    // The app's RPC is named, but approval never reads it.
+    authorization_details: [
+      id === "par-grant-offline"
+        ? { ...GRANT_DETAIL, rpc_urls: { "8453": "https://rpc.example" } }
+        : GRANT_DETAIL,
+    ],
     scopes: [],
     expires_at: NOW + 600,
     // The dapp's login bound its signer and account (`id_token_hint`).
-    bound: id.endsWith("-bound")
-      ? { signer_id: GRANT_SIGNER.signer_id, account: ROOT_ACCOUNT }
-      : id.endsWith("-elsewhere")
-        ? { signer_id: "signer-other-device", account: ROOT_ACCOUNT }
-        : null,
+    bound:
+      id === "par-grant-offline"
+        ? { signer_id: OFFLINE_SIGNER.signer_id, account: OFFLINE_ACCOUNT }
+        : id.endsWith("-bound")
+          ? { signer_id: GRANT_SIGNER.signer_id, account: ROOT_ACCOUNT }
+          : id.endsWith("-elsewhere")
+            ? { signer_id: "signer-other-device", account: ROOT_ACCOUNT }
+            : null,
   };
 }
 
@@ -268,10 +311,14 @@ async function stubRelay(path: string, method: string, body: unknown) {
   if (path === "/portal/links/link-template/prepare" && method === "POST")
     return grantPreparation(ROOT_ACCOUNT);
   const grant =
-    /^\/portal\/transactions\/(par-grant(?:-tampered|-bound|-elsewhere)?)(\/prepare)?$/u.exec(path);
+    /^\/portal\/transactions\/(par-grant(?:-tampered|-bound|-elsewhere|-offline)?)(\/prepare)?$/u.exec(
+      path,
+    );
   if (grant?.[1] && !grant[2] && method === "GET") return grantTransaction(grant[1]);
   if (grant?.[1] && grant[2] && method === "POST") {
-    const prepared = grantPreparation(ROOT_ACCOUNT);
+    const prepared = grantPreparation(
+      grant[1] === "par-grant-offline" ? OFFLINE_ACCOUNT : ROOT_ACCOUNT,
+    );
     return grant[1] === "par-grant-tampered"
       ? {
           ...prepared,
@@ -389,6 +436,10 @@ beforeAll(async () => {
         ? json(response, 404, { error: { code: "relay_not_found" } })
         : json(response, 200, result);
     }
+    if (url.pathname.startsWith("/rpc/") && rpcDown) {
+      rpcHits += 1;
+      return response.destroy();
+    }
     if (url.pathname === "/rpc/421614") return json(response, 200, stubChain(body));
     if (url.pathname.startsWith("/dapp/")) {
       response.writeHead(200, { "content-type": "text/html" });
@@ -445,7 +496,13 @@ afterAll(async () => {
  * An EIP-6963 wallet in every document of `page`, recording each method and
  * `personal_sign` request. It signs nothing real: the stub relay accepts any proof.
  */
-async function installWallet(page: Page, name = "Test Wallet", rdns = "test.wallet", delay = 0) {
+async function installWallet(
+  page: Page,
+  name = "Test Wallet",
+  rdns = "test.wallet",
+  delay = 0,
+  address = `0x${(rdns === "test.wallet" ? "11" : "22").repeat(20)}`,
+) {
   await page.evaluateOnNewDocument(
     (wallet: { name: string; rdns: string; address: string; delay: number }) => {
       const methods: string[] = [];
@@ -454,6 +511,10 @@ async function installWallet(page: Page, name = "Test Wallet", rdns = "test.wall
       const provider = {
         request: async ({ method, params }: { method: string; params?: unknown }) => {
           methods.push(method);
+          const signTypedData = (window as unknown as { signTypedData?: (data: string) => string })
+            .signTypedData;
+          if (method === "eth_signTypedData_v4" && signTypedData)
+            return signTypedData((params as string[])[1]!);
           if (method === "personal_sign") {
             signed.push(params);
             return `0x${"99".repeat(65)}`;
@@ -480,7 +541,7 @@ async function installWallet(page: Page, name = "Test Wallet", rdns = "test.wall
       name,
       rdns,
       delay,
-      address: `0x${(rdns === "test.wallet" ? "11" : "22").repeat(20)}`,
+      address,
     },
   );
 }
@@ -887,6 +948,46 @@ describe("portal in Chrome", () => {
     });
     expect(await walletMethods(page)).toEqual([]);
     await page.close();
+  });
+
+  it("signs an undeployed imported Kernel 0.3.3 account's approval while every RPC fails", async () => {
+    calls.length = 0;
+    rpcDown = true;
+    rpcHits = 0;
+    try {
+      const page = await browser.newPage();
+      let signatures = 0;
+      await page.exposeFunction("signTypedData", (data: string) => {
+        signatures += 1;
+        return OFFLINE_KEY.signTypedData(JSON.parse(data));
+      });
+      await installWallet(page, "Test Wallet", "test.wallet", 0, OFFLINE_KEY.address);
+      await page.evaluateOnNewDocument(
+        (signers: string) => {
+          localStorage.setItem("oaath.portal.signers/v1", signers);
+        },
+        JSON.stringify([OFFLINE_SIGNER]),
+      );
+      await page.goto(
+        `${origin}/authorize?client_id=client-1&request_uri=urn:ietf:params:oauth:request_uri:par-grant-offline`,
+      );
+      await page.waitForSelector("::-p-text(Approve and sign):not([disabled])");
+      // The relay prepares with the fresh nonce of an account that is deployed nowhere.
+      expect(calls.at(-1)?.body).toEqual({
+        signer_id: OFFLINE_SIGNER.signer_id,
+        account_id: OFFLINE_ACCOUNT.account_id,
+        enable_nonce: "1",
+      });
+      await clickText(page, "Approve and sign");
+      await page.waitForFunction(() => location.pathname === "/dapp/callback");
+      const decision = calls.find((call) => call.path.endsWith("/decision"));
+      expect(decision?.body).toMatchObject({ outcome: "approved" });
+      expect(signatures).toBe(1);
+      expect(rpcHits).toBe(0);
+      await page.close();
+    } finally {
+      rpcDown = false;
+    }
   });
 
   it("explains a bound signer this browser cannot use and offers another signer", async () => {
